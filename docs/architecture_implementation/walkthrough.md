@@ -4,9 +4,10 @@
 
 ## 実装内容
 - **PlatformIO Configuration**
-  - `platformio.ini`: 気圧センサ用ライブラリとして `adafruit/Adafruit BMP5xx Library` を追加しました。
+  - `platformio.ini`: 気圧センサ用ライブラリとして、Bosch公式のGitHubリポジトリ `https://github.com/boschsensortec/BMP5_SensorAPI.git` を追加しました。
 - **Drivers (ドライバ層)**
-  - `include/drivers/sensors/bmp585_sensor.h` / `src/drivers/sensors/bmp585_sensor.cpp`: `Adafruit_BMP5xx` クラスを使用して BMP585 の初期化と気圧測定を行うドライバを実装しました。
+  - `include/drivers/sensors/bmp585_sensor.h` / `src/drivers/sensors/bmp585_sensor.cpp`: Bosch公式の `BMP5_SensorAPI` (C言語API) を用いて BMP585 の初期化と気圧測定を行うドライバを実装しました。
+  - C言語APIとArduinoの `Wire` 通信を仲介するための、読み取り・書き込み・遅延のラッパー関数(HAL)を内部に実装しています。
 - **Services (サービス層)**
   - `include/services/sensor_manager.h` / `src/services/sensor_manager.cpp`: SHT45と同様に `Bmp585Sensor` インスタンスを追加し、定期的にデータを読み出して `SensorSnapshot` の `pressureHpa` に値を反映するよう統合しました。
 
