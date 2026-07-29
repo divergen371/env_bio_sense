@@ -90,8 +90,11 @@ void Scd41Sensor::update(uint32_t nowMs) {
         return;
     }
 
-    // データの保存（温度と湿度は SHT45 に任せるため CO2 のみ更新）
+    // データの保存（温度と湿度も取得して熱ごもり検知に使用する）
     currentCo2Ppm_ = co2;
+    currentTemperature_ = temperature;
+    currentHumidity_ = humidity;
+    
     hasValidData_ = true;
     lastSuccessMs_ = nowMs;
     lastError_ = core::ErrorCode::None;
@@ -101,6 +104,8 @@ bool Scd41Sensor::readEnvironment(core::EnvironmentData& out) const {
     if (!hasValidData_) return false;
     
     out.co2Ppm = currentCo2Ppm_;
+    out.scd41TemperatureC = currentTemperature_;
+    out.scd41HumidityRh = currentHumidity_;
     
     if (lastSuccessMs_ > out.timestampMs) {
         out.timestampMs = lastSuccessMs_;

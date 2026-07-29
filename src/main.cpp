@@ -57,6 +57,13 @@ void loop() {
     if (nowMs - previousLogMs >= 2000) {
         previousLogMs = nowMs;
         const auto& snap = sensorManager.snapshot();
+        
+        // --- 環境異常の警告出力 ---
+        if (snap.environment.valid && snap.environment.enclosureWarning == core::EnclosureWarning::HeatTrapped) {
+            float diff = snap.environment.scd41TemperatureC - snap.environment.temperatureC;
+            services::Logger::warn("MAIN", "Enclosure Heat Trapped! Diff: +%.1f C", diff);
+        }
+
         if (snap.ppg.state == core::PpgState::NoFinger) {
             services::Logger::info("MAIN", "PPG: No Finger");
         } else if (snap.ppg.state == core::PpgState::Calibrating) {

@@ -31,11 +31,19 @@ enum class ErrorCode : uint8_t {
     Unsupported
 };
 
+enum class EnclosureWarning : uint8_t {
+    Normal,
+    HeatTrapped
+};
+
 struct EnvironmentData {
     float temperatureC {};
     float humidityRh {};
     float pressureHpa {};
     uint16_t co2Ppm {};
+    float scd41TemperatureC {};
+    float scd41HumidityRh {};
+    EnclosureWarning enclosureWarning {EnclosureWarning::Normal};
     uint32_t timestampMs {};
     bool valid {};
 };

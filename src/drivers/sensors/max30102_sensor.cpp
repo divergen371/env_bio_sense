@@ -126,8 +126,8 @@ void Max30102Sensor::update(uint32_t nowMs) {
                 uint32_t amplitude = maxIR - minIR;
                 currentData_.signalAmplitude = amplitude;
                 
-                // 振幅が小さすぎる(強すぎ/弱すぎ) または 大きすぎる(ノイズ) 場合は警告
-                if (amplitude < 1000 || amplitude > 15000) {
+                // 閾値を大幅に緩和（500未満、または30000超え のみ警告）
+                if (amplitude < 500 || amplitude > 30000) {
                     currentData_.signalPoor = true;
                 } else {
                     currentData_.signalPoor = false;

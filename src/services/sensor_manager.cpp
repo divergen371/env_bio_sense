@@ -69,6 +69,17 @@ void SensorManager::update(uint32_t nowMs) {
     
     snapshot_.environment.valid = envValid;
 
+    // --- Enclosure Warning (空気循環・熱ごもり異常検知) ---
+    if (envValid && sht45_.state() == core::DeviceState::Ready && scd41_.state() == core::DeviceState::Ready) {
+        // SCD41(内部)とSHT45(外気)の温度差が5.0℃以上なら熱ごもりと判定
+        float tempDiff = snapshot_.environment.scd41TemperatureC - snapshot_.environment.temperatureC;
+        if (tempDiff >= 5.0f) {
+            snapshot_.environment.enclosureWarning = core::EnclosureWarning::HeatTrapped;
+        } else {
+            snapshot_.environment.enclosureWarning = core::EnclosureWarning::Normal;
+        }
+    }
+
     // --- PPG Data Aggregation ---
     if (max30102_.readPpg(snapshot_.ppg)) {
         // Step 6 では生データのみが反映される

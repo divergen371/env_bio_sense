@@ -29,6 +29,9 @@ private:
     uint32_t lastSuccessMs_ {0};
     
     uint16_t currentCo2Ppm_ {0};
+    float currentTemperature_ {0.0f};
+    float currentHumidity_ {0.0f};
+    
     bool hasValidData_ {false};
 };
 
