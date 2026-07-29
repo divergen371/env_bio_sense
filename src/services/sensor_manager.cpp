@@ -13,7 +13,13 @@ bool SensorManager::begin() {
         status_.sht45State = core::DeviceState::Error;
     }
     
-    status_.bmp585State = core::DeviceState::Unknown;
+    if (bmp585_.begin()) {
+        status_.bmp585State = bmp585_.state();
+    } else {
+        Logger::error("SensorMgr", "Failed to initialize BMP585");
+        status_.bmp585State = core::DeviceState::Error;
+    }
+    
     status_.scd41State = core::DeviceState::Unknown;
     status_.max30102State = core::DeviceState::Unknown;
     
@@ -27,12 +33,19 @@ void SensorManager::update(uint32_t nowMs) {
     sht45_.update(nowMs);
     status_.sht45State = sht45_.state();
     
+    bmp585_.update(nowMs);
+    status_.bmp585State = bmp585_.state();
+    
     // スナップショットに反映
+    bool envValid = false;
     if (sht45_.readEnvironment(snapshot_.environment)) {
-        // sht45_.readEnvironment が内部で out.valid = true 等を行う
-    } else {
-        snapshot_.environment.valid = false;
+        envValid = true;
     }
+    if (bmp585_.readEnvironment(snapshot_.environment)) {
+        envValid = true;
+    }
+    
+    snapshot_.environment.valid = envValid;
 }
 
 } // namespace services

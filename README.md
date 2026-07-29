@@ -21,9 +21,14 @@ XIAO ESP32S3を用いた複合センサ環境プラットフォームのプロ�
 - `Sht45Sensor`: `Sensirion I2C SHT4x` を用いたSHT45のドライバを実装
 - `SensorManager` にてSHT45の実データを読み出し、OLEDに反映するよう統合
 
+### [Step 4] BMP585 (気圧センサ) の統合（完了）
+- `Bmp585Sensor`: `Adafruit BMP5xx Library` を用いたBMP585のドライバを実装
+- `SensorManager` にてBMP585の実データを読み出し、OLEDに気圧を反映するよう統合
+
 ## 使用ライブラリ
 - PlatformIO/Arduino標準ライブラリ（`Wire` 等）
 - `Adafruit SSD1306`
 - `Adafruit GFX Library`
 - `Sensirion I2C SHT4x`
 - `Sensirion Core`
+- `Adafruit BMP5xx Library`
