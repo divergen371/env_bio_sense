@@ -1,23 +1,16 @@
-# XIAO ESP32S3 アーキテクチャ実装 (Step 4) 完了報告
+# XIAO ESP32S3 アーキテクチャ実装 (Step 4 & 5) 完了報告
 
-アーキテクチャ仕様書に基づくStep 4の実装が完了しました。
+アーキテクチャ仕様書に基づく **Step 4 (BMP585の統合)** と **Step 5 (SCD41の統合)** の実装とデバッグが完了しました。
 
 ## 実装内容
-- **PlatformIO Configuration**
-  - `platformio.ini`: 気圧センサ用ライブラリとして、Bosch公式のGitHubリポジトリ `https://github.com/boschsensortec/BMP5_SensorAPI.git` を追加しました。
-- **Drivers (ドライバ層)**
-  - `include/drivers/sensors/bmp585_sensor.h` / `src/drivers/sensors/bmp585_sensor.cpp`: Bosch公式の `BMP5_SensorAPI` (C言語API) を用いて BMP585 の初期化と気圧測定を行うドライバを実装しました。
-  - C言語APIとArduinoの `Wire` 通信を仲介するための、読み取り・書き込み・遅延のラッパー関数(HAL)を内部に実装しています。
-- **Services (サービス層)**
-  - `include/services/sensor_manager.h` / `src/services/sensor_manager.cpp`: SHT45と同様に `Bmp585Sensor` インスタンスを追加し、定期的にデータを読み出して `SensorSnapshot` の `pressureHpa` に値を反映するよう統合しました。
+- **BMP585 (気圧センサ) の統合**
+  - Bosch公式の `BMP5_SensorAPI` を採用。
+  - NVM(不揮発性メモリ)のロードタイミングの問題をデバッグし、初期化時に明示的にソフトリセットをかけることで `-5 (NVM_NOT_READY)` エラーを完全に解消。
+  - OLEDの `P:` に現地気圧を hPa 単位で表示。
+- **SCD41 (CO2センサ) の統合**
+  - Sensirion公式の `sensirion/Sensirion I2C SCD4x` を採用。
+  - 約5秒間隔での定期測定 (Periodic Measurement) を行い、データレディフラグが立つごとに取得する非同期的なポーリング処理を実装。
+  - 呼気に反応して値が上昇することを実機で確認。OLEDの `C:` に CO2濃度を ppm 単位で表示。
 
-## 次のステップ
-以下のコマンドでビルドが通るか、また実機に書き込んで **OLEDディスプレイの `P:` (気圧) が実際の BMP585 センサの測定値（およそ 1000〜1025 hPa）に更新されているか** をご確認ください。
-
-```bash
-pio run
-pio run -t upload
-pio device monitor
-```
-
-動作確認が取れ次第、Step 5（SCD41 CO2センサの統合）へ進みます。
+## 次のステップ (Step 6)
+次は生体センサである **MAX30102 (脈波・血中酸素センサ)** の統合に入ります。まずは基礎的な通信とデータの取得を目指します。

@@ -1,7 +1,9 @@
-# XIAO ESP32S3 アーキテクチャ実装 (Step 4: Bosch公式APIへの移行) タスクリスト
+# XIAO ESP32S3 アーキテクチャ実装 (Step 5: SCD41 CO2センサの統合) タスクリスト
 
-- `[x]` `platformio.ini` の `Adafruit BMP5xx` を `https://github.com/boschsensortec/BMP5_SensorAPI.git` に置き換える
-- `[x]` `include/drivers/sensors/bmp585_sensor.h` を Bosch `bmp5_dev` 構造体を使用するように修正する
-- `[x]` `src/drivers/sensors/bmp585_sensor.cpp` にI2Cラッパー(HAL)を実装し、初期化とデータ取得を公式APIに切り替える
-- `[x]` `README.md` を更新する
-- `[ ]` コンパイルと実機確認を依頼する
+- `[x]` `platformio.ini` に `sensirion/Sensirion I2C SCD4x` を追加する
+- `[x]` `include/drivers/sensors/scd41_sensor.h` を作成し、クラスインターフェースを定義する
+- `[x]` `src/drivers/sensors/scd41_sensor.cpp` に初期化と定期読み取り(Periodic Measurement)処理を実装する
+- `[x]` `SensorManager` で SCD41 の初期化と更新を行い、CO2濃度を反映させる
+- `[x]` `DisplayManager` に CO2濃度の表示 (`C: XXXX ppm`) を追加する
+- `[x]` `README.md` と `walkthrough.md` を更新する
+- `[x]` コンパイルと実機確認を依頼する
