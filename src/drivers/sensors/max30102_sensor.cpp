@@ -58,21 +58,26 @@ void Max30102Sensor::update(uint32_t nowMs) {
         currentData_.timestampMs = nowMs;
         currentData_.rawValid = true; 
 
-        // 1. 指の接触判定 (IRが一定閾値以下なら指なし)
+        // 1. 指の接触判定とDCベースラインの監視
         if (ir < 20000) {
             if (ppgState_ != core::PpgState::NoFinger) {
                 resetPpgState();
             }
-        } else {
-            // 指が検出された
-            if (ppgState_ == core::PpgState::NoFinger) {
+        } else if (ppgState_ == core::PpgState::Measuring) {
+            // 測定中にDCベースラインが大きくズレたら再キャリブレーション
+            if (ir < 50000 || ir > 150000) {
                 ppgState_ = core::PpgState::Calibrating;
-                currentLedBrightness_ = 10;
-                particleSensor_.setPulseAmplitudeRed(currentLedBrightness_);
-                particleSensor_.setPulseAmplitudeIR(currentLedBrightness_);
                 calibStartMs_ = nowMs;
                 bufferIndex_ = 0;
             }
+        } else if (ppgState_ == core::PpgState::NoFinger) {
+            // 指が検出された
+            ppgState_ = core::PpgState::Calibrating;
+            currentLedBrightness_ = 10;
+            particleSensor_.setPulseAmplitudeRed(currentLedBrightness_);
+            particleSensor_.setPulseAmplitudeIR(currentLedBrightness_);
+            calibStartMs_ = nowMs;
+            bufferIndex_ = 0;
         }
 
         // 2. キャリブレーション中の処理
@@ -111,6 +116,23 @@ void Max30102Sensor::update(uint32_t nowMs) {
             }
 
             if (bufferIndex_ == BUFFER_LENGTH) {
+                // AC振幅（波形の大きさ）をチェックして押し付け圧を評価
+                uint32_t minIR = 0xFFFFFFFF;
+                uint32_t maxIR = 0;
+                for (int i = 0; i < BUFFER_LENGTH; i++) {
+                    if (irBuffer_[i] < minIR) minIR = irBuffer_[i];
+                    if (irBuffer_[i] > maxIR) maxIR = irBuffer_[i];
+                }
+                uint32_t amplitude = maxIR - minIR;
+                currentData_.signalAmplitude = amplitude;
+                
+                // 振幅が小さすぎる(強すぎ/弱すぎ) または 大きすぎる(ノイズ) 場合は警告
+                if (amplitude < 1000 || amplitude > 15000) {
+                    currentData_.signalPoor = true;
+                } else {
+                    currentData_.signalPoor = false;
+                }
+
                 maxim_heart_rate_and_oxygen_saturation(
                     irBuffer_, BUFFER_LENGTH, redBuffer_,
                     &lastSpo2_, &spo2Valid_,
@@ -167,6 +189,7 @@ void Max30102Sensor::resetPpgState() {
     particleSensor_.setPulseAmplitudeIR(10);
     bufferIndex_ = 0;
     currentData_.calculatedValid = false;
+    currentData_.signalPoor = false;
     currentData_.heartRateBpm = 0;
     currentData_.spo2Percent = 0;
     currentData_.state = ppgState_;

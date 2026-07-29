@@ -62,10 +62,12 @@ void loop() {
         } else if (snap.ppg.state == core::PpgState::Calibrating) {
             services::Logger::info("MAIN", "PPG: Calibrating (IR: %u)", snap.ppg.ir);
         } else if (snap.ppg.state == core::PpgState::Measuring) {
-            if (snap.ppg.calculatedValid) {
-                services::Logger::info("MAIN", "HR: %.1f bpm, SpO2: %.1f %%", snap.ppg.heartRateBpm, snap.ppg.spo2Percent);
+            if (snap.ppg.signalPoor) {
+                services::Logger::warn("MAIN", "PPG: Weak Signal (Adjust Pressure) [Amp: %u]", snap.ppg.signalAmplitude);
+            } else if (snap.ppg.calculatedValid) {
+                services::Logger::info("MAIN", "HR: %.1f bpm, SpO2: %.1f %% [Amp: %u]", snap.ppg.heartRateBpm, snap.ppg.spo2Percent, snap.ppg.signalAmplitude);
             } else {
-                services::Logger::info("MAIN", "PPG: Measuring (Calc...)");
+                services::Logger::info("MAIN", "PPG: Measuring (Calc...) [Amp: %u]", snap.ppg.signalAmplitude);
             }
         }
     }

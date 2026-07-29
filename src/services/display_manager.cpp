@@ -81,7 +81,10 @@ void DisplayManager::renderOverview(const core::SensorSnapshot& snapshot, const 
         display_.printf("HR   : Calibrating\n");
         display_.printf("SpO2 : -- %%\n");
     } else if (snapshot.ppg.state == core::PpgState::Measuring) {
-        if (snapshot.ppg.calculatedValid) {
+        if (snapshot.ppg.signalPoor) {
+            display_.printf("HR   : Weak Sig\n");
+            display_.printf("SpO2 : Adjust Prs\n");
+        } else if (snapshot.ppg.calculatedValid) {
             display_.printf("HR   : %.1f bpm\n", snapshot.ppg.heartRateBpm);
             display_.printf("SpO2 : %.1f %%\n", snapshot.ppg.spo2Percent);
         } else {

@@ -1,55 +1,28 @@
-# XIAO ESP32S3 アーキテクチャ実装計画およびロードマップ
+# XIAO ESP32S3 アーキテクチャ実装計画 (指の圧力・波形品質検知 - アプローチA 改良版)
 
-## 開発ロードマップ (アーキテクチャ仕様書に基づく)
+## 目的
+ソフトウェア（波形解析）を用いて、MAX30102の測定中の「指の押し付け圧」が不適切であることを検知し、ユーザーが圧力を変更した際に「自動でLED電流を再キャリブレーションする」自己修復システム（アプローチA・改良版）を実装します。
 
-- **[Step 1] HAL・共通基盤の整備（✅ 完了）**
-- **[Step 2] 状態管理とディスプレイ基盤（✅ 完了）**
-- **[Step 3] SHT45 (温湿度センサ) の統合（✅ 完了）**
-- **[Step 4] BMP585 (気圧センサ) の統合（✅ 完了）**
-- **[Step 5] SCD41 (CO2センサ) の統合（✅ 完了）**
-- **[Step 6] MAX30102 (脈波・血中酸素センサ) の統合（✅ 完了）**
-- **[Step 7] MAX30102 信号処理（✅ 完了）**
-- **[Step 8] システム全体の最適化・安定化（← 現在のフェーズ）**
-  - **自動キャリブレーション（Auto-LED Current）の実装**
-  - 指数平滑移動平均(EMA)フィルタの導入
-  - UIへのステータス（指なし、キャリブレーション中など）反映
-- **[Step 9] 高度なDSPアルゴリズムの探求 (Future Work)**
-  - アナログ・デバイセズ技術記事「RAQ Issue 230」に基づく、離散周期変換（DPT: Discrete Period Transform）を用いた耐モーションアーティファクトアルゴリズムの研究と実装
+## User Review Required
+> [!IMPORTANT]
+> ソフトウェアのみで圧力調整とキャリブレーションの矛盾を解決するためのロジック（連続DC監視と再キャリブレーション）をご提案します。この内容で進めてよろしいでしょうか？
 
----
+## Proposed Changes (自己修復型キャリブレーションと振幅判定)
 
-## Proposed Changes (Step 8: オートキャリブレーションと最適化)
-
-### 1. 状態定義の追加
-#### [MODIFY] [include/core/sensor_types.h](file:///Users/atsushi/Documents/PlatformIO/Projects/env_bio_sense/include/core/sensor_types.h)
-- 脈波センサの内部状態を示す `PpgState` Enum を追加します。
-  - `NoFinger`: 指が置かれていない状態
-  - `Calibrating`: LED電流の自動調整中
-  - `Measuring`: 測定および計算実行中
-- `PpgData` 構造体に `PpgState state` を追加します。
-
-### 2. オートキャリブレーション・ステートマシンの実装
-#### [MODIFY] [include/drivers/sensors/max30102_sensor.h](file:///Users/atsushi/Documents/PlatformIO/Projects/env_bio_sense/include/drivers/sensors/max30102_sensor.h)
+### 1. DCベースラインの連続監視と自動再キャリブレーション
 #### [MODIFY] [src/drivers/sensors/max30102_sensor.cpp](file:///Users/atsushi/Documents/PlatformIO/Projects/env_bio_sense/src/drivers/sensors/max30102_sensor.cpp)
-- `update()` メソッド内で以下のステートマシンを稼働させます。
-  1. **[NoFinger]**: IR値が一定の閾値（例: 20,000）を下回る場合は「指なし」と判定し、LED電流を最小（省電力）にして待機します。計算結果はリセットします。
-  2. **[Calibrating]**: 指が検出されたら、LED電流を低め（例: 10/255）から開始し、IR値が適正範囲（80,000 〜 120,000）に収まるように1サンプルごとにLED電流（Red/IR共に）を増減させます。
-  3. **[Measuring]**: 適正範囲に収まったらその電流値で固定し、スライディングウィンドウによるHR/SpO2計算を開始します。
-  4. **[Fallback]**: 5秒以上キャリブレーションが終わらない場合は、測定を強行します。
+- 現在は `NoFinger` 状態から指を乗せた最初の1回しかキャリブレーションを行っていません。
+- **改良**: `Measuring`（測定中）状態であっても、毎サンプルの IR 値（DCベースライン）を監視します。
+- ユーザーが押し付け圧を変えた結果、IR値が `50,000 未満` または `150,000 超` にズレた場合、直ちに `Measuring` を中断して `Calibrating` 状態に移行します。
+- これにより、「圧を変える → ベースラインが崩れる → 自動でLED再調整 → 適正な光量で測定再開」というループが完成します。
 
-### 3. スムージング（移動平均）と外れ値除外
+### 2. AC振幅の適正閾値の修正
 #### [MODIFY] [src/drivers/sensors/max30102_sensor.cpp](file:///Users/atsushi/Documents/PlatformIO/Projects/env_bio_sense/src/drivers/sensors/max30102_sensor.cpp)
-- 算出されたHR/SpO2に対し、**指数平滑移動平均（EMA）** フィルタをかけて急激なブレを抑え込みます。（例: `新値 = 0.2*実測 + 0.8*前回値`）
-- `40未満` や `200超` の非現実的なHRが算出された場合は、計算をスキップして前回の正常値を保持します。
-
-### 4. UI へのステータスフィードバック
-#### [MODIFY] [src/services/display_manager.cpp](file:///Users/atsushi/Documents/PlatformIO/Projects/env_bio_sense/src/services/display_manager.cpp)
-#### [MODIFY] [src/main.cpp](file:///Users/atsushi/Documents/PlatformIO/Projects/env_bio_sense/src/main.cpp)
-- OLED表示を分岐し、現在の `PpgState` に応じたメッセージを表示します。
-  - `NoFinger` → `HR: No Finger`
-  - `Calibrating` → `HR: Calibrating...`
-  - `Measuring` → `HR: 90.5 bpm`
+- ログでいただいた数値を元に、適正なAC振幅の範囲を調整します。
+- 振幅が `1,000 未満`（弱すぎる/強すぎて血流停止）または `15,000 超`（ブレすぎ/ノイズ）の場合に `signalPoor = true` とします。
 
 ## Verification Plan
-- ビルド・実行後、指を乗せるとOLEDが `Calibrating...` になり、その後安定したHRが表示されることを確認します。
-- 指を離すと速やかに `No Finger` に戻ることを確認します。
+1. 指を乗せると通常通りキャリブレーションが走り、測定が開始される。
+2. その状態で指の押し付け圧を大きく変える（強くする、弱くする）。
+3. 圧を変えた瞬間にシリアルログで `Calibrating` が再実行されることを確認する。
+4. 圧が極端に悪い場合は `Weak Sig / Adjust Prs` の警告が出続け、適正な圧になると数値（HR/SpO2）が表示されることを確認する。

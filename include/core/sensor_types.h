@@ -55,6 +55,8 @@ struct PpgData {
     uint32_t timestampMs {};
     bool rawValid {};
     bool calculatedValid {};
+    bool signalPoor {false}; // アプローチA: 波形品質フラグ
+    uint32_t signalAmplitude {0};
 };
 
 template <typename T>
