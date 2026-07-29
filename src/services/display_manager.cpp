@@ -71,8 +71,27 @@ void DisplayManager::renderOverview(const core::SensorSnapshot& snapshot, const 
         display_.println();
     }
     
-    display_.printf("HR   : -- bpm\n");
-    display_.printf("SpO2 : -- %%\n");
+    if (status.max30102State == core::DeviceState::Error || status.max30102State == core::DeviceState::Offline) {
+        display_.printf("HR   : Error\n");
+        display_.printf("SpO2 : Error\n");
+    } else if (snapshot.ppg.state == core::PpgState::NoFinger) {
+        display_.printf("HR   : No Finger\n");
+        display_.printf("SpO2 : -- %%\n");
+    } else if (snapshot.ppg.state == core::PpgState::Calibrating) {
+        display_.printf("HR   : Calibrating\n");
+        display_.printf("SpO2 : -- %%\n");
+    } else if (snapshot.ppg.state == core::PpgState::Measuring) {
+        if (snapshot.ppg.calculatedValid) {
+            display_.printf("HR   : %.1f bpm\n", snapshot.ppg.heartRateBpm);
+            display_.printf("SpO2 : %.1f %%\n", snapshot.ppg.spo2Percent);
+        } else {
+            display_.printf("HR   : calc...\n");
+            display_.printf("SpO2 : calc...\n");
+        }
+    } else {
+        display_.printf("HR   : -- bpm\n");
+        display_.printf("SpO2 : -- %%\n");
+    }
 }
 
 } // namespace services

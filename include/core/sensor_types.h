@@ -40,7 +40,14 @@ struct EnvironmentData {
     bool valid {};
 };
 
+enum class PpgState : uint8_t {
+    NoFinger,
+    Calibrating,
+    Measuring
+};
+
 struct PpgData {
+    PpgState state {PpgState::NoFinger};
     uint32_t red {};
     uint32_t ir {};
     float heartRateBpm {};

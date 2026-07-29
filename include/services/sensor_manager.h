@@ -4,6 +4,7 @@
 #include "drivers/sensors/sht45_sensor.h"
 #include "drivers/sensors/bmp585_sensor.h"
 #include "drivers/sensors/scd41_sensor.h"
+#include "drivers/sensors/max30102_sensor.h"
 #include <cstdint>
 
 namespace services {
@@ -23,6 +24,7 @@ private:
     drivers::sensors::Sht45Sensor sht45_;
     drivers::sensors::Bmp585Sensor bmp585_;
     drivers::sensors::Scd41Sensor scd41_;
+    drivers::sensors::Max30102Sensor max30102_;
 };
 
 } // namespace services

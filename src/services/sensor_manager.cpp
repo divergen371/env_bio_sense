@@ -21,9 +21,13 @@ bool SensorManager::begin() {
         services::Logger::error("SensorMgr", "Failed to initialize SCD41");
     }
 
+    if (!max30102_.begin()) {
+        services::Logger::error("SensorMgr", "Failed to initialize MAX30102");
+    }
+
     Logger::info("SensorMgr", "Sensor Manager initialized.");
     
-    status_.max30102State = core::DeviceState::Unknown;
+    status_.max30102State = max30102_.state();
     
     return true;
 }
@@ -31,15 +35,25 @@ bool SensorManager::begin() {
 void SensorManager::update(uint32_t nowMs) {
     status_.uptimeMs = nowMs;
     
-    // センサ更新
-    sht45_.update(nowMs);
-    status_.sht45State = sht45_.state();
+    static uint32_t lastEnvUpdateMs = 0;
     
-    bmp585_.update(nowMs);
-    status_.bmp585State = bmp585_.state();
+    // 環境センサ類は 1000ms 間隔で更新
+    if (nowMs - lastEnvUpdateMs >= 1000) {
+        lastEnvUpdateMs = nowMs;
+        
+        sht45_.update(nowMs);
+        status_.sht45State = sht45_.state();
+        
+        bmp585_.update(nowMs);
+        status_.bmp585State = bmp585_.state();
+        
+        scd41_.update(nowMs);
+        status_.scd41State = scd41_.state();
+    }
     
-    scd41_.update(nowMs);
-    status_.scd41State = scd41_.state();
+    // MAX30102 (脈波センサ) は FIFO の取りこぼしを防ぐため常に更新する
+    max30102_.update(nowMs);
+    status_.max30102State = max30102_.state();
     
     // スナップショットに反映
     bool envValid = false;
@@ -54,6 +68,11 @@ void SensorManager::update(uint32_t nowMs) {
     }
     
     snapshot_.environment.valid = envValid;
+
+    // --- PPG Data Aggregation ---
+    if (max30102_.readPpg(snapshot_.ppg)) {
+        // Step 6 では生データのみが反映される
+    }
 }
 
 } // namespace services

@@ -43,11 +43,8 @@ void loop() {
     static uint32_t previousSensorMs = 0;
     uint32_t nowMs = millis();
 
-    // 1000msごとにセンサ値を更新 (現在はモック)
-    if (nowMs - previousSensorMs >= 1000) {
-        previousSensorMs = nowMs;
-        sensorManager.update(nowMs);
-    }
+    // センサ更新 (内部で環境系は1000ms間隔、PPG系は常時更新に制御)
+    sensorManager.update(nowMs);
 
     // 500msごとにOLEDを更新
     if (nowMs - previousDisplayMs >= 500) {
@@ -56,12 +53,20 @@ void loop() {
     }
 
     static uint32_t previousLogMs = 0;
-    // 5000msごとにINTピン状態をログ出力
-    if (nowMs - previousLogMs >= 5000) {
+    // 2000msごとにPPGの計算結果(HR/SpO2)または生データをシリアルに出力
+    if (nowMs - previousLogMs >= 2000) {
         previousLogMs = nowMs;
-        services::Logger::info("MAIN", "INT levels: MAX30102=%d, BMP585=%d",
-            digitalRead(hal::pins::MAX30102_INT),
-            digitalRead(hal::pins::BMP585_INT)
-        );
+        const auto& snap = sensorManager.snapshot();
+        if (snap.ppg.state == core::PpgState::NoFinger) {
+            services::Logger::info("MAIN", "PPG: No Finger");
+        } else if (snap.ppg.state == core::PpgState::Calibrating) {
+            services::Logger::info("MAIN", "PPG: Calibrating (IR: %u)", snap.ppg.ir);
+        } else if (snap.ppg.state == core::PpgState::Measuring) {
+            if (snap.ppg.calculatedValid) {
+                services::Logger::info("MAIN", "HR: %.1f bpm, SpO2: %.1f %%", snap.ppg.heartRateBpm, snap.ppg.spo2Percent);
+            } else {
+                services::Logger::info("MAIN", "PPG: Measuring (Calc...)");
+            }
+        }
     }
 }
