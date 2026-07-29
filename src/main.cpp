@@ -2,6 +2,11 @@
 #include "hal/pins.h"
 #include "hal/i2c_bus.h"
 #include "services/logger.h"
+#include "services/sensor_manager.h"
+#include "services/display_manager.h"
+
+services::SensorManager sensorManager;
+services::DisplayManager displayManager;
 
 void setup() {
     services::Logger::init(115200);
@@ -24,16 +29,36 @@ void setup() {
     services::Logger::info("MAIN", "MAX30102 INT: D2 / GPIO%u", hal::pins::MAX30102_INT);
     services::Logger::info("MAIN", "BMP585 INT: D3 / GPIO%u", hal::pins::BMP585_INT);
 
+    // I2Cバス初期化とスキャン
     hal::I2cBus::begin();
     hal::I2cBus::scan();
+
+    // サービス初期化
+    sensorManager.begin();
+    displayManager.begin();
 }
 
 void loop() {
-    static uint32_t previousScanMs = 0;
+    static uint32_t previousDisplayMs = 0;
+    static uint32_t previousSensorMs = 0;
+    uint32_t nowMs = millis();
 
-    if (millis() - previousScanMs >= 5000) {
-        previousScanMs = millis();
+    // 1000msごとにセンサ値を更新 (現在はモック)
+    if (nowMs - previousSensorMs >= 1000) {
+        previousSensorMs = nowMs;
+        sensorManager.update(nowMs);
+    }
 
+    // 500msごとにOLEDを更新
+    if (nowMs - previousDisplayMs >= 500) {
+        previousDisplayMs = nowMs;
+        displayManager.render(sensorManager.snapshot(), sensorManager.status(), nowMs);
+    }
+
+    static uint32_t previousLogMs = 0;
+    // 5000msごとにINTピン状態をログ出力
+    if (nowMs - previousLogMs >= 5000) {
+        previousLogMs = nowMs;
         services::Logger::info("MAIN", "INT levels: MAX30102=%d, BMP585=%d",
             digitalRead(hal::pins::MAX30102_INT),
             digitalRead(hal::pins::BMP585_INT)

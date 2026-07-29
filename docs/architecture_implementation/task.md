@@ -1,10 +1,12 @@
-# XIAO ESP32S3 アーキテクチャ実装 (Step 1) タスクリスト
+# XIAO ESP32S3 アーキテクチャ実装 (Step 2) タスクリスト
 
-- `[x]` `include/hal/pins.h` を作成する
-- `[x]` `include/hal/i2c_bus.h` を作成する
-- `[x]` `src/hal/i2c_bus.cpp` を作成する
-- `[x]` `include/services/logger.h` を作成する
-- `[x]` `src/services/logger.cpp` を作成する
-- `[x]` `src/main.cpp` を修正する
+- `[x]` `platformio.ini` にライブラリ依存を追加する
+- `[x]` `include/core/sensor_types.h` を作成する
+- `[x]` `include/core/sensor_snapshot.h` を作成する
+- `[x]` `include/services/sensor_manager.h` を作成する
+- `[x]` `src/services/sensor_manager.cpp` を作成する
+- `[x]` `include/services/display_manager.h` を作成する
+- `[x]` `src/services/display_manager.cpp` を作成する
+- `[x]` `src/main.cpp` を修正し、`SensorManager` と `DisplayManager` を初期化・呼び出しする
 - `[x]` `README.md` を更新する
-- `[ ]` `pio run` でビルドが通るか確認する
+- `[ ]` コンパイルと実機確認を依頼する
