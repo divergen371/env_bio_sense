@@ -5,25 +5,34 @@ namespace services {
 
 bool SensorManager::begin() {
     Logger::info("SensorMgr", "Initializing Sensor Manager...");
-    // 本来はここで各センサのbegin()を呼ぶ
-    // 今回はモックとして状態を準備中(Initializing)からReadyにする
-    status_.sht45State = core::DeviceState::Ready;
-    status_.bmp585State = core::DeviceState::Ready;
-    status_.scd41State = core::DeviceState::Ready;
-    status_.max30102State = core::DeviceState::Ready;
+    
+    if (sht45_.begin()) {
+        status_.sht45State = sht45_.state();
+    } else {
+        Logger::error("SensorMgr", "Failed to initialize SHT45");
+        status_.sht45State = core::DeviceState::Error;
+    }
+    
+    status_.bmp585State = core::DeviceState::Unknown;
+    status_.scd41State = core::DeviceState::Unknown;
+    status_.max30102State = core::DeviceState::Unknown;
     
     return true;
 }
 
 void SensorManager::update(uint32_t nowMs) {
     status_.uptimeMs = nowMs;
-    // 今回はモックデータを入れる（OLED表示確認用）
-    snapshot_.environment.temperatureC = 25.5f;
-    snapshot_.environment.humidityRh = 45.2f;
-    snapshot_.environment.pressureHpa = 1013.2f;
-    snapshot_.environment.co2Ppm = 400;
-    snapshot_.environment.valid = true;
-    snapshot_.environment.timestampMs = nowMs;
+    
+    // センサ更新
+    sht45_.update(nowMs);
+    status_.sht45State = sht45_.state();
+    
+    // スナップショットに反映
+    if (sht45_.readEnvironment(snapshot_.environment)) {
+        // sht45_.readEnvironment が内部で out.valid = true 等を行う
+    } else {
+        snapshot_.environment.valid = false;
+    }
 }
 
 } // namespace services

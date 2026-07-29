@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/sensor_snapshot.h"
+#include "drivers/sensors/sht45_sensor.h"
 #include <cstdint>
 
 namespace services {
@@ -16,6 +17,8 @@ public:
 private:
     core::SensorSnapshot snapshot_ {};
     core::SystemStatus status_ {};
+    
+    drivers::sensors::Sht45Sensor sht45_;
 };
 
 } // namespace services
