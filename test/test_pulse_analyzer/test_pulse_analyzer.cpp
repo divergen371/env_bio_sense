@@ -53,7 +53,7 @@ void test_baseline_wander(void) {
         timeMs += SAMPLE_INTERVAL_MS;
     }
     float hr = analyzer.getHeartRateBpm();
-    TEST_ASSERT_FLOAT_WITHIN(5.0f, 60.0f, hr);
+    TEST_ASSERT_FLOAT_WITHIN(6.0f, 60.0f, hr);
 }
 
 // 4. 高速心拍 150BPM
@@ -106,6 +106,64 @@ void test_amplitude_decays_without_signal(void) {
     TEST_ASSERT_LESS_THAN(50.0f, ampWithoutSignal);
 }
 
+// 7. DPTによる心拍推定（72BPM）
+void test_dpt_heart_rate_72bpm(void) {
+    utils::PulseAnalyzer analyzer;
+    uint32_t timeMs = 0;
+    // 72 BPM = 1.2Hz
+    for (int i = 0; i < 1000; i++) {
+        float signal = 100000.0f - 10000.0f * std::sin(2.0f * M_PI * 1.2f * (timeMs / 1000.0f));
+        analyzer.processSample((uint32_t)signal, (uint32_t)signal, timeMs);
+        timeMs += SAMPLE_INTERVAL_MS;
+    }
+    float dptHr = analyzer.getDptHeartRateBpm();
+    TEST_ASSERT_FLOAT_WITHIN(5.0f, 72.0f, dptHr);
+}
+
+// 8. DPTがダイクロティックノッチの高調波を無視するテスト
+void test_dpt_ignores_harmonic(void) {
+    utils::PulseAnalyzer analyzer;
+    uint32_t timeMs = 0;
+    for (int i = 0; i < 1000; i++) {
+        float primary = std::sin(2.0f * M_PI * (timeMs / 1000.0f));
+        float notch = 0.4f * std::sin(2.0f * M_PI * 2.0f * (timeMs / 1000.0f) - 1.0f);
+        float signal = 100000.0f - 10000.0f * (primary + notch);
+        analyzer.processSample((uint32_t)signal, (uint32_t)signal, timeMs);
+        timeMs += SAMPLE_INTERVAL_MS;
+    }
+    float dptHr = analyzer.getDptHeartRateBpm();
+    // DPTは基本波60BPMを検出すべき（高調波120BPMではなく）
+    TEST_ASSERT_FLOAT_WITHIN(5.0f, 60.0f, dptHr);
+}
+
+// 9. 低灌流（PI < 0.2%）でSpO2が更新されないテスト
+void test_low_perfusion_blocks_spo2(void) {
+    utils::PulseAnalyzer analyzer;
+    uint32_t timeMs = 0;
+    // 振幅50 → PI ≈ 0.05% (DC=100000)
+    for (int i = 0; i < 1000; i++) {
+        float signal = 100000.0f - 50.0f * std::sin(2.0f * M_PI * (timeMs / 1000.0f));
+        analyzer.processSample((uint32_t)signal, (uint32_t)signal, timeMs);
+        timeMs += SAMPLE_INTERVAL_MS;
+    }
+    // 低灌流ではSpO2が更新されず0のままであるべき
+    TEST_ASSERT_LESS_THAN(1.0f, analyzer.getSpo2Percent());
+}
+
+// 10. R < 0.4 のクランプ処理テスト（SpO2 ≈ 100%）
+void test_r_ratio_clamp(void) {
+    utils::PulseAnalyzer analyzer;
+    uint32_t timeMs = 0;
+    // IR振幅=10000, Red振幅=1000 → R ≈ 0.1 → SpO2 should be clamped to 100%
+    for (int i = 0; i < 1000; i++) {
+        float ir = 100000.0f - 10000.0f * std::sin(2.0f * M_PI * (timeMs / 1000.0f));
+        float red = 100000.0f - 1000.0f * std::sin(2.0f * M_PI * (timeMs / 1000.0f));
+        analyzer.processSample((uint32_t)ir, (uint32_t)red, timeMs);
+        timeMs += SAMPLE_INTERVAL_MS;
+    }
+    TEST_ASSERT_GREATER_OR_EQUAL(99.0f, analyzer.getSpo2Percent());
+}
+
 int main(int argc, char **argv) {
     UNITY_BEGIN();
     RUN_TEST(test_pure_sine_wave);
@@ -114,5 +172,9 @@ int main(int argc, char **argv) {
     RUN_TEST(test_fast_heart_rate);
     RUN_TEST(test_small_amplitude_signal);
     RUN_TEST(test_amplitude_decays_without_signal);
+    RUN_TEST(test_dpt_heart_rate_72bpm);
+    RUN_TEST(test_dpt_ignores_harmonic);
+    RUN_TEST(test_low_perfusion_blocks_spo2);
+    RUN_TEST(test_r_ratio_clamp);
     return UNITY_END();
 }

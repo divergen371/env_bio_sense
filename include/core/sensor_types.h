@@ -60,6 +60,9 @@ struct PpgData {
     uint32_t ir {};
     float heartRateBpm {};
     float spo2Percent {};
+    float dptHeartRateBpm {};   // DPT（周波数領域）による心拍推定値
+    float dptSpo2Percent {};    // DPTによるSpO2推定値
+    float perfusionIndex {};    // 灌流指数 PI (%)
     uint32_t timestampMs {};
     bool rawValid {};
     bool calculatedValid {};

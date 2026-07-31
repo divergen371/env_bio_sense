@@ -113,7 +113,9 @@ void Max30102Sensor::update(uint32_t nowMs) {
             currentData_.signalAmplitude = (uint32_t)amplitude;
             
             // 閾値を大幅に緩和（500未満、または30000超え のみ警告）
-            if (amplitude < 50.0f || amplitude > 30000.0f) {
+            // 加えて、PIが20%を超えるような異常な大振幅も体動・ノイズとみなして警告
+            float pi = analyzer_.getPerfusionIndex();
+            if (amplitude < 50.0f || amplitude > 30000.0f || pi > 20.0f) {
                 currentData_.signalPoor = true;
             } else {
                 currentData_.signalPoor = false;
@@ -121,11 +123,28 @@ void Max30102Sensor::update(uint32_t nowMs) {
 
             float hr = analyzer_.getHeartRateBpm();
             float spo2 = analyzer_.getSpo2Percent();
+            float dptHr = analyzer_.getDptHeartRateBpm();
+            float dptSpo2 = analyzer_.getDptSpo2Percent();
             
+            currentData_.dptHeartRateBpm = dptHr;
+            currentData_.dptSpo2Percent = dptSpo2;
+            currentData_.perfusionIndex = analyzer_.getPerfusionIndex();
+            
+            // ピーク検出が有効な場合のみ数値を画面に送る。
+            // 以前はピーク検出ロスト時にDPTへフォールバックしていたが、
+            // 体動（指の揺れ）による巨大なノイズ周波数をDPTが拾ってしまい
+            // 画面の数値が暴れる原因となっていたため、フォールバックを廃止する。
             if (hr > 0.0f && spo2 > 0.0f) {
                 currentData_.heartRateBpm = hr;
                 currentData_.spo2Percent = spo2;
                 currentData_.calculatedValid = true;
+            } else {
+                // ピーク検出が途絶えた（タイムアウトした）場合は計算中(ロスト)扱いとする
+                // ただし物理的なシグナル強度(amplitude/pi)が正常なら signalPoor は上書きしない
+                // これにより、UI上は「Measuring (Calc...)」となる
+                currentData_.heartRateBpm = 0.0f;
+                currentData_.spo2Percent = 0.0f;
+                currentData_.calculatedValid = false;
             }
         }
 
@@ -153,6 +172,9 @@ void Max30102Sensor::resetPpgState() {
     currentData_.signalPoor = false;
     currentData_.heartRateBpm = 0;
     currentData_.spo2Percent = 0;
+    currentData_.dptHeartRateBpm = 0;
+    currentData_.dptSpo2Percent = 0;
+    currentData_.perfusionIndex = 0;
     currentData_.state = ppgState_;
 }
 

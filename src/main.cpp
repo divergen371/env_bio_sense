@@ -72,7 +72,10 @@ void loop() {
             if (snap.ppg.signalPoor) {
                 services::Logger::warn("MAIN", "PPG: Weak Signal (Adjust Pressure) [Amp: %u]", snap.ppg.signalAmplitude);
             } else if (snap.ppg.calculatedValid) {
-                services::Logger::info("MAIN", "HR: %.1f bpm, SpO2: %.1f %% [Amp: %u]", snap.ppg.heartRateBpm, snap.ppg.spo2Percent, snap.ppg.signalAmplitude);
+                services::Logger::info("MAIN", "HR: %.1f (DPT: %.1f) bpm, SpO2: %.1f %% (DPT: %.1f %%), PI: %.1f %% [Amp: %u]",
+                    snap.ppg.heartRateBpm, snap.ppg.dptHeartRateBpm,
+                    snap.ppg.spo2Percent, snap.ppg.dptSpo2Percent,
+                    snap.ppg.perfusionIndex, snap.ppg.signalAmplitude);
             } else {
                 services::Logger::info("MAIN", "PPG: Measuring (Calc...) [Amp: %u]", snap.ppg.signalAmplitude);
             }
