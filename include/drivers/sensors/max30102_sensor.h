@@ -2,6 +2,7 @@
 
 #include "drivers/sensors/sensor_interface.h"
 #include <MAX30105.h>
+#include "utils/pulse_analyzer.h"
 
 namespace drivers {
 namespace sensors {
@@ -31,25 +32,13 @@ private:
     core::PpgData currentData_;
     bool hasValidData_ {false};
 
-    // --- Step 7: HR/SpO2 Algorithm Variables ---
-    static constexpr int BUFFER_LENGTH = 100;
-    uint32_t irBuffer_[BUFFER_LENGTH] = {0};
-    uint32_t redBuffer_[BUFFER_LENGTH] = {0};
-    int bufferIndex_ = 0;
-    
-    // 計算結果保持
-    int32_t lastSpo2_ = 0;
-    int8_t spo2Valid_ = 0;
-    int32_t lastHeartRate_ = 0;
-    int8_t hrValid_ = 0;
+    // --- Step 9: Custom DSP Analyzer ---
+    utils::PulseAnalyzer analyzer_;
 
-    // --- Step 8: Calibration & EMA Filter Variables ---
+    // --- Step 8: Calibration Variables ---
     core::PpgState ppgState_ {core::PpgState::NoFinger};
     uint8_t currentLedBrightness_ {0};
     uint32_t calibStartMs_ {0};
-
-    float smoothedHr_ {0.0f};
-    float smoothedSpo2_ {0.0f};
 
     void resetPpgState();
 };

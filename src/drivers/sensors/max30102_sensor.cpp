@@ -1,7 +1,6 @@
 #include "drivers/sensors/max30102_sensor.h"
 #include "services/logger.h"
 #include <Wire.h>
-#include <spo2_algorithm.h>
 
 namespace drivers {
 namespace sensors {
@@ -68,7 +67,6 @@ void Max30102Sensor::update(uint32_t nowMs) {
             if (ir < 50000 || ir > 150000) {
                 ppgState_ = core::PpgState::Calibrating;
                 calibStartMs_ = nowMs;
-                bufferIndex_ = 0;
             }
         } else if (ppgState_ == core::PpgState::NoFinger) {
             // 指が検出された
@@ -77,7 +75,6 @@ void Max30102Sensor::update(uint32_t nowMs) {
             particleSensor_.setPulseAmplitudeRed(currentLedBrightness_);
             particleSensor_.setPulseAmplitudeIR(currentLedBrightness_);
             calibStartMs_ = nowMs;
-            bufferIndex_ = 0;
         }
 
         // 2. キャリブレーション中の処理
@@ -97,74 +94,36 @@ void Max30102Sensor::update(uint32_t nowMs) {
             } else {
                 // 適正範囲に入った、または限界
                 ppgState_ = core::PpgState::Measuring;
-                bufferIndex_ = 0;
             }
 
             // タイムアウトフォールバック (5秒)
             if (nowMs - calibStartMs_ > 5000) {
                 ppgState_ = core::PpgState::Measuring;
-                bufferIndex_ = 0;
             }
         }
 
         // 3. 測定中の処理
         if (ppgState_ == core::PpgState::Measuring) {
-            if (bufferIndex_ < BUFFER_LENGTH) {
-                redBuffer_[bufferIndex_] = red;
-                irBuffer_[bufferIndex_] = ir;
-                bufferIndex_++;
+            bool newBeat = analyzer_.processSample(ir, red, nowMs);
+            
+            // AC振幅（波形の大きさ）をチェックして押し付け圧を評価
+            float amplitude = analyzer_.getSignalAmplitude();
+            currentData_.signalAmplitude = (uint32_t)amplitude;
+            
+            // 閾値を大幅に緩和（500未満、または30000超え のみ警告）
+            if (amplitude < 50.0f || amplitude > 30000.0f) {
+                currentData_.signalPoor = true;
+            } else {
+                currentData_.signalPoor = false;
             }
 
-            if (bufferIndex_ == BUFFER_LENGTH) {
-                // AC振幅（波形の大きさ）をチェックして押し付け圧を評価
-                uint32_t minIR = 0xFFFFFFFF;
-                uint32_t maxIR = 0;
-                for (int i = 0; i < BUFFER_LENGTH; i++) {
-                    if (irBuffer_[i] < minIR) minIR = irBuffer_[i];
-                    if (irBuffer_[i] > maxIR) maxIR = irBuffer_[i];
-                }
-                uint32_t amplitude = maxIR - minIR;
-                currentData_.signalAmplitude = amplitude;
-                
-                // 閾値を大幅に緩和（500未満、または30000超え のみ警告）
-                if (amplitude < 500 || amplitude > 30000) {
-                    currentData_.signalPoor = true;
-                } else {
-                    currentData_.signalPoor = false;
-                }
-
-                maxim_heart_rate_and_oxygen_saturation(
-                    irBuffer_, BUFFER_LENGTH, redBuffer_,
-                    &lastSpo2_, &spo2Valid_,
-                    &lastHeartRate_, &hrValid_
-                );
-
-                const int shiftAmount = 25;
-                for (int i = shiftAmount; i < BUFFER_LENGTH; i++) {
-                    redBuffer_[i - shiftAmount] = redBuffer_[i];
-                    irBuffer_[i - shiftAmount] = irBuffer_[i];
-                }
-                bufferIndex_ = BUFFER_LENGTH - shiftAmount;
-
-                // 外れ値カットとEMAフィルタ
-                if (hrValid_ && spo2Valid_ && lastSpo2_ > 0 && lastHeartRate_ > 0) {
-                    if (lastHeartRate_ >= 40 && lastHeartRate_ <= 200) {
-                        float newHr = static_cast<float>(lastHeartRate_);
-                        float newSpo2 = static_cast<float>(lastSpo2_);
-                        
-                        if (!currentData_.calculatedValid) {
-                            smoothedHr_ = newHr;
-                            smoothedSpo2_ = newSpo2;
-                        } else {
-                            smoothedHr_ = (0.2f * newHr) + (0.8f * smoothedHr_);
-                            smoothedSpo2_ = (0.2f * newSpo2) + (0.8f * smoothedSpo2_);
-                        }
-                        
-                        currentData_.heartRateBpm = smoothedHr_;
-                        currentData_.spo2Percent = smoothedSpo2_;
-                        currentData_.calculatedValid = true;
-                    }
-                }
+            float hr = analyzer_.getHeartRateBpm();
+            float spo2 = analyzer_.getSpo2Percent();
+            
+            if (hr > 0.0f && spo2 > 0.0f) {
+                currentData_.heartRateBpm = hr;
+                currentData_.spo2Percent = spo2;
+                currentData_.calculatedValid = true;
             }
         }
 
@@ -187,7 +146,7 @@ void Max30102Sensor::resetPpgState() {
     currentLedBrightness_ = 10;
     particleSensor_.setPulseAmplitudeRed(0);
     particleSensor_.setPulseAmplitudeIR(10);
-    bufferIndex_ = 0;
+    analyzer_.reset();
     currentData_.calculatedValid = false;
     currentData_.signalPoor = false;
     currentData_.heartRateBpm = 0;
