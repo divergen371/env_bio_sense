@@ -25,18 +25,18 @@ bool Max30102Sensor::begin() {
 
     // 基本設定 (Sensor setup)
     byte ledBrightness = 10; // 初期値(待機用)
-    byte sampleAverage = 4;
-    byte ledMode = 2;
-    byte sampleRate = 100;
-    int pulseWidth = 411;
-    int adcRange = 4096;
+    byte sampleAverage = 4;  // 4サンプル移動平均（ノイズキャンセル）
+    byte ledMode = 2;        // Red + IR モード
+    byte sampleRate = 400;   // 400Hz設定（sampleAverage=4 により実効 100Hz = 10ms間隔）
+    int pulseWidth = 411;    // 411μs (18-bit 最高分解能)
+    int adcRange = 4096;     // 4096 nA フルスケールレンジ
     
     particleSensor_.setup(ledBrightness, sampleAverage, ledMode, sampleRate, pulseWidth, adcRange);
     resetPpgState();
 
     state_ = core::DeviceState::Ready;
     lastError_ = core::ErrorCode::None;
-    services::Logger::info("MAX30102", "MAX30102 configured and ready.");
+    services::Logger::info("MAX30102", "MAX30102 configured and ready (Effective 100Hz).");
     return true;
 }
 
@@ -81,10 +81,12 @@ void Max30102Sensor::update(uint32_t nowMs) {
         if (ppgState_ == core::PpgState::Calibrating) {
             bool adjusted = false;
             if (ir < 80000 && currentLedBrightness_ < 250) {
-                currentLedBrightness_ += 2;
+                currentLedBrightness_ += 5; // ステップ幅を+5に広げて高速調整
+                if (currentLedBrightness_ > 250) currentLedBrightness_ = 250;
                 adjusted = true;
             } else if (ir > 120000 && currentLedBrightness_ > 10) {
-                currentLedBrightness_ -= 2;
+                currentLedBrightness_ -= 5; // ステップ幅を-5に広げて高速調整
+                if (currentLedBrightness_ < 10) currentLedBrightness_ = 10;
                 adjusted = true;
             }
 
