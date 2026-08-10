@@ -11,7 +11,7 @@ struct SensorSnapshot {
 
 struct SystemStatus {
     DeviceState sht45State {DeviceState::Unknown};
-    DeviceState bmp585State {DeviceState::Unknown};
+    DeviceState bmp581State {DeviceState::Unknown};
     DeviceState scd41State {DeviceState::Unknown};
     DeviceState max30102State {DeviceState::Unknown};
     DeviceState displayState {DeviceState::Unknown};

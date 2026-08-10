@@ -1,6 +1,8 @@
 #include "drivers/sensors/scd41_sensor.h"
 #include "services/logger.h"
+#include "hal/i2c_bus.h"
 #include <Wire.h>
+#include <cmath>
 
 namespace drivers {
 namespace sensors {
@@ -13,12 +15,21 @@ bool Scd41Sensor::begin() {
     
     scd4x_.begin(Wire);
 
-    uint16_t error;
+    uint16_t error = 0;
     char errorMessage[256];
 
     // SCD41 は Periodic Measurement 実行中は他のコマンドを受け付けない場合があるため、
     // 念のため一度停止してから初期化する
-    error = scd4x_.stopPeriodicMeasurement();
+    {
+        hal::I2cLockGuard lock(100);
+        if (lock.acquired()) {
+            error = scd4x_.stopPeriodicMeasurement();
+        } else {
+            services::Logger::error("SCD41", "Failed to acquire lock for stopPeriodicMeasurement");
+            return false;
+        }
+    }
+    
     if (error) {
         services::Logger::warn("SCD41", "stopPeriodicMeasurement failed (might be ok if already stopped)");
     }
@@ -27,7 +38,16 @@ bool Scd41Sensor::begin() {
 
     // センサーのシリアルナンバーを取得して通信確認
     uint16_t serial0, serial1, serial2;
-    error = scd4x_.getSerialNumber(serial0, serial1, serial2);
+    {
+        hal::I2cLockGuard lock(100);
+        if (lock.acquired()) {
+            error = scd4x_.getSerialNumber(serial0, serial1, serial2);
+        } else {
+            services::Logger::error("SCD41", "Failed to acquire lock for getSerialNumber");
+            return false;
+        }
+    }
+    
     if (error) {
         errorToString(error, errorMessage, 256);
         services::Logger::error("SCD41", "Failed to get serial: %s", errorMessage);
@@ -39,7 +59,16 @@ bool Scd41Sensor::begin() {
     services::Logger::info("SCD41", "SCD41 initialized. Serial: 0x%04X%04X%04X", serial0, serial1, serial2);
 
     // Periodic Measurement 開始 (測定間隔は約5秒)
-    error = scd4x_.startPeriodicMeasurement();
+    {
+        hal::I2cLockGuard lock(100);
+        if (lock.acquired()) {
+            error = scd4x_.startPeriodicMeasurement();
+        } else {
+            services::Logger::error("SCD41", "Failed to acquire lock for startPeriodicMeasurement");
+            return false;
+        }
+    }
+
     if (error) {
         errorToString(error, errorMessage, 256);
         services::Logger::error("SCD41", "Failed to start periodic measurement: %s", errorMessage);
@@ -50,6 +79,10 @@ bool Scd41Sensor::begin() {
 
     state_ = core::DeviceState::Ready;
     lastError_ = core::ErrorCode::None;
+    successCount_ = 0;
+    readErrorCount_ = 0;
+    notReadyCount_ = 0;
+    consecutiveErrors_ = 0;
     return true;
 }
 
@@ -60,44 +93,66 @@ void Scd41Sensor::update(uint32_t nowMs) {
 
     // 最新のデータがないかポーリング (約5秒ごとに準備完了になる)
     bool isDataReady = false;
-    uint16_t error = scd4x_.getDataReadyFlag(isDataReady);
+    uint16_t error = 0;
+    
+    {
+        hal::I2cLockGuard lock(100);
+        if (!lock.acquired()) {
+            services::Logger::warn("SCD41", "SCD41 ts=%u lock=TIMEOUT ready=? read=SKIPPED", nowMs);
+            return;
+        }
+        error = scd4x_.getDataReadyFlag(isDataReady);
+    }
     
     if (error) {
-        // 通信エラー等
-        services::Logger::warn("SCD41", "Failed to check data ready flag");
+        readErrorCount_++;
+        consecutiveErrors_++;
+        services::Logger::warn("SCD41", "SCD41 ts=%u lock=OK ready=ERR error=%d read=SKIPPED", nowMs, error);
         return;
     }
 
     if (!isDataReady) {
+        notReadyCount_++;
         return; // データはまだない
     }
 
     // データ読み取り
-    uint16_t co2;
-    float temperature;
-    float humidity;
-    error = scd4x_.readMeasurement(co2, temperature, humidity);
+    uint16_t co2 = 0;
+    float temperature = NAN;
+    float humidity = NAN;
     
-    if (error) {
-        services::Logger::warn("SCD41", "Failed to read measurement");
+    {
+        hal::I2cLockGuard lock(100);
+        if (!lock.acquired()) {
+            services::Logger::warn("SCD41", "SCD41 ts=%u lock=TIMEOUT ready=1 read=SKIPPED", nowMs);
+            return;
+        }
+        error = scd4x_.readMeasurement(co2, temperature, humidity);
+    }
+    
+    if (error || co2 == 0 || !std::isfinite(temperature) || !std::isfinite(humidity)) {
+        readErrorCount_++;
+        consecutiveErrors_++;
+        hasValidData_ = false; // 無効値の場合は最新データを保持しない (stale状態にする)
         lastError_ = core::ErrorCode::ReadFailed;
+        services::Logger::warn("SCD41", "SCD41 ts=%u lock=OK ready=1 read=NG error=%d co2=%u temp=%.2f rh=%.2f (consec_err=%u)",
+            nowMs, error, co2, temperature, humidity, consecutiveErrors_);
         return;
     }
 
-    if (co2 == 0) {
-        // CO2 が 0 は無効なデータ
-        services::Logger::warn("SCD41", "Invalid measurement (CO2=0)");
-        return;
-    }
-
-    // データの保存（温度と湿度も取得して熱ごもり検知に使用する）
+    // 正常データの保存
     currentCo2Ppm_ = co2;
     currentTemperature_ = temperature;
     currentHumidity_ = humidity;
     
+    successCount_++;
+    consecutiveErrors_ = 0;
     hasValidData_ = true;
     lastSuccessMs_ = nowMs;
     lastError_ = core::ErrorCode::None;
+    
+    services::Logger::info("SCD41", "SCD41 ts=%u lock=OK ready=1 read=OK co2=%u temp=%.2f rh=%.2f crc=OK succ=%u err=%u nr=%u",
+        nowMs, co2, temperature, humidity, successCount_, readErrorCount_, notReadyCount_);
 }
 
 bool Scd41Sensor::readEnvironment(core::EnvironmentData& out) const {

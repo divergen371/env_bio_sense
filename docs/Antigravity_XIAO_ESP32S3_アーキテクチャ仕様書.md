@@ -10,11 +10,13 @@
 
 - SSD1306 OLED
 - SHT45
-- BMP585
+- BMP581
 - SCD41
+- SGP41
 - MAX30102
+- MicroSD Card (SPI)
 
-設計上は、BLE、Wi-Fi、MQTT、SDカード、LittleFS、LVGL、FreeRTOS、OTA、nRF54L15との通信追加を妨げないこと。
+設計上は、BLE、Wi-Fi、MQTT、LittleFS、LVGL、FreeRTOS、OTA、nRF54L15との通信追加を妨げないこと。
 
 ---
 
@@ -44,14 +46,16 @@ Application
 Services
   ├─ SensorManager
   ├─ DisplayManager
+  ├─ DataLogger
   ├─ Logger
   ├─ Scheduler
   └─ EventBus
 
 Drivers
   ├─ Sht45Sensor
-  ├─ Bmp585Sensor
+  ├─ Bmp581Sensor (extends Bmp5SensorBase)
   ├─ Scd41Sensor
+  ├─ Sgp41Sensor
   ├─ Max30102Sensor
   └─ Ssd1306Display
 
@@ -97,7 +101,9 @@ include/
     sensors/
       sensor_interface.h
       sht45_sensor.h
-      bmp585_sensor.h
+      bmp5_sensor_base.h
+      bmp581_sensor.h
+      bmp5_diagnostic.h
       scd41_sensor.h
       max30102_sensor.h
     display/
@@ -126,7 +132,8 @@ src/
   drivers/
     sensors/
       sht45_sensor.cpp
-      bmp585_sensor.cpp
+      bmp5_sensor_base.cpp
+      bmp5_diagnostic.cpp
       scd41_sensor.cpp
       max30102_sensor.cpp
     display/
@@ -152,7 +159,7 @@ docs/
 ```cpp
 enum class SensorId : uint8_t {
     Sht45,
-    Bmp585,
+    Bmp581,
     Scd41,
     Max30102
 };
@@ -246,7 +253,7 @@ public:
 };
 ```
 
-これにより、SCD41、SHT45、BMP585の差異を残しつつ、管理方法だけを揃える。
+これにより、SCD41、SHT45、BMP581の差異を残しつつ、管理方法だけを揃える。
 
 ---
 
@@ -273,7 +280,7 @@ public:
 
 private:
     Sht45Sensor sht45_;
-    Bmp585Sensor bmp585_;
+    Bmp581Sensor bmp581_;
     Scd41Sensor scd41_;
     Max30102Sensor max30102_;
 
@@ -287,7 +294,7 @@ private:
 | デバイス | 更新周期 |
 |---|---:|
 | SHT45 | 1000 ms |
-| BMP585 | 100〜1000 ms |
+| BMP581 | 100〜1000 ms |
 | SCD41 | 5000 ms程度、使用ライブラリ推奨に従う |
 | MAX30102 | FIFOまたはサンプルレートに従う |
 | OLED | 250〜1000 ms |
@@ -342,7 +349,7 @@ enum class EventType : uint8_t {
     SensorError,
     DataUpdated,
     Max30102Interrupt,
-    Bmp585Interrupt
+    Bmp5Interrupt
 };
 
 struct Event {
@@ -371,7 +378,7 @@ struct Event {
 - アクティブLowを前提
 - ISRではフラグ設定のみ
 
-## BMP585 INT
+## BMP5 INT
 
 - XIAO D3 / GPIO4
 - 極性と出力形式はドライバ初期化時に明示
@@ -379,14 +386,14 @@ struct Event {
 
 ```cpp
 volatile bool gMax30102IrqPending = false;
-volatile bool gBmp585IrqPending = false;
+volatile bool gBmp5IrqPending = false;
 
 void IRAM_ATTR onMax30102Interrupt() {
     gMax30102IrqPending = true;
 }
 
-void IRAM_ATTR onBmp585Interrupt() {
-    gBmp585IrqPending = true;
+void IRAM_ATTR onBmp5Interrupt() {
+    gBmp5IrqPending = true;
 }
 ```
 
@@ -601,7 +608,7 @@ struct Result {
 - CRCまたはライブラリエラー確認
 - 最終成功時刻保持
 
-## BMP585
+## BMP581
 
 - begin
 - 温度、気圧読み出し
@@ -666,7 +673,7 @@ constexpr uint32_t I2C_FREQUENCY_HZ = 100000;
 |---|---|
 | 0x3C | SSD1306 |
 | 0x44 | SHT45 |
-| 0x46 / 0x47 | BMP585 |
+| 0x47 | BMP581 |
 | 0x57 | MAX30102 |
 | 0x62 | SCD41 |
 

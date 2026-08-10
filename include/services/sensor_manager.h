@@ -2,8 +2,9 @@
 
 #include "core/sensor_snapshot.h"
 #include "drivers/sensors/sht45_sensor.h"
-#include "drivers/sensors/bmp585_sensor.h"
+#include "drivers/sensors/bmp581_sensor.h"
 #include "drivers/sensors/scd41_sensor.h"
+#include "drivers/sensors/sgp41_sensor.h"
 #include "drivers/sensors/max30102_sensor.h"
 #include <cstdint>
 
@@ -22,8 +23,9 @@ private:
     core::SystemStatus status_ {};
     
     drivers::sensors::Sht45Sensor sht45_;
-    drivers::sensors::Bmp585Sensor bmp585_;
+    drivers::sensors::Bmp581Sensor bmp581_;
     drivers::sensors::Scd41Sensor scd41_;
+    drivers::sensors::Sgp41Sensor sgp41_;
     drivers::sensors::Max30102Sensor max30102_;
 };
 

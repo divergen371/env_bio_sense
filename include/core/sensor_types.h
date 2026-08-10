@@ -6,9 +6,10 @@ namespace core {
 
 enum class SensorId : uint8_t {
     Sht45,
-    Bmp585,
+    Bmp581,
     Scd41,
-    Max30102
+    Max30102,
+    Sgp41
 };
 
 enum class DeviceState : uint8_t {
@@ -16,7 +17,9 @@ enum class DeviceState : uint8_t {
     Initializing,
     Ready,
     Degraded,
+    Warning,
     Offline,
+    RetryWait,
     Error
 };
 
@@ -43,9 +46,14 @@ struct EnvironmentData {
     uint16_t co2Ppm {};
     float scd41TemperatureC {};
     float scd41HumidityRh {};
+    int32_t vocIndex {};
+    int32_t noxIndex {};
     EnclosureWarning enclosureWarning {EnclosureWarning::Normal};
     uint32_t timestampMs {};
     bool valid {};
+    bool pressureValid {false};
+    bool pressureStale {false};
+    bool sgp41Valid {false};
 };
 
 enum class PpgState : uint8_t {

@@ -1,5 +1,6 @@
 #include "services/sensor_manager.h"
 #include "services/logger.h"
+#include "hal/i2c_bus.h"
 
 namespace services {
 
@@ -13,12 +14,16 @@ bool SensorManager::begin() {
         status_.sht45State = core::DeviceState::Error;
     }
     
-    if (!bmp585_.begin()) {
-        services::Logger::error("SensorMgr", "Failed to initialize BMP585");
+    if (!bmp581_.begin()) {
+        services::Logger::error("SensorMgr", "Failed to initialize BMP581");
     }
 
     if (!scd41_.begin()) {
         services::Logger::error("SensorMgr", "Failed to initialize SCD41");
+    }
+
+    if (!sgp41_.begin()) {
+        services::Logger::error("SensorMgr", "Failed to initialize SGP41");
     }
 
     if (!max30102_.begin()) {
@@ -44,11 +49,25 @@ void SensorManager::update(uint32_t nowMs) {
         sht45_.update(nowMs);
         status_.sht45State = sht45_.state();
         
-        bmp585_.update(nowMs);
-        status_.bmp585State = bmp585_.state();
+        bmp581_.update(nowMs);
+        status_.bmp581State = bmp581_.state();
         
         scd41_.update(nowMs);
         status_.scd41State = scd41_.state();
+        
+        // SGP41 needs temperature and humidity for compensation
+        // We prefer SHT45 data as it represents ambient air
+        float compTemp = NAN;
+        float compHum = NAN;
+        if (sht45_.state() == core::DeviceState::Ready) {
+            core::EnvironmentData envTmp;
+            if (sht45_.readEnvironment(envTmp)) {
+                compTemp = envTmp.temperatureC;
+                compHum = envTmp.humidityRh;
+            }
+        }
+        sgp41_.setCompensation(compTemp, compHum);
+        sgp41_.update(nowMs);
     }
     
     // MAX30102 (脈波センサ) は FIFO の取りこぼしを防ぐため常に更新する
@@ -60,10 +79,13 @@ void SensorManager::update(uint32_t nowMs) {
     if (sht45_.readEnvironment(snapshot_.environment)) {
         envValid = true;
     }
-    if (bmp585_.readEnvironment(snapshot_.environment)) {
+    if (bmp581_.readEnvironment(snapshot_.environment)) {
         envValid = true;
     }
     if (scd41_.readEnvironment(snapshot_.environment)) {
+        envValid = true;
+    }
+    if (sgp41_.readEnvironment(snapshot_.environment)) {
         envValid = true;
     }
     

@@ -6,7 +6,12 @@
 
 namespace hal {
 
+SemaphoreHandle_t I2cBus::mutex_ = nullptr;
+
 bool I2cBus::begin() {
+    if (mutex_ == nullptr) {
+        mutex_ = xSemaphoreCreateRecursiveMutex();
+    }
     Wire.begin(pins::I2C_SDA, pins::I2C_SCL);
     Wire.setClock(100000); // 初期は100kHz
     return true;
@@ -33,6 +38,27 @@ void I2cBus::scan() {
         services::Logger::warn("I2C", "No I2C devices found.");
     } else {
         services::Logger::info("I2C", "Scan complete: %u device(s) found.", deviceCount);
+    }
+}
+
+bool I2cBus::lock(uint32_t timeoutMs) {
+    if (mutex_ == nullptr) return true; // not initialized yet
+    return xSemaphoreTakeRecursive(mutex_, pdMS_TO_TICKS(timeoutMs)) == pdTRUE;
+}
+
+void I2cBus::unlock() {
+    if (mutex_ != nullptr) {
+        xSemaphoreGiveRecursive(mutex_);
+    }
+}
+
+I2cLockGuard::I2cLockGuard(uint32_t timeoutMs) {
+    acquired_ = I2cBus::lock(timeoutMs);
+}
+
+I2cLockGuard::~I2cLockGuard() {
+    if (acquired_) {
+        I2cBus::unlock();
     }
 }
 

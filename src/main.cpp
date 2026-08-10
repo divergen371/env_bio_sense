@@ -4,9 +4,11 @@
 #include "services/logger.h"
 #include "services/sensor_manager.h"
 #include "services/display_manager.h"
+#include "services/data_logger.h"
 
 services::SensorManager sensorManager;
 services::DisplayManager displayManager;
+services::DataLogger dataLogger;
 
 void setup() {
     services::Logger::init(115200);
@@ -22,12 +24,15 @@ void setup() {
     services::Logger::info("MAIN", "----------------------------");
 
     pinMode(hal::pins::MAX30102_INT, INPUT_PULLUP);
-    pinMode(hal::pins::BMP585_INT, INPUT_PULLUP);
+    pinMode(hal::pins::BMP5_INT, INPUT_PULLUP);
+    pinMode(hal::pins::USER_LED, OUTPUT);
+    digitalWrite(hal::pins::USER_LED, HIGH); // 消灯 (XIAOのLEDは通常Active-Low)
 
     services::Logger::info("MAIN", "SDA: D4 / GPIO%u", hal::pins::I2C_SDA);
     services::Logger::info("MAIN", "SCL: D5 / GPIO%u", hal::pins::I2C_SCL);
     services::Logger::info("MAIN", "MAX30102 INT: D2 / GPIO%u", hal::pins::MAX30102_INT);
-    services::Logger::info("MAIN", "BMP585 INT: D3 / GPIO%u", hal::pins::BMP585_INT);
+    services::Logger::info("MAIN", "BMP5 INT: D3 / GPIO%u", hal::pins::BMP5_INT);
+    services::Logger::info("MAIN", "--------------------------------");
 
     // I2Cバス初期化とスキャン
     hal::I2cBus::begin();
@@ -36,6 +41,12 @@ void setup() {
     // サービス初期化
     sensorManager.begin();
     displayManager.begin();
+    dataLogger.begin();
+
+    // SDカードが使用できない場合はLEDを点灯（XIAOはLOWで点灯）
+    if (!dataLogger.isAvailable()) {
+        digitalWrite(hal::pins::USER_LED, LOW);
+    }
 }
 
 void loop() {
@@ -80,5 +91,12 @@ void loop() {
                 services::Logger::info("MAIN", "PPG: Measuring (Calc...) [Amp: %u]", snap.ppg.signalAmplitude);
             }
         }
+    }
+
+    static uint32_t previousSdLogMs = 0;
+    // 10000ms (10秒) ごとにSDカードへロギング
+    if (nowMs - previousSdLogMs >= 10000) {
+        previousSdLogMs = nowMs;
+        dataLogger.logSnapshot(sensorManager.snapshot(), nowMs);
     }
 }
