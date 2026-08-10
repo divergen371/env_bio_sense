@@ -4,11 +4,11 @@
 #include "services/logger.h"
 #include "services/sensor_manager.h"
 #include "services/display_manager.h"
-#include "services/data_logger.h"
+#include "storage/storage_manager.h"
 
 services::SensorManager sensorManager;
 services::DisplayManager displayManager;
-services::DataLogger dataLogger;
+storage::StorageManager storageManager;
 
 void setup() {
     services::Logger::init(115200);
@@ -41,10 +41,10 @@ void setup() {
     // サービス初期化
     sensorManager.begin();
     displayManager.begin();
-    dataLogger.begin();
+    storageManager.begin();
 
     // SDカードが使用できない場合はLEDを点灯（XIAOはLOWで点灯）
-    if (!dataLogger.isAvailable()) {
+    if (!storageManager.isSdAvailable()) {
         digitalWrite(hal::pins::USER_LED, LOW);
     }
 }
@@ -94,9 +94,10 @@ void loop() {
     }
 
     static uint32_t previousSdLogMs = 0;
-    // 10000ms (10秒) ごとにSDカードへロギング
-    if (nowMs - previousSdLogMs >= 10000) {
+    // 5000ms (5秒) ごとにFRAMへ記録し、SDカードへフラッシュを試みる
+    if (nowMs - previousSdLogMs >= 5000) {
         previousSdLogMs = nowMs;
-        dataLogger.logSnapshot(sensorManager.snapshot(), nowMs);
+        storageManager.appendRecord(sensorManager.snapshot(), nowMs);
+        storageManager.flushPendingToSd();
     }
 }
