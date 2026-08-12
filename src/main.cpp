@@ -5,6 +5,7 @@
 #include "services/sensor_manager.h"
 #include "services/display_manager.h"
 #include "storage/storage_manager.h"
+#include "services/time_manager.h"
 
 services::SensorManager sensorManager;
 services::DisplayManager displayManager;
@@ -33,6 +34,9 @@ void setup() {
     services::Logger::info("MAIN", "MAX30102 INT: D2 / GPIO%u", hal::pins::MAX30102_INT);
     services::Logger::info("MAIN", "BMP5 INT: D3 / GPIO%u", hal::pins::BMP5_INT);
     services::Logger::info("MAIN", "--------------------------------");
+
+    // NTPサーバーから時刻を取得 (完了後にWi-Fi切断)
+    services::TimeManager::begin();
 
     // I2Cバス初期化とスキャン
     hal::I2cBus::begin();

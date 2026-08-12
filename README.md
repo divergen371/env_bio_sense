@@ -19,6 +19,13 @@ Seeed Studio XIAO ESP32S3 を用いた、複合環境センサおよび生体光
   - 128x64 SSD1306 ディスプレイへセンサデータ・心拍数・SpO2・警告メッセージをリアルタイム表示。
 - **ネイティブ単体テスト基盤 (`pio test -e native`)**:
   - Unityフレームワークおよび100Hz実効サンプリングレートに適合させた自動単体テスト環境。
+- **高信頼性二層ストレージ (FRAM + SD)**:
+  - 測定データをまずFRAM（MB85RC256V）のリングバッファにジャーナリングし、その後SDカードへフラッシュする二層設計。
+  - SDカード未挿入時・抜き差し中・書き込みエラー時にもデータはFRAM上に保持され、SD復旧時に自動で新規CSVファイルを作成し一括リカバリ（フラッシュ）します。
+  - FRAMのリングバッファ容量により、**SDカードが抜かれた状態でも最大448件（5秒間隔の記録で約37分間）のデータを欠損なくバッファリング**し、後から復旧させることが可能です。
+- **Wi-Fi + NTP時刻同期 (低ノイズ設計)**:
+  - 起動時にWi-Fiに接続しNTPから現在時刻を取得、SD上のファイルタイムスタンプを正確に設定します。
+  - 取得完了後は即座にWi-Fiを切断・停止し、微小信号を扱う生体センサへの電波ノイズ干渉と消費電力を極小化します。
 
 ---
 
@@ -29,8 +36,9 @@ Seeed Studio XIAO ESP32S3 を用いた、複合環境センサおよび生体光
 | **Seeed Studio XIAO ESP32S3** | - | メインMCU |
 | **SSD1306 OLED (128x64)** | I2C (0x3C) | リアルタイム情報表示 |
 | **SHT45** | I2C (0x44) | 高精度 温度・湿度計測 |
-| **BMP585** | I2C (0x47) | 高精度 気圧・温度計測 |
+| **BMP581** | I2C (0x47) | 高精度 気圧・温度計測 |
 | **SCD41** | I2C (0x62) | NDIR方式 CO2濃度・温度・湿度計測 / 密閉加熱警告 |
+| **SGP41** | I2C (0x59) | MOx方式 VOC (揮発性有機化合物) および NOx (窒素酸化物) 計測 |
 | **MAX30102** | I2C (0x57) | 赤外・赤色LED PPG光センサ（心拍数・SpO2計測） |
 
 ---
@@ -50,11 +58,12 @@ Seeed Studio XIAO ESP32S3 を用いた、複合環境センサおよび生体光
 ### [Step 3] SHT45 (温湿度センサ) の統合
 - `drivers/sensors/sht45_sensor.cpp`: SHT45ドライバ実装と `SensorManager` への統合
 
-### [Step 4] BMP585 (気圧センサ) の統合
-- `drivers/sensors/bmp585_sensor.cpp`: BMP585ドライバ実装（Bosch SensorAPI利用）
+### [Step 4] BMP581 (気圧センサ) の統合
+- `drivers/sensors/bmp5_sensor_base.cpp`: BMP581ドライバ実装（Bosch SensorAPI利用）
 
-### [Step 5] SCD41 (CO2センサ) の統合
+### [Step 5] SCD41 / SGP41 (空気質・ガスセンサ) の統合
 - `drivers/sensors/scd41_sensor.cpp`: NDIR CO2センサの統合およびエンクロージャー密閉加熱 (`HeatTrapped`) 警告ロジック実装
+- `drivers/sensors/sgp41_sensor.cpp`: MOxガスセンサ（Sensirion Gas Index Algorithm利用）による VOC / NOx インデックス算出ロジック実装
 
 ### [Step 6] MAX30102 (PPGセンサ) & 自作DSPアルゴリズム (`PulseAnalyzer`) の統合
 - **ハードウェア制御ライブラリの採用意図**:
@@ -62,6 +71,11 @@ Seeed Studio XIAO ESP32S3 を用いた、複合環境センサおよび生体光
 - `drivers/sensors/max30102_sensor.cpp`: MAX30102のI2C通信・FIFOデータ取得・LED輝度自動キャリブレーション制御
 - `utils/pulse_analyzer.cpp`: 自作脈波解析エンジン（DC除去、ローパス、動的移動平均ヒステリシスピーク検出、Maxim公式SpO2多項式）
 - `test/test_pulse_analyzer/test_pulse_analyzer.cpp`: 25Hz環境対応ネイティブ単体テスト環境
+
+### [Step 7] ストレージおよび時刻管理機能の統合
+- `storage/fram_storage.cpp`: MB85RC256V（I2C FRAM）を用いた不揮発リングバッファ・ジャーナリング実装
+- `storage/storage_manager.cpp`: FRAMとSDカードを連携させたデータフラッシュ・SD障害時の一括リカバリ・ファイル管理制御
+- `services/time_manager.cpp`: Wi-Fi接続およびNTPサーバーからの現在時刻取得、時刻同期完了後のWi-Fi自動停止処理
 
 ---
 

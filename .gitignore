@@ -7,3 +7,5 @@
 *.idx
 scratch_*
 *.pdf
+log/
+.DS_Store

@@ -165,6 +165,9 @@ bool StorageManager::initSdCard() {
     }
     lastSdInitAttempt_ = millis();
 
+    // 以前のマウント状態をクリアするため、一度end()を呼ぶ
+    SD.end();
+
     SPI.begin(SCK, MISO, MOSI, hal::pins::SD_CS);
     if (!SD.begin(hal::pins::SD_CS, SPI, 4000000)) {
         services::Logger::error("StorageMgr", "SD Card Mount Failed.");
@@ -177,7 +180,14 @@ bool StorageManager::initSdCard() {
         return false;
     }
 
-    sdAvailable_ = createNewSdFile();
+    // すでにファイル名が決まっている（つまり再挿入された）場合は、続きに追記する
+    if (currentFilename_.length() == 0) {
+        sdAvailable_ = createNewSdFile();
+    } else {
+        services::Logger::info("StorageMgr", "SD Card remounted. Continuing with %s", currentFilename_.c_str());
+        sdAvailable_ = true;
+    }
+    
     return sdAvailable_;
 }
 
