@@ -28,7 +28,7 @@ void Clock::markTimeSet() {
 }
 
 String Clock::getFormattedDate() {
-    time_t now = getEpoch();
+    time_t now = getEpoch() + (9 * 3600); // JST (+9h)
     struct tm timeinfo;
     gmtime_r(&now, &timeinfo);
     
@@ -39,7 +39,7 @@ String Clock::getFormattedDate() {
 }
 
 String Clock::getFormattedTime() {
-    time_t now = getEpoch();
+    time_t now = getEpoch() + (9 * 3600); // JST (+9h)
     struct tm timeinfo;
     gmtime_r(&now, &timeinfo);
     
