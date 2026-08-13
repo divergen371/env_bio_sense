@@ -10,3 +10,4 @@ scratch_*
 log/
 .DS_Store
 .vscode/settings.json
+src/config/secrets.h

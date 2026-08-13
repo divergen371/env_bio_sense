@@ -30,6 +30,8 @@ const char* htmlContent = R"rawliteral(
     .link-name:hover { color: #0056b3; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
 </head>
 <body>
   <h1>Data Logs</h1>
@@ -51,9 +53,14 @@ const char* htmlContent = R"rawliteral(
       <span class="close" onclick="closeChart()">&times;</span>
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; margin-top: -10px;">
         <h2 id="chartTitle" style="margin: 0;">Graph</h2>
-        <button id="reloadChartBtn" style="padding: 5px 15px; font-size: 14px; cursor: pointer; border-radius: 4px; border: none; background-color: #007bff; color: white; display: none;">
-          🔄 Reload Data
-        </button>
+        <div>
+          <button id="resetZoomBtn" onclick="if(currentChart) currentChart.resetZoom()" style="padding: 5px 15px; font-size: 14px; cursor: pointer; border-radius: 4px; border: 1px solid #007bff; background-color: transparent; color: #007bff; margin-right: 10px;">
+            🔍 Reset Zoom
+          </button>
+          <button id="reloadChartBtn" style="padding: 5px 15px; font-size: 14px; cursor: pointer; border-radius: 4px; border: none; background-color: #007bff; color: white; display: none;">
+            🔄 Reload Data
+          </button>
+        </div>
       </div>
       <div class="chart-container">
         <canvas id="myChart"></canvas>
@@ -288,6 +295,23 @@ const char* htmlContent = R"rawliteral(
           responsive: true,
           maintainAspectRatio: false,
           interaction: { mode: 'index', intersect: false },
+          plugins: {
+            zoom: {
+              pan: {
+                enabled: true,
+                mode: 'x',
+              },
+              zoom: {
+                wheel: {
+                  enabled: true,
+                },
+                pinch: {
+                  enabled: true
+                },
+                mode: 'x',
+              }
+            }
+          },
           scales: {
             x: { ticks: { maxTicksLimit: 15 } },
             y: { type: 'linear', display: true, position: 'left', title: { display: true, text: 'CO2 / HR' } },
