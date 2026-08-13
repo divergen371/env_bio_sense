@@ -22,6 +22,11 @@ private:
     uint32_t lastFetchMs_ = 0;
     bool needsFetch_ = true;
     
+    // JMA AMeDAS 用の追加メンバ
+    String nearestStationId_ = "";
+    bool fetchNearestStation();
+    String fetchLatestTime();
+    
     bool fetchSeaLevelPressure();
 };
 
