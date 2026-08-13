@@ -342,22 +342,61 @@ const char* htmlContent = R"rawliteral(
 
     async function calibrateSeaLevelPressure() {
       const statusEl = document.getElementById('sealevelStatus');
-      statusEl.innerText = 'Fetching current sea level pressure...';
+      statusEl.innerText = 'Fetching current sea level pressure from JMA AMeDAS...';
       try {
-        const lat = "35.503788";
-        const lon = "139.650497";
-        const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=pressure_msl`);
-        if (!res.ok) throw new Error('Network error');
-        const data = await res.json();
-        const slp = data.current.pressure_msl;
+        const myLat = 35.503788;
+        const myLon = 139.650497;
         
-        statusEl.innerText = `Retrieved: ${slp} hPa. Updating ESP32...`;
+        // 1. Fetch station list
+        const tableRes = await fetch('https://www.jma.go.jp/bosai/amedas/const/amedastable.json');
+        if (!tableRes.ok) throw new Error('Failed to fetch amedastable');
+        const table = await tableRes.json();
+        
+        // 2. Find nearest station (type A or B)
+        let bestStation = "";
+        let minDistance = 999999;
+        
+        for (const [id, station] of Object.entries(table)) {
+          if (station.type === 'A' || station.type === 'B') {
+            if (station.lat && station.lon && station.lat.length >= 2 && station.lon.length >= 2) {
+              const lat = station.lat[0] + station.lat[1] / 60.0;
+              const lon = station.lon[0] + station.lon[1] / 60.0;
+              const distSq = Math.pow(lat - myLat, 2) + Math.pow(lon - myLon, 2);
+              if (distSq < minDistance) {
+                minDistance = distSq;
+                bestStation = id;
+              }
+            }
+          }
+        }
+        
+        if (!bestStation) throw new Error('No valid AMeDAS station found');
+        
+        // 3. Fetch latest time
+        const timeRes = await fetch('https://www.jma.go.jp/bosai/amedas/data/latest_time.txt');
+        if (!timeRes.ok) throw new Error('Failed to fetch latest_time');
+        const timeText = await timeRes.text();
+        const dt = timeText.trim().replace(/[-T:]/g, '').substring(0, 14);
+        
+        // 4. Fetch pressure data
+        const mapRes = await fetch(`https://www.jma.go.jp/bosai/amedas/data/map/${dt}.json`);
+        if (!mapRes.ok) throw new Error('Failed to fetch map data');
+        const mapData = await mapRes.json();
+        
+        const stationData = mapData[bestStation];
+        if (!stationData || !stationData.normalPressure) {
+          throw new Error(`No pressure data for station ${bestStation}`);
+        }
+        
+        const slp = stationData.normalPressure[0];
+        statusEl.innerText = `Retrieved: ${slp} hPa (Station: ${bestStation}). Updating ESP32...`;
         
         const postRes = await fetch('/api/sealevel', {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: `pressure=${slp}`
         });
+        
         if (postRes.ok) {
           statusEl.innerHTML = `<span style="color: green;">✔ Calibration successful! Base pressure set to ${slp} hPa.</span>`;
         } else {
