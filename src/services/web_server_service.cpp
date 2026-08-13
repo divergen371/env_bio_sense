@@ -21,12 +21,30 @@ const char* htmlContent = R"rawliteral(
     a { text-decoration: none; color: #007bff; font-weight: bold; }
     a:hover { text-decoration: underline; }
     .status { margin-bottom: 20px; padding: 10px; background: #e0f7fa; border-radius: 5px; }
+    .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.8); }
+    .modal-content { background-color: #fefefe; margin: 2% auto; padding: 20px; border: 1px solid #888; width: 95%; max-width: 1200px; height: 85vh; border-radius: 8px; position: relative; display: flex; flex-direction: column; }
+    .close { color: #aaa; align-self: flex-end; font-size: 28px; font-weight: bold; cursor: pointer; margin-top: -10px; }
+    .close:hover { color: black; }
+    .chart-container { position: relative; flex-grow: 1; width: 100%; min-height: 0; }
+    .link-name { color: #007bff; text-decoration: underline; cursor: pointer; font-weight: bold; }
+    .link-name:hover { color: #0056b3; }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
   <h1>Data Logs</h1>
   <div id="status" class="status">Connecting...</div>
   <ul id="file-list"></ul>
+
+  <div id="chartModal" class="modal">
+    <div class="modal-content">
+      <span class="close" onclick="closeChart()">&times;</span>
+      <h2 id="chartTitle" style="margin-top: 0;">Graph</h2>
+      <div class="chart-container">
+        <canvas id="myChart"></canvas>
+      </div>
+    </div>
+  </div>
 
   <script>
     async function syncTime() {
@@ -63,11 +81,14 @@ const char* htmlContent = R"rawliteral(
           const li = document.createElement('li');
           
           const nameSpan = document.createElement('span');
-          nameSpan.innerText = f.name + ' (' + formatBytes(f.size) + ')';
+          if (f.size > 0 && f.name.endsWith('.csv')) {
+            nameSpan.innerHTML = `<span class="link-name" onclick="openChart('${f.name}')">${f.name}</span> (${formatBytes(f.size)})`;
+          } else {
+            nameSpan.innerText = f.name + ' (' + formatBytes(f.size) + ')';
+          }
+          
           if (f.isCurrent) {
-            nameSpan.innerText += ' [Recording...]';
-            nameSpan.style.color = '#d32f2f';
-            nameSpan.style.fontWeight = 'bold';
+            nameSpan.innerHTML += ' <span style="color:#d32f2f; font-weight:bold;">[Recording...]</span>';
           }
           
           const actionsDiv = document.createElement('div');
@@ -112,6 +133,101 @@ const char* htmlContent = R"rawliteral(
       } catch (err) {
         document.getElementById('status').innerText += ' ファイル取得エラー / Failed to load files.';
       }
+    }
+
+    let currentChart = null;
+
+    async function openChart(fileName) {
+      document.getElementById('chartTitle').innerText = 'Loading ' + fileName + '...';
+      document.getElementById('chartModal').style.display = 'flex';
+      
+      try {
+        const response = await fetch('/download?file=' + encodeURIComponent(fileName));
+        const text = await response.text();
+        drawChart(fileName, text);
+      } catch (e) {
+        document.getElementById('chartTitle').innerText = 'Error loading ' + fileName;
+      }
+    }
+
+    function closeChart() {
+      document.getElementById('chartModal').style.display = 'none';
+      if (currentChart) {
+        currentChart.destroy();
+        currentChart = null;
+      }
+    }
+
+    function drawChart(fileName, csvText) {
+      document.getElementById('chartTitle').innerText = fileName;
+      
+      const lines = csvText.trim().split('\n');
+      if (lines.length < 2) return;
+      
+      // Sequence,UptimeMs,Timestamp,CO2_ppm,Temp_C,RH_pct,Pressure_hPa,VOC_Index,NOx_Index,HR_bpm,SpO2_pct,ValidFlags
+      const labels = [];
+      const co2 = [];
+      const temp = [];
+      const rh = [];
+      const press = [];
+      const voc = [];
+      const nox = [];
+      const hr = [];
+      const spo2 = [];
+      
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(',');
+        if (cols.length < 11) continue;
+        
+        let timeLabel = cols[2];
+        if (!timeLabel || timeLabel === "") {
+          timeLabel = (parseInt(cols[1]) / 1000).toFixed(1) + 's';
+        }
+        
+        labels.push(timeLabel);
+        co2.push(parseFloat(cols[3]));
+        temp.push(parseFloat(cols[4]));
+        rh.push(parseFloat(cols[5]));
+        press.push(parseFloat(cols[6]));
+        voc.push(parseFloat(cols[7]));
+        nox.push(parseFloat(cols[8]));
+        hr.push(parseFloat(cols[9]));
+        spo2.push(parseFloat(cols[10]));
+      }
+
+      const ctx = document.getElementById('myChart').getContext('2d');
+      if (currentChart) currentChart.destroy();
+      
+      currentChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            { label: 'CO2 (ppm)', data: co2, borderColor: '#e53935', backgroundColor: '#e53935', yAxisID: 'y' },
+            { label: 'Temp (°C)', data: temp, borderColor: '#fb8c00', backgroundColor: '#fb8c00', yAxisID: 'y1' },
+            { label: 'Humidity (%)', data: rh, borderColor: '#1e88e5', backgroundColor: '#1e88e5', yAxisID: 'y1' },
+            { label: 'Pressure (hPa)', data: press, borderColor: '#43a047', backgroundColor: '#43a047', yAxisID: 'y3', hidden: true },
+            { label: 'VOC Index', data: voc, borderColor: '#8e24aa', backgroundColor: '#8e24aa', yAxisID: 'y2', hidden: true },
+            { label: 'NOx Index', data: nox, borderColor: '#5e35b1', backgroundColor: '#5e35b1', yAxisID: 'y2', hidden: true },
+            { label: 'HR (bpm)', data: hr, borderColor: '#d81b60', backgroundColor: '#d81b60', yAxisID: 'y', hidden: true },
+            { label: 'SpO2 (%)', data: spo2, borderColor: '#00acc1', backgroundColor: '#00acc1', yAxisID: 'y1', hidden: true }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          scales: {
+            x: { ticks: { maxTicksLimit: 15 } },
+            y: { type: 'linear', display: true, position: 'left', title: { display: true, text: 'CO2 / HR' } },
+            y1: { type: 'linear', display: true, position: 'right', title: { display: true, text: 'Temp/RH/SpO2' }, grid: { drawOnChartArea: false } },
+            y2: { type: 'linear', display: false, position: 'right' },
+            y3: { type: 'linear', display: false, position: 'left' }
+          },
+          elements: { point: { radius: 0, hitRadius: 10, hoverRadius: 5 } },
+          animation: false // ESP32からのロード直後の重さを軽減
+        }
+      });
     }
 
     window.onload = async () => {
