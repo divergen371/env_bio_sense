@@ -9,3 +9,4 @@ scratch_*
 *.pdf
 log/
 .DS_Store
+.vscode/settings.json

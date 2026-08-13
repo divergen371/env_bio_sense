@@ -33,13 +33,28 @@ const char* htmlContent = R"rawliteral(
 </head>
 <body>
   <h1>Data Logs</h1>
+  
+  <div id="capacityAlert" style="margin-bottom: 15px; padding: 10px; border-radius: 5px; font-weight: bold; display: none;">
+    FRAM Buffer: <span id="capacityText"></span>
+  </div>
+
   <div id="status" class="status">Connecting...</div>
+  <div style="margin-bottom: 15px;">
+    <button onclick="flushAndReload()" style="padding: 10px 15px; font-size: 16px; font-weight: bold; cursor: pointer; border-radius: 5px; border: none; background-color: #28a745; color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+      🔄 Refresh & Flush
+    </button>
+  </div>
   <ul id="file-list"></ul>
 
   <div id="chartModal" class="modal">
     <div class="modal-content">
       <span class="close" onclick="closeChart()">&times;</span>
-      <h2 id="chartTitle" style="margin-top: 0;">Graph</h2>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; margin-top: -10px;">
+        <h2 id="chartTitle" style="margin: 0;">Graph</h2>
+        <button id="reloadChartBtn" style="padding: 5px 15px; font-size: 14px; cursor: pointer; border-radius: 4px; border: none; background-color: #007bff; color: white; display: none;">
+          🔄 Reload Data
+        </button>
+      </div>
       <div class="chart-container">
         <canvas id="myChart"></canvas>
       </div>
@@ -136,10 +151,66 @@ const char* htmlContent = R"rawliteral(
     }
 
     let currentChart = null;
+    let activeFileName = '';
+
+    async function fetchStatus() {
+      try {
+        const response = await fetch('/api/status');
+        const data = await response.json();
+        const alertDiv = document.getElementById('capacityAlert');
+        const textSpan = document.getElementById('capacityText');
+        
+        const pct = Math.round((data.pending / data.max) * 100);
+        
+        alertDiv.style.display = 'block';
+        if (pct >= 80) {
+          alertDiv.style.backgroundColor = '#ffebee';
+          alertDiv.style.color = '#c62828';
+          alertDiv.style.border = '1px solid #c62828';
+          textSpan.innerText = `⚠️ FRAM Buffer is almost full: ${data.pending} / ${data.max} (${pct}%) - Please click "Refresh & Flush" soon!`;
+        } else {
+          alertDiv.style.backgroundColor = '#e8f5e9';
+          alertDiv.style.color = '#2e7d32';
+          alertDiv.style.border = '1px solid #2e7d32';
+          textSpan.innerText = `${data.pending} / ${data.max} (${pct}%)`;
+        }
+      } catch (e) {
+        console.error("Status fetch failed", e);
+      }
+    }
+
+    async function flushAndReload() {
+      const btn = document.querySelector('button[onclick="flushAndReload()"]');
+      const originalText = btn.innerText;
+      btn.innerText = '⏳ Flushing...';
+      try {
+        await fetch('/api/flush', { method: 'POST' });
+        await loadFiles();
+        await fetchStatus();
+      } catch(e) {
+        alert('フラッシュに失敗しました / Flush failed');
+      }
+      btn.innerText = originalText;
+    }
 
     async function openChart(fileName) {
+      activeFileName = fileName;
       document.getElementById('chartTitle').innerText = 'Loading ' + fileName + '...';
       document.getElementById('chartModal').style.display = 'flex';
+      
+      const reloadBtn = document.getElementById('reloadChartBtn');
+      reloadBtn.style.display = 'block';
+      reloadBtn.onclick = async () => {
+        reloadBtn.innerText = '⏳ Reloading...';
+        try {
+          await fetch('/api/flush', { method: 'POST' });
+          const response = await fetch('/download?file=' + encodeURIComponent(activeFileName));
+          const text = await response.text();
+          drawChart(activeFileName, text);
+          await loadFiles(); // 裏でファイルリストのサイズも更新
+        } catch(e) {}
+        reloadBtn.innerText = '🔄 Reload Data';
+      };
       
       try {
         const response = await fetch('/download?file=' + encodeURIComponent(fileName));
@@ -232,7 +303,9 @@ const char* htmlContent = R"rawliteral(
 
     window.onload = async () => {
       await syncTime();
+      await fetchStatus();
       await loadFiles();
+      setInterval(fetchStatus, 10000); // 10秒ごとに容量を更新
     };
   </script>
 </body>
@@ -305,6 +378,20 @@ void WebServerService::setupRoutes() {
             } else {
                 request->send(400, "application/json", "{\"error\":\"Missing epoch\"}");
             }
+    });
+
+    server_->on("/api/flush", HTTP_POST, [this](AsyncWebServerRequest *request){
+        Logger::info("WebServer", "Manual flush requested via HTTP");
+        storageManager_.forceFlush();
+        request->send(200, "application/json", "{\"status\":\"ok\"}");
+    });
+
+    server_->on("/api/status", HTTP_GET, [this](AsyncWebServerRequest *request){
+        String response = "{";
+        response += "\"pending\":" + String(storageManager_.getPendingCount()) + ",";
+        response += "\"max\":" + String(storageManager_.getMaxRecords());
+        response += "}";
+        request->send(200, "application/json", response);
     });
 
     server_->on("/download", HTTP_GET, [this](AsyncWebServerRequest *request){

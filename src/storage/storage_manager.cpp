@@ -10,6 +10,22 @@ StorageManager::StorageManager() : sdAvailable_(false), framAvailable_(false), l
     mutex_ = xSemaphoreCreateMutex();
 }
 
+void StorageManager::forceFlush() {
+    if (!framAvailable_) return;
+    
+    lock();
+    bool wasWifiActive = wifiActive_;
+    wifiActive_ = false;
+    unlock();
+    
+    // フラッシュ処理（内部でロックとローテーション、SD書き込みが行われる）
+    flushPendingToSd();
+    
+    lock();
+    wifiActive_ = wasWifiActive;
+    unlock();
+}
+
 void StorageManager::lock() {
     if (mutex_) {
         xSemaphoreTake(mutex_, portMAX_DELAY);

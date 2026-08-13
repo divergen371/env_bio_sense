@@ -26,9 +26,13 @@ public:
     bool isSdAvailable() const { return sdAvailable_; }
     bool isFramAvailable() const { return framAvailable_; }
     uint16_t getPendingCount() const;
+    uint16_t getMaxRecords() const { return MAX_RECORDS; }
 
     // Wi-Fiモード中はSDへの書き出しを一時停止するためのフラグ
     void setWifiActive(bool active) { wifiActive_ = active; }
+    
+    // 手動でFRAMの内容をSDに強制フラッシュする（Wi-Fi稼働中の最新データ取得用）
+    void forceFlush();
     
     // 現在書き込み中のファイル名を取得 (削除保護などに使用)
     String getCurrentFilename() const { return currentFilename_; }
