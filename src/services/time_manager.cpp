@@ -1,6 +1,7 @@
 #include "services/time_manager.h"
 #include "services/logger.h"
 #include "../config/secrets.h"
+#include "hal/clock.h"
 #include <WiFi.h>
 #include <time.h>
 
@@ -58,6 +59,9 @@ void TimeManager::begin() {
             char timeStringBuff[64];
             strftime(timeStringBuff, sizeof(timeStringBuff), "%Y-%m-%d %H:%M:%S", &timeinfo);
             Logger::info("NTP", "Time synced successfully: %s", timeStringBuff);
+            
+            // hal::Clock 側に時刻設定完了を通知
+            hal::Clock::markTimeSet();
         } else {
             Logger::error("NTP", "Failed to sync time via NTP.");
         }

@@ -6,6 +6,8 @@
 #include <SD.h>
 #include <SPI.h>
 #include <WString.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 
 namespace storage {
 
@@ -25,13 +27,26 @@ public:
     bool isFramAvailable() const { return framAvailable_; }
     uint16_t getPendingCount() const;
 
+    // Wi-Fiモード中はSDへの書き出しを一時停止するためのフラグ
+    void setWifiActive(bool active) { wifiActive_ = active; }
+    
+    // 現在書き込み中のファイル名を取得 (削除保護などに使用)
+    String getCurrentFilename() const { return currentFilename_; }
+    
+    // スレッドセーフなアクセスを提供するため
+    void lock();
+    void unlock();
+
 private:
     FramStorage fram_;
     FramSuperblock superblock_;
     bool sdAvailable_;
     bool framAvailable_;
+    bool wifiActive_ = false;
     String currentFilename_;
+    String currentDateString_;
     uint32_t lastSdInitAttempt_;
+    SemaphoreHandle_t mutex_;
     
     uint16_t calculateCrc16(const uint8_t* data, size_t length);
     void initSuperblock();

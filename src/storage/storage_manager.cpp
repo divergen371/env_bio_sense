@@ -1,11 +1,26 @@
 #include "storage/storage_manager.h"
 #include "services/logger.h"
 #include "hal/pins.h"
+#include "hal/clock.h"
 #include <Arduino.h>
 
 namespace storage {
 
-StorageManager::StorageManager() : sdAvailable_(false), framAvailable_(false), lastSdInitAttempt_(0) {}
+StorageManager::StorageManager() : sdAvailable_(false), framAvailable_(false), lastSdInitAttempt_(0) {
+    mutex_ = xSemaphoreCreateMutex();
+}
+
+void StorageManager::lock() {
+    if (mutex_) {
+        xSemaphoreTake(mutex_, portMAX_DELAY);
+    }
+}
+
+void StorageManager::unlock() {
+    if (mutex_) {
+        xSemaphoreGive(mutex_);
+    }
+}
 
 uint16_t StorageManager::calculateCrc16(const uint8_t* data, size_t length) {
     uint16_t crc = 0xFFFF;
@@ -192,28 +207,38 @@ bool StorageManager::initSdCard() {
 }
 
 bool StorageManager::createNewSdFile() {
-    for (int i = 0; i < 1000; i++) {
-        char filename[32];
-        snprintf(filename, sizeof(filename), "/log_%03d.csv", i);
-        if (!SD.exists(filename)) {
-            currentFilename_ = filename;
-            File file = SD.open(currentFilename_.c_str(), FILE_WRITE);
-            if (!file) {
-                services::Logger::error("StorageMgr", "Failed to create file: %s", currentFilename_.c_str());
-                return false;
+    if (hal::Clock::isTimeSet()) {
+        currentDateString_ = hal::Clock::getFormattedDate();
+        currentFilename_ = "/log_" + currentDateString_ + ".csv";
+    } else {
+        currentDateString_ = "";
+        for (int i = 0; i < 1000; i++) {
+            char filename[32];
+            snprintf(filename, sizeof(filename), "/log_boot_%03d.csv", i);
+            if (!SD.exists(filename)) {
+                currentFilename_ = filename;
+                break;
             }
-            writeCsvHeader(file);
-            file.close();
-            services::Logger::info("StorageMgr", "Created new SD log file: %s", currentFilename_.c_str());
-            return true;
         }
     }
-    services::Logger::error("StorageMgr", "Log file limit reached");
-    return false;
+
+    bool exists = SD.exists(currentFilename_);
+    File file = SD.open(currentFilename_.c_str(), FILE_APPEND);
+    if (!file) {
+        services::Logger::error("StorageMgr", "Failed to create/open file: %s", currentFilename_.c_str());
+        return false;
+    }
+    
+    if (!exists) {
+        writeCsvHeader(file);
+    }
+    file.close();
+    services::Logger::info("StorageMgr", "Target SD log file: %s", currentFilename_.c_str());
+    return true;
 }
 
 void StorageManager::writeCsvHeader(File& file) {
-    file.println("Sequence,UptimeMs,CO2_ppm,Temp_C,RH_pct,Pressure_hPa,VOC_Index,NOx_Index,HR_bpm,SpO2_pct,ValidFlags");
+    file.println("Sequence,UptimeMs,Timestamp,CO2_ppm,Temp_C,RH_pct,Pressure_hPa,VOC_Index,NOx_Index,HR_bpm,SpO2_pct,ValidFlags");
 }
 
 void StorageManager::formatCsvLine(char* buffer, size_t size, const EnvironmentalRecord& rec) {
@@ -226,18 +251,50 @@ void StorageManager::formatCsvLine(char* buffer, size_t size, const Environmenta
     float hr = (rec.validFlags & VALID_HR) ? rec.heartRateBpm : NAN;
     float spo2 = (rec.validFlags & VALID_SPO2) ? rec.spo2Percent : NAN;
 
-    snprintf(buffer, size, "%lu,%lu,%.1f,%.2f,%.2f,%.2f,%.1f,%.1f,%.1f,%.1f,0x%02X",
-             rec.sequence, rec.uptimeMs, co2, temp, rh, press, voc, nox, hr, spo2, rec.validFlags);
+    char timeStr[24] = "";
+    if (hal::Clock::isTimeSet()) {
+        uint32_t nowMs = millis();
+        int32_t diffSec = (nowMs > rec.uptimeMs) ? ((nowMs - rec.uptimeMs) / 1000) : 0;
+        
+        // JST (+9時間) に補正
+        time_t recordEpoch = hal::Clock::getEpoch() - diffSec + (9 * 3600);
+        
+        struct tm timeinfo;
+        gmtime_r(&recordEpoch, &timeinfo);
+        
+        snprintf(timeStr, sizeof(timeStr), "%02d:%02d:%02d",
+                 timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+    }
+
+    snprintf(buffer, size, "%lu,%lu,%s,%.1f,%.2f,%.2f,%.2f,%.1f,%.1f,%.1f,%.1f,0x%02X",
+             rec.sequence, rec.uptimeMs, timeStr, co2, temp, rh, press, voc, nox, hr, spo2, rec.validFlags);
 }
 
 void StorageManager::flushPendingToSd() {
     if (!framAvailable_) return;
     
+    // Wi-Fiモード中はSDへの書き出しを停止し、FRAMにためておく
+    // これによりWebサーバーからのファイルダウンロード時のSPIバス競合(WDTクラッシュなど)を完全に防ぐ
+    if (wifiActive_) return;
+    
     uint16_t pendingCount = getPendingCount();
     if (pendingCount == 0) return;
 
+    lock(); // 排他制御開始
+
+    // ローテーションチェック
+    if (hal::Clock::isTimeSet()) {
+        String today = hal::Clock::getFormattedDate();
+        if (today != currentDateString_) {
+            services::Logger::info("StorageMgr", "Log rotation triggered: %s -> %s", 
+                                   currentDateString_.c_str(), today.c_str());
+            createNewSdFile();
+        }
+    }
+
     if (!initSdCard()) {
         services::Logger::warn("StorageMgr", "SD offline. Buffering %u records in FRAM.", pendingCount);
+        unlock();
         return;
     }
 
@@ -245,6 +302,7 @@ void StorageManager::flushPendingToSd() {
     if (!file) {
         services::Logger::error("StorageMgr", "SD Write failed. Retrying later.");
         sdAvailable_ = false; // SD障害発生
+        unlock();
         return;
     }
 
@@ -282,6 +340,8 @@ void StorageManager::flushPendingToSd() {
         superblock_.readIndex = currentIndex;
         saveSuperblock();
     }
+    
+    unlock(); // 排他制御終了
 }
 
 } // namespace storage

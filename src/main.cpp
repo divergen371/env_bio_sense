@@ -6,10 +6,14 @@
 #include "services/display_manager.h"
 #include "storage/storage_manager.h"
 #include "services/time_manager.h"
+#include "services/wifi_manager.h"
+#include "services/web_server_service.h"
 
 services::SensorManager sensorManager;
 services::DisplayManager displayManager;
 storage::StorageManager storageManager;
+services::WifiManager wifiManager;
+services::WebServerService webServer(storageManager);
 
 void setup() {
     services::Logger::init(115200);
@@ -27,6 +31,7 @@ void setup() {
     pinMode(hal::pins::MAX30102_INT, INPUT_PULLUP);
     pinMode(hal::pins::BMP5_INT, INPUT_PULLUP);
     pinMode(hal::pins::USER_LED, OUTPUT);
+    pinMode(hal::pins::BOOT_BUTTON, INPUT_PULLUP); // Boot Button for Wi-Fi toggle
     digitalWrite(hal::pins::USER_LED, HIGH); // 消灯 (XIAOのLEDは通常Active-Low)
 
     services::Logger::info("MAIN", "SDA: D4 / GPIO%u", hal::pins::I2C_SDA);
@@ -46,6 +51,9 @@ void setup() {
     sensorManager.begin();
     displayManager.begin();
     storageManager.begin();
+    
+    wifiManager.begin();
+    webServer.begin();
 
     // SDカードが使用できない場合はLEDを点灯（XIAOはLOWで点灯）
     if (!storageManager.isSdAvailable()) {
@@ -57,6 +65,34 @@ void loop() {
     static uint32_t previousDisplayMs = 0;
     static uint32_t previousSensorMs = 0;
     uint32_t nowMs = millis();
+    
+    // BOOTボタンによるWi-Fiトグル (3秒長押し判定)
+    static uint32_t btnPressedMs = 0;
+    static bool btnHandled = false;
+    if (digitalRead(hal::pins::BOOT_BUTTON) == LOW) {
+        if (btnPressedMs == 0) {
+            btnPressedMs = nowMs;
+            btnHandled = false;
+        } else if (!btnHandled && (nowMs - btnPressedMs >= 3000)) {
+            wifiManager.toggle();
+            btnHandled = true;
+        }
+    } else {
+        btnPressedMs = 0;
+    }
+    
+    // Wi-Fiモード中はLEDを点滅 (SDエラーがなければ)
+    if (storageManager.isSdAvailable()) {
+        if (wifiManager.isOn()) {
+            digitalWrite(hal::pins::USER_LED, (nowMs % 1000 < 500) ? LOW : HIGH);
+        } else {
+            digitalWrite(hal::pins::USER_LED, HIGH);
+        }
+    }
+    
+    
+    // Wi-Fiモード中はSDへの新規書き込みを停止させる
+    storageManager.setWifiActive(wifiManager.isOn());
 
     // センサ更新 (内部で環境系は1000ms間隔、PPG系は常時更新に制御)
     sensorManager.update(nowMs);

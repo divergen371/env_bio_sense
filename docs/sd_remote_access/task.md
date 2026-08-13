@@ -1,0 +1,7 @@
+- [x] Webサーバー、JSONライブラリの `platformio.ini` への追加
+- [x] `hal/clock` モジュールの実装（スマホからの時刻受信用）
+- [x] APモード起動・管理用 `WifiManager` の実装
+- [x] 非同期Webサーバー `WebServerService` の実装
+- [x] `StorageManager` への排他制御 (Mutex) とローテーション機能の実装
+- [x] `main.cpp` への各種サービスの統合と、BOOTボタンによるWi-Fi ON/OFFトグルの実装
+- [x] 変更内容の `walkthrough.md` へのまとめ
