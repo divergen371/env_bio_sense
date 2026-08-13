@@ -48,12 +48,14 @@ struct EnvironmentData {
     float scd41HumidityRh {};
     int32_t vocIndex {};
     int32_t noxIndex {};
+    float altitudeM {}; // 追加: 高度 (m)
     EnclosureWarning enclosureWarning {EnclosureWarning::Normal};
     uint32_t timestampMs {};
     bool valid {};
     bool pressureValid {false};
     bool pressureStale {false};
     bool sgp41Valid {false};
+    bool altitudeValid {false}; // 追加: 高度フラグ
 };
 
 enum class PpgState : uint8_t {

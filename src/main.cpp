@@ -8,12 +8,14 @@
 #include "services/time_manager.h"
 #include "services/wifi_manager.h"
 #include "services/web_server_service.h"
+#include "services/weather_service.h"
 
 services::SensorManager sensorManager;
 services::DisplayManager displayManager;
 storage::StorageManager storageManager;
 services::WifiManager wifiManager;
 services::WebServerService webServer(storageManager);
+services::WeatherService weatherService(sensorManager, wifiManager);
 
 void setup() {
     services::Logger::init(115200);
@@ -54,6 +56,7 @@ void setup() {
     
     wifiManager.begin();
     webServer.begin();
+    weatherService.begin();
 
     // SDカードが使用できない場合はLEDを点灯（XIAOはLOWで点灯）
     if (!storageManager.isSdAvailable()) {
@@ -96,6 +99,9 @@ void loop() {
 
     // センサ更新 (内部で環境系は1000ms間隔、PPG系は常時更新に制御)
     sensorManager.update(nowMs);
+    
+    // 定期的な天気APIアクセス（海面気圧の取得）
+    weatherService.update(nowMs);
 
     // 500msごとにOLEDを更新
     if (nowMs - previousDisplayMs >= 500) {

@@ -142,6 +142,11 @@ bool StorageManager::appendRecord(const core::SensorSnapshot& snapshot, uint32_t
             rec.data.validFlags |= VALID_PRESSURE;
         }
         
+        if (snapshot.environment.altitudeValid) {
+            rec.data.altitudeM = snapshot.environment.altitudeM;
+            rec.data.validFlags |= VALID_ALTITUDE;
+        }
+        
         if (snapshot.environment.co2Ppm > 0) {
             rec.data.co2Ppm = snapshot.environment.co2Ppm;
             rec.data.validFlags |= VALID_CO2;
@@ -254,7 +259,7 @@ bool StorageManager::createNewSdFile() {
 }
 
 void StorageManager::writeCsvHeader(File& file) {
-    file.println("Sequence,UptimeMs,Timestamp,CO2_ppm,Temp_C,RH_pct,Pressure_hPa,VOC_Index,NOx_Index,HR_bpm,SpO2_pct,ValidFlags");
+    file.println("Sequence,UptimeMs,Timestamp,CO2_ppm,Temp_C,RH_pct,Pressure_hPa,VOC_Index,NOx_Index,HR_bpm,SpO2_pct,Altitude_m,ValidFlags");
 }
 
 void StorageManager::formatCsvLine(char* buffer, size_t size, const EnvironmentalRecord& rec) {
@@ -266,6 +271,7 @@ void StorageManager::formatCsvLine(char* buffer, size_t size, const Environmenta
     float nox = (rec.validFlags & VALID_NOX) ? rec.noxIndex : NAN;
     float hr = (rec.validFlags & VALID_HR) ? rec.heartRateBpm : NAN;
     float spo2 = (rec.validFlags & VALID_SPO2) ? rec.spo2Percent : NAN;
+    float alt = (rec.validFlags & VALID_ALTITUDE) ? rec.altitudeM : NAN;
 
     char timeStr[24] = "";
     if (hal::Clock::isTimeSet()) {
@@ -282,8 +288,8 @@ void StorageManager::formatCsvLine(char* buffer, size_t size, const Environmenta
                  timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
     }
 
-    snprintf(buffer, size, "%lu,%lu,%s,%.1f,%.2f,%.2f,%.2f,%.1f,%.1f,%.1f,%.1f,0x%02X",
-             rec.sequence, rec.uptimeMs, timeStr, co2, temp, rh, press, voc, nox, hr, spo2, rec.validFlags);
+    snprintf(buffer, size, "%lu,%lu,%s,%.1f,%.2f,%.2f,%.2f,%.1f,%.1f,%.1f,%.1f,%.1f,0x%02X",
+             rec.sequence, rec.uptimeMs, timeStr, co2, temp, rh, press, voc, nox, hr, spo2, alt, rec.validFlags);
 }
 
 void StorageManager::flushPendingToSd() {

@@ -1,8 +1,13 @@
 #include "services/web_server_service.h"
 #include "services/logger.h"
+#include <FS.h>
+#include <SPIFFS.h>
 #include "hal/clock.h"
 #include <ArduinoJson.h>
 #include <SD.h>
+#include "services/weather_service.h"
+
+extern services::WeatherService weatherService;
 
 namespace services {
 
@@ -41,6 +46,12 @@ const char* htmlContent = R"rawliteral(
   </div>
 
   <div id="status" class="status">Connecting...</div>
+  
+  <div style="margin-bottom: 15px; padding: 10px; background-color: #f1f8ff; border: 1px solid #c8e1ff; border-radius: 4px; font-size: 14px;">
+    <strong>Altitude Calibration:</strong> 
+    <span id="sealevelStatus">Waiting for connection...</span>
+  </div>
+  
   <div style="margin-bottom: 15px;">
     <button onclick="flushAndReload()" style="padding: 10px 15px; font-size: 16px; font-weight: bold; cursor: pointer; border-radius: 5px; border: none; background-color: #28a745; color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
       🔄 Refresh & Flush
@@ -252,6 +263,7 @@ const char* htmlContent = R"rawliteral(
       const nox = [];
       const hr = [];
       const spo2 = [];
+      const altitude = [];
       
       for (let i = 1; i < lines.length; i++) {
         const cols = lines[i].split(',');
@@ -271,6 +283,7 @@ const char* htmlContent = R"rawliteral(
         nox.push(parseFloat(cols[8]));
         hr.push(parseFloat(cols[9]));
         spo2.push(parseFloat(cols[10]));
+        altitude.push(parseFloat(cols[11]));
       }
 
       const ctx = document.getElementById('myChart').getContext('2d');
@@ -288,7 +301,8 @@ const char* htmlContent = R"rawliteral(
             { label: 'VOC Index', data: voc, borderColor: '#8e24aa', backgroundColor: '#8e24aa', yAxisID: 'y2', hidden: true },
             { label: 'NOx Index', data: nox, borderColor: '#5e35b1', backgroundColor: '#5e35b1', yAxisID: 'y2', hidden: true },
             { label: 'HR (bpm)', data: hr, borderColor: '#d81b60', backgroundColor: '#d81b60', yAxisID: 'y', hidden: true },
-            { label: 'SpO2 (%)', data: spo2, borderColor: '#00acc1', backgroundColor: '#00acc1', yAxisID: 'y1', hidden: true }
+            { label: 'SpO2 (%)', data: spo2, borderColor: '#00acc1', backgroundColor: '#00acc1', yAxisID: 'y1', hidden: true },
+            { label: 'Altitude (m)', data: altitude, borderColor: '#78909c', backgroundColor: '#78909c', yAxisID: 'y4', hidden: false }
           ]
         },
         options: {
@@ -317,7 +331,8 @@ const char* htmlContent = R"rawliteral(
             y: { type: 'linear', display: true, position: 'left', title: { display: true, text: 'CO2 / HR' } },
             y1: { type: 'linear', display: true, position: 'right', title: { display: true, text: 'Temp/RH/SpO2' }, grid: { drawOnChartArea: false } },
             y2: { type: 'linear', display: false, position: 'right' },
-            y3: { type: 'linear', display: false, position: 'left' }
+            y3: { type: 'linear', display: false, position: 'left' },
+            y4: { type: 'linear', display: true, position: 'right', title: { display: true, text: 'Altitude (m)' }, grid: { drawOnChartArea: false } }
           },
           elements: { point: { radius: 0, hitRadius: 10, hoverRadius: 5 } },
           animation: false // ESP32からのロード直後の重さを軽減
@@ -325,10 +340,39 @@ const char* htmlContent = R"rawliteral(
       });
     }
 
+    async function calibrateSeaLevelPressure() {
+      const statusEl = document.getElementById('sealevelStatus');
+      statusEl.innerText = 'Fetching current sea level pressure...';
+      try {
+        const lat = "35.503788";
+        const lon = "139.650497";
+        const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=pressure_msl`);
+        if (!res.ok) throw new Error('Network error');
+        const data = await res.json();
+        const slp = data.current.pressure_msl;
+        
+        statusEl.innerText = `Retrieved: ${slp} hPa. Updating ESP32...`;
+        
+        const postRes = await fetch('/api/sealevel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: `pressure=${slp}`
+        });
+        if (postRes.ok) {
+          statusEl.innerHTML = `<span style="color: green;">✔ Calibration successful! Base pressure set to ${slp} hPa.</span>`;
+        } else {
+          throw new Error('ESP32 rejected update');
+        }
+      } catch (err) {
+        statusEl.innerHTML = `<span style="color: red;">✖ Failed: ${err.message}</span>`;
+      }
+    }
+
     window.onload = async () => {
       await syncTime();
       await fetchStatus();
       await loadFiles();
+      calibrateSeaLevelPressure();
       setInterval(fetchStatus, 10000); // 10秒ごとに容量を更新
     };
   </script>
@@ -416,6 +460,19 @@ void WebServerService::setupRoutes() {
         response += "\"max\":" + String(storageManager_.getMaxRecords());
         response += "}";
         request->send(200, "application/json", response);
+    });
+
+    server_->on("/api/sealevel", HTTP_POST, [](AsyncWebServerRequest *request){
+        if (request->hasParam("pressure", true)) {
+            String pStr = request->getParam("pressure", true)->value();
+            float p = pStr.toFloat();
+            if (p > 800.0f && p < 1200.0f) {
+                weatherService.forceUpdate(p);
+                request->send(200, "text/plain", "Sea level pressure updated");
+                return;
+            }
+        }
+        request->send(400, "text/plain", "Invalid pressure parameter");
     });
 
     server_->on("/download", HTTP_GET, [this](AsyncWebServerRequest *request){

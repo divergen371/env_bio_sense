@@ -246,6 +246,14 @@ void Bmp5SensorBase::update(uint32_t nowMs) {
     isStale_ = false;
     currentPressureHpa_ = pressureHpa;
     currentTemperatureC_ = rawTemperatureC;
+    
+    // 気温を考慮した高度計算: h = ((T + 273.15) / 0.0065) * (1 - (P / P0)^0.190295)
+    if (seaLevelPressureHpa_ > 0) {
+        currentAltitudeM_ = ((rawTemperatureC + 273.15f) / 0.0065f) * (1.0f - std::pow(pressureHpa / seaLevelPressureHpa_, 0.190295f));
+    } else {
+        currentAltitudeM_ = NAN;
+    }
+    
     hasValidData_ = true;
     lastSuccessMs_ = nowMs;
     lastError_ = core::ErrorCode::None;
@@ -264,6 +272,9 @@ bool Bmp5SensorBase::readEnvironment(core::EnvironmentData& out) const {
     out.pressureHpa = currentPressureHpa_;
     out.pressureValid = !isStale_;
     out.pressureStale = isStale_;
+    
+    out.altitudeM = currentAltitudeM_;
+    out.altitudeValid = (!isStale_ && !std::isnan(currentAltitudeM_));
     
     if (lastSuccessMs_ > out.timestampMs) {
         out.timestampMs = lastSuccessMs_;

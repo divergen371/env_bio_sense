@@ -37,6 +37,10 @@ bool SensorManager::begin() {
     return true;
 }
 
+void SensorManager::setSeaLevelPressure(float hpa) {
+    bmp581_.setSeaLevelPressure(hpa);
+}
+
 void SensorManager::update(uint32_t nowMs) {
     status_.uptimeMs = nowMs;
     

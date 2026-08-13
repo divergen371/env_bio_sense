@@ -18,6 +18,9 @@ public:
     const core::SensorSnapshot& snapshot() const { return snapshot_; }
     const core::SystemStatus& status() const { return status_; }
 
+    // 海面気圧の更新（高度計算用）
+    void setSeaLevelPressure(float hpa);
+
 private:
     core::SensorSnapshot snapshot_ {};
     core::SystemStatus status_ {};

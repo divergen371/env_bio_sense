@@ -19,6 +19,9 @@ public:
     core::ErrorCode lastError() const override { return lastError_; }
     uint32_t lastSuccessMs() const override { return lastSuccessMs_; }
     
+    // 海面気圧の設定（高度計算用）
+    void setSeaLevelPressure(float hpa) { seaLevelPressureHpa_ = hpa; }
+    
     // 診断用
     void runDiagnostics();
 
@@ -36,6 +39,8 @@ private:
     uint32_t lastSuccessMs_ = 0;
     float currentPressureHpa_ = 0.0f;
     float currentTemperatureC_ = 0.0f;
+    float currentAltitudeM_ = NAN;
+    float seaLevelPressureHpa_ = 1008.0f; // Default baseline
     bool isStale_ = true;
     bool hasValidData_ = false;
 

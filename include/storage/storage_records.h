@@ -43,6 +43,7 @@ enum SensorValidFlags : uint32_t {
     VALID_NOX      = 1u << 5,
     VALID_HR       = 1u << 6,
     VALID_SPO2     = 1u << 7,
+    VALID_ALTITUDE = 1u << 8,
 };
 
 struct EnvironmentalRecord {
@@ -60,9 +61,11 @@ struct EnvironmentalRecord {
 
     float heartRateBpm;
     float spo2Percent;
+    
+    float altitudeM;
 
     uint32_t validFlags;
-}; // 42 bytes
+}; // 46 bytes
 
 struct FramRecordHeader {
     uint32_t sequence;
