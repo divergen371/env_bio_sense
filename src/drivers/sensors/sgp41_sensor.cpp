@@ -160,5 +160,13 @@ bool Sgp41Sensor::readEnvironment(core::EnvironmentData& out) const {
     return false;
 }
 
+void Sgp41Sensor::getAlgorithmStates(float& voc0, float& voc1) const {
+    const_cast<VOCGasIndexAlgorithm*>(&vocAlgorithm_)->get_states(voc0, voc1);
+}
+
+void Sgp41Sensor::setAlgorithmStates(float voc0, float voc1) {
+    vocAlgorithm_.set_states(voc0, voc1);
+}
+
 } // namespace sensors
 } // namespace drivers

@@ -37,6 +37,10 @@ public:
     // 現在書き込み中のファイル名を取得 (削除保護などに使用)
     String getCurrentFilename() const { return currentFilename_; }
     
+    // SGP41ベースライン保存・復元
+    bool getSgp41States(float& voc0, float& voc1) const;
+    void setSgp41States(float voc0, float voc1);
+
     // スレッドセーフなアクセスを提供するため
     void lock();
     void unlock();

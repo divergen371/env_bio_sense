@@ -4,7 +4,8 @@
 
 namespace services {
 
-bool SensorManager::begin() {
+bool SensorManager::begin(storage::StorageManager& storageManager) {
+    storage_ = &storageManager;
     Logger::info("SensorMgr", "Initializing Sensor Manager...");
     
     if (sht45_.begin()) {
@@ -24,6 +25,13 @@ bool SensorManager::begin() {
 
     if (!sgp41_.begin()) {
         services::Logger::error("SensorMgr", "Failed to initialize SGP41");
+    } else {
+        // SGP41の初期化が成功した場合、保存されていたアルゴリズム状態（ベースライン）を復元
+        float voc0, voc1;
+        if (storage_->getSgp41States(voc0, voc1)) {
+            sgp41_.setAlgorithmStates(voc0, voc1);
+            services::Logger::info("SensorMgr", "SGP41 VOC algorithm states restored from FRAM.");
+        }
     }
 
     if (!max30102_.begin()) {
@@ -41,14 +49,48 @@ void SensorManager::setSeaLevelPressure(float hpa) {
     bmp581_.setSeaLevelPressure(hpa);
 }
 
+bool SensorManager::calibrateScd41(uint16_t targetPpm, uint16_t& frcCorrection) {
+    bool success = scd41_.performManualCalibration(targetPpm, frcCorrection);
+    if (success) {
+        services::Logger::info("SensorMgr", "SCD41 manual calibration succeeded (target: %u ppm, correction: 0x%04X)", targetPpm, frcCorrection);
+    } else {
+        services::Logger::error("SensorMgr", "SCD41 manual calibration failed");
+    }
+    return success;
+}
+
+bool SensorManager::triggerSht45Heater() {
+    bool success = sht45_.triggerHeater();
+    if (success) {
+        lastHeaterRunMs_ = status_.uptimeMs;
+        highHumidityStartMs_ = 0; // Reset monitor
+        services::Logger::info("SensorMgr", "SHT45 heater triggered manually or automatically");
+    } else {
+        services::Logger::error("SensorMgr", "Failed to trigger SHT45 heater");
+    }
+    return success;
+}
+
 void SensorManager::update(uint32_t nowMs) {
     status_.uptimeMs = nowMs;
     
     static uint32_t lastEnvUpdateMs = 0;
+    static uint32_t lastSgp41SaveMs = 0;
     
     // 環境センサ類は 1000ms 間隔で更新
     if (nowMs - lastEnvUpdateMs >= 1000) {
         lastEnvUpdateMs = nowMs;
+        
+        // SGP41ベースラインの定期的保存 (1時間に1回)
+        if (nowMs - lastSgp41SaveMs >= 3600000) {
+            lastSgp41SaveMs = nowMs;
+            if (sgp41_.state() == core::DeviceState::Ready) {
+                float voc0, voc1;
+                sgp41_.getAlgorithmStates(voc0, voc1);
+                storage_->setSgp41States(voc0, voc1);
+                services::Logger::info("SensorMgr", "SGP41 VOC algorithm states saved to FRAM.");
+            }
+        }
         
         sht45_.update(nowMs);
         status_.sht45State = sht45_.state();
@@ -80,6 +122,20 @@ void SensorManager::update(uint32_t nowMs) {
             if (sht45_.readEnvironment(envTmp)) {
                 compTemp = envTmp.temperatureC;
                 compHum = envTmp.humidityRh;
+                
+                // --- SHT45 Auto Heater Logic (Condensation Prevention) ---
+                if (envTmp.humidityRh >= 95.0f) {
+                    if (highHumidityStartMs_ == 0) {
+                        highHumidityStartMs_ = nowMs;
+                    } else if (nowMs - highHumidityStartMs_ >= 3600000) { // 1 hour continuous >= 95%
+                        if (nowMs - lastHeaterRunMs_ >= 3600000) { // Max once per hour
+                            services::Logger::info("SensorMgr", "High humidity detected for 1 hour. Triggering heater.");
+                            triggerSht45Heater();
+                        }
+                    }
+                } else {
+                    highHumidityStartMs_ = 0;
+                }
             }
         }
         sgp41_.setCompensation(compTemp, compHum);

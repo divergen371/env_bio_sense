@@ -6,8 +6,10 @@
 #include <ArduinoJson.h>
 #include <SD.h>
 #include "services/weather_service.h"
+#include "services/sensor_manager.h"
 
 extern services::WeatherService weatherService;
+extern services::SensorManager sensorManager;
 
 namespace services {
 
@@ -51,6 +53,14 @@ const char* htmlContent = R"rawliteral(
     <strong>Altitude Calibration:</strong> 
     <span id="sealevelStatus">Waiting for connection...</span>
   </div>
+
+  <div style="margin-bottom: 15px; padding: 10px; background-color: #fff3cd; border: 1px solid #ffeeba; border-radius: 4px; font-size: 14px;">
+    <strong>SCD41 Manual Calibration:</strong><br>
+    <small>Expose sensor to fresh air (>3 mins) before calibrating.</small><br>
+    Target CO2 (ppm): <input type="number" id="scd41Target" value="400" style="width: 80px; margin-top: 5px;">
+    <button onclick="calibrateSCD41()" style="padding: 4px 8px; font-size: 12px; cursor: pointer;">Calibrate</button>
+    <span id="scd41CalibStatus" style="margin-left: 10px;"></span>
+  </div>
   
   <div style="margin-bottom: 15px;">
     <button onclick="flushAndReload()" style="padding: 10px 15px; font-size: 16px; font-weight: bold; cursor: pointer; border-radius: 5px; border: none; background-color: #28a745; color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
@@ -93,6 +103,32 @@ const char* htmlContent = R"rawliteral(
         }
       } catch (err) {
         document.getElementById('status').innerText = '時刻同期に失敗しました / Time Sync Failed.';
+      }
+    }
+
+    async function calibrateSCD41() {
+      const targetPpm = document.getElementById('scd41Target').value;
+      const statusSpan = document.getElementById('scd41CalibStatus');
+      statusSpan.innerText = 'Calibrating... (takes ~500ms)';
+      statusSpan.style.color = '#856404';
+      
+      try {
+        const response = await fetch('/api/scd41/calibrate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target_ppm: parseInt(targetPpm) })
+        });
+        const data = await response.json();
+        if (response.ok) {
+          statusSpan.innerText = 'Success! Correction: 0x' + data.correction.toString(16).toUpperCase();
+          statusSpan.style.color = 'green';
+        } else {
+          statusSpan.innerText = 'Failed: ' + (data.error || 'Unknown error');
+          statusSpan.style.color = 'red';
+        }
+      } catch (err) {
+        statusSpan.innerText = 'Network error';
+        statusSpan.style.color = 'red';
       }
     }
 
@@ -499,6 +535,29 @@ void WebServerService::setupRoutes() {
         response += "\"max\":" + String(storageManager_.getMaxRecords());
         response += "}";
         request->send(200, "application/json", response);
+    });
+
+    server_->on("/api/scd41/calibrate", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
+        [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
+            JsonDocument doc;
+            DeserializationError error = deserializeJson(doc, data, len);
+            if (error) {
+                request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+                return;
+            }
+            if (doc.containsKey("target_ppm")) {
+                uint16_t targetPpm = doc["target_ppm"].as<uint16_t>();
+                uint16_t frcCorrection = 0;
+                // 注意: この呼び出しは約500msブロックします
+                if (sensorManager.calibrateScd41(targetPpm, frcCorrection)) {
+                    String resp = "{\"status\":\"ok\",\"correction\":" + String(frcCorrection) + "}";
+                    request->send(200, "application/json", resp);
+                } else {
+                    request->send(500, "application/json", "{\"error\":\"Calibration failed\"}");
+                }
+            } else {
+                request->send(400, "application/json", "{\"error\":\"Missing target_ppm\"}");
+            }
     });
 
     server_->on("/api/sealevel", HTTP_POST, [](AsyncWebServerRequest *request){

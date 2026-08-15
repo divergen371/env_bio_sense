@@ -26,6 +26,10 @@ public:
     // 補正用データの注入
     void setCompensation(float temperatureC, float humidityRh);
 
+    // アルゴリズム状態（ベースライン）の保存・復元
+    void getAlgorithmStates(float& voc0, float& voc1) const;
+    void setAlgorithmStates(float voc0, float voc1);
+
 private:
     SensirionI2CSgp41 sgp41_;
     VOCGasIndexAlgorithm vocAlgorithm_;

@@ -58,6 +58,23 @@ bool Scd41Sensor::begin() {
 
     services::Logger::info("SCD41", "SCD41 initialized. Serial: 0x%04X%04X%04X", serial0, serial1, serial2);
 
+    // ASC (Automatic Self-Calibration) の無効化と、筐体内の自己発熱を考慮した温度オフセット(2.0℃)の設定
+    {
+        hal::I2cLockGuard lock(100);
+        if (lock.acquired()) {
+            error = scd4x_.setAutomaticSelfCalibration(0);
+            if (error) {
+                services::Logger::warn("SCD41", "Failed to disable ASC, error: %u", error);
+            }
+            error = scd4x_.setTemperatureOffset(2.0f);
+            if (error) {
+                services::Logger::warn("SCD41", "Failed to set temperature offset, error: %u", error);
+            }
+        } else {
+            services::Logger::error("SCD41", "Failed to acquire lock for SCD41 settings");
+        }
+    }
+
     // Periodic Measurement 開始 (測定間隔は約5秒)
     {
         hal::I2cLockGuard lock(100);
@@ -84,6 +101,74 @@ bool Scd41Sensor::begin() {
     notReadyCount_ = 0;
     consecutiveErrors_ = 0;
     return true;
+}
+
+bool Scd41Sensor::performManualCalibration(uint16_t targetCo2Ppm, uint16_t& frcCorrection) {
+    if (state_ == core::DeviceState::Error || state_ == core::DeviceState::Offline) {
+        services::Logger::error("SCD41", "Cannot perform FRC in current state");
+        return false;
+    }
+
+    uint16_t error = 0;
+    char errorMessage[256];
+
+    // 1. Stop periodic measurement
+    {
+        hal::I2cLockGuard lock(100);
+        if (lock.acquired()) {
+            error = scd4x_.stopPeriodicMeasurement();
+        } else {
+            services::Logger::error("SCD41", "FRC: Failed to lock for stopPeriodicMeasurement");
+            return false;
+        }
+    }
+
+    if (error) {
+        errorToString(error, errorMessage, 256);
+        services::Logger::warn("SCD41", "FRC: stopPeriodicMeasurement failed: %s", errorMessage);
+    }
+
+    // 2. Wait 500ms
+    delay(500);
+
+    // 3. Perform FRC
+    {
+        hal::I2cLockGuard lock(100);
+        if (lock.acquired()) {
+            error = scd4x_.performForcedRecalibration(targetCo2Ppm, frcCorrection);
+        } else {
+            services::Logger::error("SCD41", "FRC: Failed to lock for performForcedRecalibration");
+            return false;
+        }
+    }
+
+    if (error) {
+        errorToString(error, errorMessage, 256);
+        services::Logger::error("SCD41", "FRC failed: %s", errorMessage);
+    } else if (frcCorrection == 0xFFFF) {
+        services::Logger::error("SCD41", "FRC failed: 0xFFFF returned");
+        error = 1;
+    } else {
+        services::Logger::info("SCD41", "FRC success. Correction: 0x%04X", frcCorrection);
+    }
+
+    // 4. Restart periodic measurement
+    uint16_t restartError = 0;
+    {
+        hal::I2cLockGuard lock(100);
+        if (lock.acquired()) {
+            restartError = scd4x_.startPeriodicMeasurement();
+        } else {
+            services::Logger::error("SCD41", "FRC: Failed to lock for startPeriodicMeasurement");
+        }
+    }
+    
+    if (restartError) {
+        services::Logger::error("SCD41", "FRC: startPeriodicMeasurement failed");
+        state_ = core::DeviceState::Error;
+    }
+
+    return error == 0;
 }
 
 void Scd41Sensor::update(uint32_t nowMs) {

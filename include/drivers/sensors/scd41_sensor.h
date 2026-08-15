@@ -13,6 +13,11 @@ public:
     // ISensor 実装
     core::SensorId id() const override { return core::SensorId::Scd41; }
     bool begin() override;
+
+    // Perform manual calibration (FRC). Note: This is a blocking call (~500ms).
+    // The sensor must have been operating in periodic measurement mode for >3 mins.
+    bool performManualCalibration(uint16_t targetCo2Ppm, uint16_t& frcCorrection);
+
     void update(uint32_t nowMs) override;
     core::DeviceState state() const override { return state_; }
     core::ErrorCode lastError() const override { return lastError_; }

@@ -80,6 +80,28 @@ void StorageManager::initSuperblock() {
     superblock_.nextSequence = 1;
     superblock_.bootCount = 1;
     superblock_.lastSdFlushSequence = 0;
+    
+    superblock_.hasValidSgp41State = false;
+    superblock_.sgp41VocState0 = 0;
+    superblock_.sgp41VocState1 = 0;
+}
+
+bool StorageManager::getSgp41States(float& voc0, float& voc1) const {
+    if (!framAvailable_ || !superblock_.hasValidSgp41State) return false;
+    voc0 = superblock_.sgp41VocState0;
+    voc1 = superblock_.sgp41VocState1;
+    return true;
+}
+
+void StorageManager::setSgp41States(float voc0, float voc1) {
+    if (!framAvailable_) return;
+    
+    lock();
+    superblock_.hasValidSgp41State = true;
+    superblock_.sgp41VocState0 = voc0;
+    superblock_.sgp41VocState1 = voc1;
+    saveSuperblock();
+    unlock();
 }
 
 bool StorageManager::loadSuperblock() {

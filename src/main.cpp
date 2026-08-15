@@ -50,7 +50,7 @@ void setup() {
     hal::I2cBus::scan();
 
     // サービス初期化
-    sensorManager.begin();
+    sensorManager.begin(storageManager);
     displayManager.begin();
     storageManager.begin();
     
