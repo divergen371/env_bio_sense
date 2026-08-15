@@ -84,6 +84,9 @@ void StorageManager::initSuperblock() {
     superblock_.hasValidSgp41State = false;
     superblock_.sgp41VocState0 = 0;
     superblock_.sgp41VocState1 = 0;
+
+    // 起算日: 2026-08-15 00:00:00 UTC (1786752000)
+    superblock_.lastScd41CalibrationEpoch = 1786752000;
 }
 
 bool StorageManager::getSgp41States(float& voc0, float& voc1) const {
@@ -100,6 +103,20 @@ void StorageManager::setSgp41States(float voc0, float voc1) {
     superblock_.hasValidSgp41State = true;
     superblock_.sgp41VocState0 = voc0;
     superblock_.sgp41VocState1 = voc1;
+    saveSuperblock();
+    unlock();
+}
+
+uint32_t StorageManager::getScd41LastCalibrationEpoch() const {
+    if (!framAvailable_) return 0;
+    return superblock_.lastScd41CalibrationEpoch;
+}
+
+void StorageManager::setScd41LastCalibrationEpoch(uint32_t epoch) {
+    if (!framAvailable_) return;
+    
+    lock();
+    superblock_.lastScd41CalibrationEpoch = epoch;
     saveSuperblock();
     unlock();
 }

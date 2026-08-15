@@ -41,6 +41,10 @@ public:
     bool getSgp41States(float& voc0, float& voc1) const;
     void setSgp41States(float voc0, float voc1);
 
+    // SCD41 calibration tracking
+    uint32_t getScd41LastCalibrationEpoch() const;
+    void setScd41LastCalibrationEpoch(uint32_t epoch);
+
     // スレッドセーフなアクセスを提供するため
     void lock();
     void unlock();

@@ -5,7 +5,7 @@
 namespace storage {
 
 constexpr uint32_t FRAM_MAGIC = 0x4652414D; // "FRAM"
-constexpr uint16_t FRAM_FORMAT_VERSION = 2;
+constexpr uint16_t FRAM_FORMAT_VERSION = 3;
 
 enum class EventCode : uint16_t {
     Boot = 0x01,
@@ -35,6 +35,9 @@ struct FramSuperblock {
     bool hasValidSgp41State;
     float sgp41VocState0;
     float sgp41VocState1;
+
+    // SCD41 calibration tracking
+    uint32_t lastScd41CalibrationEpoch;
 
     uint16_t crc16;
 };

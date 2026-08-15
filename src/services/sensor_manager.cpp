@@ -1,6 +1,7 @@
 #include "services/sensor_manager.h"
 #include "services/logger.h"
 #include "hal/i2c_bus.h"
+#include "hal/clock.h"
 
 namespace services {
 
@@ -53,10 +54,31 @@ bool SensorManager::calibrateScd41(uint16_t targetPpm, uint16_t& frcCorrection) 
     bool success = scd41_.performManualCalibration(targetPpm, frcCorrection);
     if (success) {
         services::Logger::info("SensorMgr", "SCD41 manual calibration succeeded (target: %u ppm, correction: 0x%04X)", targetPpm, frcCorrection);
+        if (storage_ != nullptr && hal::Clock::isTimeSet()) {
+            storage_->setScd41LastCalibrationEpoch(hal::Clock::getEpoch());
+        }
     } else {
         services::Logger::error("SensorMgr", "SCD41 manual calibration failed");
     }
     return success;
+}
+
+bool SensorManager::isScd41CalibrationRecommended() const {
+    if (storage_ == nullptr || !hal::Clock::isTimeSet()) {
+        return false;
+    }
+    uint32_t lastEpoch = storage_->getScd41LastCalibrationEpoch();
+    if (lastEpoch == 0) return true; // 未校正
+    
+    uint32_t nowEpoch = hal::Clock::getEpoch();
+    if (nowEpoch > lastEpoch) {
+        uint32_t diff = nowEpoch - lastEpoch;
+        // 7 days = 7 * 24 * 60 * 60 = 604800 seconds
+        if (diff >= 604800) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool SensorManager::triggerSht45Heater() {

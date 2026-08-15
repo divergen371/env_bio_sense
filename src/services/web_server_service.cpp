@@ -54,6 +54,10 @@ const char* htmlContent = R"rawliteral(
     <span id="sealevelStatus">Waiting for connection...</span>
   </div>
 
+  <div id="scd41RecBadge" style="display: none; margin-bottom: 15px; padding: 10px; background-color: #f8d7da; border: 1px solid #f5c6cb; border-radius: 4px; font-size: 14px; color: #721c24; font-weight: bold;">
+    ⚠️ SCD41 Manual Calibration is recommended! (Last calibration > 7 days ago)
+  </div>
+
   <div style="margin-bottom: 15px; padding: 10px; background-color: #fff3cd; border: 1px solid #ffeeba; border-radius: 4px; font-size: 14px;">
     <strong>SCD41 Manual Calibration:</strong><br>
     <small>Expose sensor to fresh air (>3 mins) before calibrating.</small><br>
@@ -122,6 +126,7 @@ const char* htmlContent = R"rawliteral(
         if (response.ok) {
           statusSpan.innerText = 'Success! Correction: 0x' + data.correction.toString(16).toUpperCase();
           statusSpan.style.color = 'green';
+          document.getElementById('scd41RecBadge').style.display = 'none';
         } else {
           statusSpan.innerText = 'Failed: ' + (data.error || 'Unknown error');
           statusSpan.style.color = 'red';
@@ -227,6 +232,13 @@ const char* htmlContent = R"rawliteral(
           alertDiv.style.color = '#2e7d32';
           alertDiv.style.border = '1px solid #2e7d32';
           textSpan.innerText = `${data.pending} / ${data.max} (${pct}%)`;
+        }
+        
+        const scdBadge = document.getElementById('scd41RecBadge');
+        if (data.scd41CalibRecommended) {
+          scdBadge.style.display = 'block';
+        } else {
+          scdBadge.style.display = 'none';
         }
       } catch (e) {
         console.error("Status fetch failed", e);
@@ -532,7 +544,22 @@ void WebServerService::setupRoutes() {
     server_->on("/api/status", HTTP_GET, [this](AsyncWebServerRequest *request){
         String response = "{";
         response += "\"pending\":" + String(storageManager_.getPendingCount()) + ",";
-        response += "\"max\":" + String(storageManager_.getMaxRecords());
+        response += "\"max\":" + String(storageManager_.getMaxRecords()) + ",";
+        
+        bool scd41Rec = false;
+        if (hal::Clock::isTimeSet()) {
+            uint32_t lastEpoch = storageManager_.getScd41LastCalibrationEpoch();
+            if (lastEpoch == 0) {
+                scd41Rec = true;
+            } else {
+                uint32_t nowEpoch = hal::Clock::getEpoch();
+                if (nowEpoch > lastEpoch && (nowEpoch - lastEpoch) >= 604800) {
+                    scd41Rec = true;
+                }
+            }
+        }
+        
+        response += "\"scd41CalibRecommended\":" + String(scd41Rec ? "true" : "false");
         response += "}";
         request->send(200, "application/json", response);
     });

@@ -23,6 +23,7 @@ public:
     void setSeaLevelPressure(float hpa);
     bool calibrateScd41(uint16_t targetPpm, uint16_t& frcCorrection);
     bool triggerSht45Heater();
+    bool isScd41CalibrationRecommended() const;
 
 private:
     storage::StorageManager* storage_ = nullptr;
