@@ -1,5 +1,6 @@
 #include "drivers/sensors/max30102_sensor.h"
 #include "services/logger.h"
+#include "hal/i2c_bus.h"
 #include <Wire.h>
 
 namespace drivers {
@@ -11,6 +12,14 @@ bool Max30102Sensor::begin() {
     services::Logger::info("MAX30102", "Initializing MAX30102...");
     state_ = core::DeviceState::Initializing;
     
+    hal::I2cLockGuard lock(100);
+    if (!lock.acquired()) {
+        services::Logger::error("MAX30102", "Failed to acquire I2C lock during begin().");
+        state_ = core::DeviceState::Error;
+        lastError_ = core::ErrorCode::InitFailed;
+        return false;
+    }
+
     // Wire インスタンスと I2C speed, I2C address を渡す (デフォルト0x57)
     // begin(wirePort, i2cSpeed, i2caddr)
     // 第2引数の I2C_SPEED_STANDARD = 100kHz, I2C_SPEED_FAST = 400kHz
@@ -42,6 +51,12 @@ bool Max30102Sensor::begin() {
 
 void Max30102Sensor::update(uint32_t nowMs) {
     if (state_ == core::DeviceState::Error || state_ == core::DeviceState::Offline) {
+        return;
+    }
+
+    hal::I2cLockGuard lock(10); // PPGは高速サンプリングなのでタイムアウトは短く設定 (10ms)
+    if (!lock.acquired()) {
+        // OLED描画などでI2Cがロック中の場合はスキップして次回に回す
         return;
     }
 
@@ -165,6 +180,8 @@ bool Max30102Sensor::readPpg(core::PpgData& out) const {
 void Max30102Sensor::resetPpgState() {
     ppgState_ = core::PpgState::NoFinger;
     currentLedBrightness_ = 10;
+    
+    // I2C通信が発生するため、呼び出し元でロックを取得している前提
     particleSensor_.setPulseAmplitudeRed(0);
     particleSensor_.setPulseAmplitudeIR(10);
     analyzer_.reset();

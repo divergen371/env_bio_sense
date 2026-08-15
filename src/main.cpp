@@ -17,6 +17,29 @@ services::WifiManager wifiManager;
 services::WebServerService webServer(storageManager);
 services::WeatherService weatherService(sensorManager, wifiManager);
 
+// --- FreeRTOS Tasks ---
+void weatherTask(void* pvParameters) {
+    while (true) {
+        weatherService.update(millis());
+        vTaskDelay(pdMS_TO_TICKS(1000)); // 1秒間隔でチェック（内部で15分判定）
+    }
+}
+
+void storageTask(void* pvParameters) {
+    while (true) {
+        vTaskDelay(pdMS_TO_TICKS(5000)); // 5秒ごとにSDへフラッシュ
+        storageManager.flushPendingToSd();
+    }
+}
+
+void displayTask(void* pvParameters) {
+    while (true) {
+        uint32_t nowMs = millis();
+        displayManager.render(sensorManager.snapshot(), sensorManager.status(), nowMs);
+        vTaskDelay(pdMS_TO_TICKS(500)); // 500ms間隔で描画
+    }
+}
+
 void setup() {
     services::Logger::init(115200);
 
@@ -62,6 +85,12 @@ void setup() {
     if (!storageManager.isSdAvailable()) {
         digitalWrite(hal::pins::USER_LED, LOW);
     }
+
+    // FreeRTOS タスクの起動
+    // 通信系(Weather)は Core 0、ファイル/I2C系は Core 1
+    xTaskCreatePinnedToCore(weatherTask, "WeatherTask", 8192, NULL, 1, NULL, 0);
+    xTaskCreatePinnedToCore(storageTask, "StorageTask", 4096, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(displayTask, "DisplayTask", 4096, NULL, 1, NULL, 1);
 }
 
 void loop() {
@@ -98,16 +127,8 @@ void loop() {
     storageManager.setWifiActive(wifiManager.isOn());
 
     // センサ更新 (内部で環境系は1000ms間隔、PPG系は常時更新に制御)
+    // PPG (MAX30102) の高速サンプリングのため、このメインループは極力ブロックしないこと
     sensorManager.update(nowMs);
-    
-    // 定期的な天気APIアクセス（海面気圧の取得）
-    weatherService.update(nowMs);
-
-    // 500msごとにOLEDを更新
-    if (nowMs - previousDisplayMs >= 500) {
-        previousDisplayMs = nowMs;
-        displayManager.render(sensorManager.snapshot(), sensorManager.status(), nowMs);
-    }
 
     static uint32_t previousLogMs = 0;
     // 2000msごとにPPGの計算結果(HR/SpO2)または生データをシリアルに出力
@@ -140,10 +161,10 @@ void loop() {
     }
 
     static uint32_t previousSdLogMs = 0;
-    // 5000ms (5秒) ごとにFRAMへ記録し、SDカードへフラッシュを試みる
+    // 5000ms (5秒) ごとにFRAMへ記録
     if (nowMs - previousSdLogMs >= 5000) {
         previousSdLogMs = nowMs;
         storageManager.appendRecord(sensorManager.snapshot(), nowMs);
-        storageManager.flushPendingToSd();
+        // flushPendingToSd() は StorageTask で非同期実行される
     }
 }
