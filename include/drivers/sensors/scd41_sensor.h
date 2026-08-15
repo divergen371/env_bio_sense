@@ -21,6 +21,9 @@ public:
     // IEnvironmentSensor 実装
     bool readEnvironment(core::EnvironmentData& out) const override;
 
+    // 気圧補正用（CO2濃度計算の高精度化）
+    void setAmbientPressure(uint16_t pressureHpa);
+
 private:
     SensirionI2CScd4x scd4x_;
     

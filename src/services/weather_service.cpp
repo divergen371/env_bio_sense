@@ -23,14 +23,14 @@ void WeatherService::update(uint32_t nowMs) {
         return;
     }
     
-    // 1時間（3600000ms）ごとに取得
-    if (needsFetch_ || (nowMs - lastFetchMs_ > 3600000)) {
+    // 20分（1200000ms）ごとに取得
+    if (needsFetch_ || (nowMs - lastFetchMs_ > 1200000)) {
         if (fetchSeaLevelPressure()) {
-            lastFetchMs_ = nowMs;
             needsFetch_ = false;
+            lastFetchMs_ = nowMs;
         } else {
-            // 失敗した場合は 5 分後にリトライ
-            lastFetchMs_ = nowMs - 3600000 + 300000;
+            // 失敗した場合は5分後（300000ms）にリトライするよう調整
+            lastFetchMs_ = nowMs - 1200000 + 300000;
         }
     }
 }

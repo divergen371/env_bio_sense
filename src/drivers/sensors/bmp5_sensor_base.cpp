@@ -119,6 +119,16 @@ bool Bmp5SensorBase::begin() {
         rslt = bmp5_set_osr_odr_press_config(&osr_odr_press_cfg_, &bmp5_dev_);
     }
 
+    if (rslt == BMP5_OK) {
+        struct bmp5_iir_config iir_cfg = {0};
+        rslt = bmp5_get_iir_config(&iir_cfg, &bmp5_dev_);
+        if (rslt == BMP5_OK) {
+            iir_cfg.set_iir_t = BMP5_IIR_FILTER_COEFF_63;
+            iir_cfg.set_iir_p = BMP5_IIR_FILTER_COEFF_63;
+            rslt = bmp5_set_iir_config(&iir_cfg, &bmp5_dev_);
+        }
+    }
+
     if (rslt != BMP5_OK) {
         services::Logger::error(getSensorName(), "Failed to config. Error: %d", rslt);
         changeState(core::DeviceState::Error);
@@ -174,6 +184,14 @@ bool Bmp5SensorBase::reinitSensor(uint32_t nowMs) {
         nextReinitMs_ = nowMs + 300000;
         changeState(core::DeviceState::RetryWait);
         return false;
+    }
+
+    struct bmp5_iir_config iir_cfg = {0};
+    rslt = bmp5_get_iir_config(&iir_cfg, &bmp5_dev_);
+    if (rslt == BMP5_OK) {
+        iir_cfg.set_iir_t = BMP5_IIR_FILTER_COEFF_63;
+        iir_cfg.set_iir_p = BMP5_IIR_FILTER_COEFF_63;
+        bmp5_set_iir_config(&iir_cfg, &bmp5_dev_);
     }
 
     rslt = bmp5_set_power_mode(BMP5_POWERMODE_NORMAL, &bmp5_dev_);
@@ -247,11 +265,27 @@ void Bmp5SensorBase::update(uint32_t nowMs) {
     currentPressureHpa_ = pressureHpa;
     currentTemperatureC_ = rawTemperatureC;
     
+    // 外部基準気温（SHT45等）があればそれを使用し、無ければ内蔵温度を使用
+    float tempForAltitude = std::isnan(referenceTemperatureC_) ? rawTemperatureC : referenceTemperatureC_;
+    
     // 気温を考慮した高度計算: h = ((T + 273.15) / 0.0065) * (1 - (P / P0)^0.190295)
     if (seaLevelPressureHpa_ > 0) {
-        currentAltitudeM_ = ((rawTemperatureC + 273.15f) / 0.0065f) * (1.0f - std::pow(pressureHpa / seaLevelPressureHpa_, 0.190295f));
+        currentAltitudeM_ = ((tempForAltitude + 273.15f) / 0.0065f) * (1.0f - std::pow(pressureHpa / seaLevelPressureHpa_, 0.190295f));
+        
+        // ソフトウェアデッドバンド（ヒステリシス ±0.5m）
+        if (std::isnan(displayAltitudeM_)) {
+            displayAltitudeM_ = currentAltitudeM_;
+        } else {
+            float diff = currentAltitudeM_ - displayAltitudeM_;
+            if (diff > 0.5f) {
+                displayAltitudeM_ += (diff - 0.5f);
+            } else if (diff < -0.5f) {
+                displayAltitudeM_ += (diff + 0.5f);
+            }
+        }
     } else {
         currentAltitudeM_ = NAN;
+        displayAltitudeM_ = NAN;
     }
     
     hasValidData_ = true;
@@ -259,8 +293,8 @@ void Bmp5SensorBase::update(uint32_t nowMs) {
     lastError_ = core::ErrorCode::None;
     changeState(core::DeviceState::Ready);
     
-    services::Logger::info(getSensorName(), "ts=%u read=OK raw_pressure=%.1fPa pressure=%.2fhPa temp=%.2fC invalid_count=%u reset_count=%u",
-        nowMs, rawPressurePa, pressureHpa, rawTemperatureC, consecutiveErrors_, resetCount_);
+    services::Logger::info(getSensorName(), "ts=%u read=OK raw_pressure=%.1fPa pressure=%.2fhPa temp=%.2fC alt=%.1fm invalid_count=%u reset_count=%u",
+        nowMs, rawPressurePa, pressureHpa, rawTemperatureC, displayAltitudeM_, consecutiveErrors_, resetCount_);
 }
 
 bool Bmp5SensorBase::readEnvironment(core::EnvironmentData& out) const {
@@ -273,8 +307,8 @@ bool Bmp5SensorBase::readEnvironment(core::EnvironmentData& out) const {
     out.pressureValid = !isStale_;
     out.pressureStale = isStale_;
     
-    out.altitudeM = currentAltitudeM_;
-    out.altitudeValid = (!isStale_ && !std::isnan(currentAltitudeM_));
+    out.altitudeM = displayAltitudeM_; // ヒステリシス適用済みの高度を出力
+    out.altitudeValid = (!isStale_ && !std::isnan(displayAltitudeM_));
     
     if (lastSuccessMs_ > out.timestampMs) {
         out.timestampMs = lastSuccessMs_;

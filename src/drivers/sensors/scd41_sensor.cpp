@@ -170,5 +170,19 @@ bool Scd41Sensor::readEnvironment(core::EnvironmentData& out) const {
     return true;
 }
 
+void Scd41Sensor::setAmbientPressure(uint16_t pressureHpa) {
+    if (state_ == core::DeviceState::Error || state_ == core::DeviceState::Offline) {
+        return;
+    }
+    
+    hal::I2cLockGuard lock(100);
+    if (lock.acquired()) {
+        uint16_t error = scd4x_.setAmbientPressure(pressureHpa);
+        if (error) {
+            services::Logger::warn("SCD41", "Failed to set ambient pressure: %u hPa", pressureHpa);
+        }
+    }
+}
+
 } // namespace sensors
 } // namespace drivers

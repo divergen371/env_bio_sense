@@ -56,6 +56,18 @@ void SensorManager::update(uint32_t nowMs) {
         bmp581_.update(nowMs);
         status_.bmp581State = bmp581_.state();
         
+        // BMP581の気圧データをSCD41の補償に渡す
+        if (bmp581_.state() == core::DeviceState::Ready) {
+            core::EnvironmentData envTmp;
+            if (bmp581_.readEnvironment(envTmp) && std::isfinite(envTmp.pressureHpa)) {
+                // SCD41のsetAmbientPressureはuint16_t (700-1200 hPa)
+                uint16_t pressInt = static_cast<uint16_t>(envTmp.pressureHpa);
+                if (pressInt >= 700 && pressInt <= 1200) {
+                    scd41_.setAmbientPressure(pressInt);
+                }
+            }
+        }
+        
         scd41_.update(nowMs);
         status_.scd41State = scd41_.state();
         
@@ -71,6 +83,7 @@ void SensorManager::update(uint32_t nowMs) {
             }
         }
         sgp41_.setCompensation(compTemp, compHum);
+        bmp581_.setReferenceTemperature(compTemp);
         sgp41_.update(nowMs);
     }
     

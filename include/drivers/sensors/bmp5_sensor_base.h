@@ -22,6 +22,9 @@ public:
     // 海面気圧の設定（高度計算用）
     void setSeaLevelPressure(float hpa) { seaLevelPressureHpa_ = hpa; }
     
+    // 外部基準気温の設定（高度計算用。NANで無効化）
+    void setReferenceTemperature(float tempC) { referenceTemperatureC_ = tempC; }
+    
     // 診断用
     void runDiagnostics();
 
@@ -40,7 +43,9 @@ private:
     float currentPressureHpa_ = 0.0f;
     float currentTemperatureC_ = 0.0f;
     float currentAltitudeM_ = NAN;
+    float displayAltitudeM_ = NAN; // ヒステリシス適用後の高度
     float seaLevelPressureHpa_ = 1008.0f; // Default baseline
+    float referenceTemperatureC_ = NAN; // SHT45等からの外部気温
     bool isStale_ = true;
     bool hasValidData_ = false;
 
