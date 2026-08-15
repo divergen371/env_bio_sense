@@ -390,7 +390,7 @@ const char* htmlContent = R"rawliteral(
 
     async function calibrateSeaLevelPressure() {
       const statusEl = document.getElementById('sealevelStatus');
-      statusEl.innerText = 'Fetching current sea level pressure from JMA AMeDAS...';
+      statusEl.innerText = 'Fetching current sea level pressure from JMA AMeDAS (IDW)...';
       try {
         const myLat = 35.503788;
         const myLon = 139.650497;
@@ -400,25 +400,23 @@ const char* htmlContent = R"rawliteral(
         if (!tableRes.ok) throw new Error('Failed to fetch amedastable');
         const table = await tableRes.json();
         
-        // 2. Find nearest station (type A or B)
-        let bestStation = "";
-        let minDistance = 999999;
-        
+        // 2. Calculate distances for all A or B stations
+        let stations = [];
         for (const [id, station] of Object.entries(table)) {
           if (station.type === 'A' || station.type === 'B') {
             if (station.lat && station.lon && station.lat.length >= 2 && station.lon.length >= 2) {
               const lat = station.lat[0] + station.lat[1] / 60.0;
               const lon = station.lon[0] + station.lon[1] / 60.0;
               const distSq = Math.pow(lat - myLat, 2) + Math.pow(lon - myLon, 2);
-              if (distSq < minDistance) {
-                minDistance = distSq;
-                bestStation = id;
-              }
+              stations.push({ id, distSq });
             }
           }
         }
         
-        if (!bestStation) throw new Error('No valid AMeDAS station found');
+        // Sort by distance and pick top 5
+        stations.sort((a, b) => a.distSq - b.distSq);
+        const topStations = stations.slice(0, 5);
+        if (topStations.length === 0) throw new Error('No valid AMeDAS station found');
         
         // 3. Fetch latest time
         const timeRes = await fetch('https://www.jma.go.jp/bosai/amedas/data/latest_time.txt');
@@ -431,13 +429,54 @@ const char* htmlContent = R"rawliteral(
         if (!mapRes.ok) throw new Error('Failed to fetch map data');
         const mapData = await mapRes.json();
         
-        const stationData = mapData[bestStation];
-        if (!stationData || !stationData.normalPressure) {
-          throw new Error(`No pressure data for station ${bestStation}`);
+        // 5. Calculate IDW (Inverse Distance Weighting)
+        let sumWeight = 0.0;
+        let sumWeightedPressure = 0.0;
+        let validCount = 0;
+        let usedStations = [];
+        let minP = 9999.0;
+        let maxP = -9999.0;
+        let minDistSq = 999999.0;
+        let maxDistSq = 0.0;
+        
+        for (const st of topStations) {
+          const stationData = mapData[st.id];
+          if (stationData && stationData.normalPressure && stationData.normalPressure[0] != null) {
+            const p = stationData.normalPressure[0];
+            if (st.distSq < 1e-6) { // Exactly at station
+              sumWeight = 1.0;
+              sumWeightedPressure = p;
+              validCount = 1;
+              usedStations = [st.id];
+              minP = maxP = p;
+              minDistSq = maxDistSq = 0;
+              break;
+            }
+            const w = 1.0 / st.distSq;
+            sumWeight += w;
+            sumWeightedPressure += p * w;
+            validCount++;
+            usedStations.push(st.id);
+            if (p < minP) minP = p;
+            if (p > maxP) maxP = p;
+            if (st.distSq < minDistSq) minDistSq = st.distSq;
+            if (st.distSq > maxDistSq) maxDistSq = st.distSq;
+          }
         }
         
-        const slp = stationData.normalPressure[0];
-        statusEl.innerText = `Retrieved: ${slp} hPa (Station: ${bestStation}). Updating ESP32...`;
+        if (validCount === 0) {
+          throw new Error('No pressure data available for top stations');
+        }
+        
+        let slpNum = sumWeightedPressure / sumWeight;
+        // Clamp to min/max range
+        if (slpNum < minP) slpNum = minP;
+        if (slpNum > maxP) slpNum = maxP;
+        
+        const slp = slpNum.toFixed(1);
+        const minDistKm = (Math.sqrt(minDistSq) * 111.0).toFixed(1);
+        const maxDistKm = (Math.sqrt(maxDistSq) * 111.0).toFixed(1);
+        statusEl.innerText = `Retrieved IDW: ${slp} hPa (Used ${validCount}/5 stations: ${usedStations.join(',')}, MinDist: ${minDistKm}km, MaxDist: ${maxDistKm}km). Updating ESP32...`;
         
         const postRes = await fetch('/api/sealevel', {
           method: 'POST',
@@ -446,7 +485,7 @@ const char* htmlContent = R"rawliteral(
         });
         
         if (postRes.ok) {
-          statusEl.innerHTML = `<span style="color: green;">✔ Calibration successful! Base pressure set to ${slp} hPa.</span>`;
+          statusEl.innerHTML = `<span style="color: green;">✔ IDW Calibration successful! Base pressure set to ${slp} hPa.</span>`;
         } else {
           throw new Error('ESP32 rejected update');
         }
@@ -598,6 +637,26 @@ void WebServerService::setupRoutes() {
             }
         }
         request->send(400, "text/plain", "Invalid pressure parameter");
+    });
+
+    server_->on("/api/bmp581/calibrate", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
+        [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
+            JsonDocument doc;
+            DeserializationError error = deserializeJson(doc, data, len);
+            if (error) {
+                request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+                return;
+            }
+            if (doc.containsKey("reference_altitude_m")) {
+                float refAlt = doc["reference_altitude_m"].as<float>();
+                if (sensorManager.startBmp581Calibration(refAlt)) {
+                    request->send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Calibration started (takes 6 minutes)\"}");
+                } else {
+                    request->send(400, "application/json", "{\"error\":\"Cannot start calibration. Pressure field might not be Valid.\"}");
+                }
+            } else {
+                request->send(400, "application/json", "{\"error\":\"Missing reference_altitude_m\"}");
+            }
     });
 
     server_->on("/download", HTTP_GET, [this](AsyncWebServerRequest *request){

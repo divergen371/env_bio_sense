@@ -50,9 +50,9 @@ void setup() {
     hal::I2cBus::scan();
 
     // サービス初期化
+    storageManager.begin();
     sensorManager.begin(storageManager);
     displayManager.begin();
-    storageManager.begin();
     
     wifiManager.begin();
     webServer.begin();

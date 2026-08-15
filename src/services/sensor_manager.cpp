@@ -18,6 +18,16 @@ bool SensorManager::begin(storage::StorageManager& storageManager) {
     
     if (!bmp581_.begin()) {
         services::Logger::error("SensorMgr", "Failed to initialize BMP581");
+    } else {
+        float offsetHpa, tempC, slpHpa;
+        uint32_t epoch;
+        if (storage_->getBmp581Calibration(offsetHpa, epoch, tempC, slpHpa)) {
+            bmp581_.setCalibrationOffset(offsetHpa);
+            if (std::isfinite(slpHpa) && slpHpa > 800.0f && slpHpa < 1200.0f) {
+                bmp581_.setSeaLevelPressure(slpHpa, core::PressureFieldState::LastKnown);
+            }
+            services::Logger::info("SensorMgr", "BMP581 calibration loaded: %.2f hPa (Saved SLP: %.2f hPa)", offsetHpa, slpHpa);
+        }
     }
 
     if (!scd41_.begin()) {
@@ -46,8 +56,8 @@ bool SensorManager::begin(storage::StorageManager& storageManager) {
     return true;
 }
 
-void SensorManager::setSeaLevelPressure(float hpa) {
-    bmp581_.setSeaLevelPressure(hpa);
+void SensorManager::setSeaLevelPressure(float hpa, core::PressureFieldState state) {
+    bmp581_.setSeaLevelPressure(hpa, state);
 }
 
 bool SensorManager::calibrateScd41(uint16_t targetPpm, uint16_t& frcCorrection) {
@@ -93,6 +103,14 @@ bool SensorManager::triggerSht45Heater() {
     return success;
 }
 
+bool SensorManager::startBmp581Calibration(float referenceAltitudeM) {
+    if (bmp581_.startCalibration(referenceAltitudeM)) {
+        services::Logger::info("SensorMgr", "BMP581 calibration triggered for target %.1f m", referenceAltitudeM);
+        return true;
+    }
+    return false;
+}
+
 void SensorManager::update(uint32_t nowMs) {
     status_.uptimeMs = nowMs;
     
@@ -116,21 +134,6 @@ void SensorManager::update(uint32_t nowMs) {
         
         sht45_.update(nowMs);
         status_.sht45State = sht45_.state();
-        
-        bmp581_.update(nowMs);
-        status_.bmp581State = bmp581_.state();
-        
-        // BMP581の気圧データをSCD41の補償に渡す
-        if (bmp581_.state() == core::DeviceState::Ready) {
-            core::EnvironmentData envTmp;
-            if (bmp581_.readEnvironment(envTmp) && std::isfinite(envTmp.pressureHpa)) {
-                // SCD41のsetAmbientPressureはuint16_t (700-1200 hPa)
-                uint16_t pressInt = static_cast<uint16_t>(envTmp.pressureHpa);
-                if (pressInt >= 700 && pressInt <= 1200) {
-                    scd41_.setAmbientPressure(pressInt);
-                }
-            }
-        }
         
         scd41_.update(nowMs);
         status_.scd41State = scd41_.state();
@@ -164,6 +167,37 @@ void SensorManager::update(uint32_t nowMs) {
         bmp581_.setReferenceTemperature(compTemp);
         sgp41_.update(nowMs);
     }
+    
+    // BMP581は通常1000ms、校正中は100ms間隔で更新
+    static uint32_t lastBmpUpdateMs = 0;
+    uint32_t bmpInterval = bmp581_.isCalibrating() ? 100 : 1000;
+    if (nowMs - lastBmpUpdateMs >= bmpInterval) {
+        lastBmpUpdateMs = nowMs;
+        bmp581_.update(nowMs);
+        status_.bmp581State = bmp581_.state();
+        
+        // 校正完了のチェックと永続化
+        if (!bmp581_.isCalibrating() && bmpInterval == 100) {
+            float offset = bmp581_.getCalibrationOffset();
+            if (offset != 0.0f) { // If offset changed, we can assume success for now, or just force save
+                float slp = bmp581_.getSeaLevelPressure();
+                storage_->setBmp581Calibration(offset, hal::Clock::getEpoch(), NAN, slp); 
+            }
+        }
+        
+        // BMP581の気圧データをSCD41の補償に渡す
+        if (bmp581_.state() == core::DeviceState::Ready) {
+            core::EnvironmentData envTmp;
+            if (bmp581_.readEnvironment(envTmp) && std::isfinite(envTmp.pressureHpa)) {
+                uint16_t pressInt = static_cast<uint16_t>(envTmp.pressureHpa);
+                if (pressInt >= 700 && pressInt <= 1200) {
+                    scd41_.setAmbientPressure(pressInt);
+                }
+            }
+        }
+    }
+        
+
     
     // MAX30102 (脈波センサ) は FIFO の取りこぼしを防ぐため常に更新する
     max30102_.update(nowMs);

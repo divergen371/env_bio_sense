@@ -45,6 +45,10 @@ public:
     uint32_t getScd41LastCalibrationEpoch() const;
     void setScd41LastCalibrationEpoch(uint32_t epoch);
 
+    // BMP581 calibration tracking
+    bool getBmp581Calibration(float& offsetHpa, uint32_t& epoch, float& tempC, float& slpHpa) const;
+    void setBmp581Calibration(float offsetHpa, uint32_t epoch, float tempC, float slpHpa);
+
     // スレッドセーフなアクセスを提供するため
     void lock();
     void unlock();

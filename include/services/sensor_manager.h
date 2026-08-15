@@ -20,10 +20,11 @@ public:
     const core::SystemStatus& status() const { return status_; }
     
     // システム操作
-    void setSeaLevelPressure(float hpa);
+    void setSeaLevelPressure(float hpa, core::PressureFieldState state = core::PressureFieldState::Valid);
     bool calibrateScd41(uint16_t targetPpm, uint16_t& frcCorrection);
     bool triggerSht45Heater();
     bool isScd41CalibrationRecommended() const;
+    bool startBmp581Calibration(float referenceAltitudeM);
 
 private:
     storage::StorageManager* storage_ = nullptr;

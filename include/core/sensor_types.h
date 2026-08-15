@@ -39,6 +39,13 @@ enum class EnclosureWarning : uint8_t {
     HeatTrapped
 };
 
+enum class PressureFieldState : uint8_t {
+    Valid,
+    LastKnown,
+    StaticFallback,
+    Invalid
+};
+
 struct EnvironmentData {
     float temperatureC {};
     float humidityRh {};

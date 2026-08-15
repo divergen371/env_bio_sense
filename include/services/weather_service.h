@@ -23,8 +23,14 @@ private:
     bool needsFetch_ = true;
     
     // JMA AMeDAS 用の追加メンバ
-    String nearestStationId_ = "";
-    bool fetchNearestStation();
+    struct AmedasStation {
+        String id;
+        float distSq;
+    };
+    AmedasStation nearestStations_[5];
+    int numCachedStations_ = 0;
+
+    bool fetchNearestStations();
     String fetchLatestTime();
     
     bool fetchSeaLevelPressure();

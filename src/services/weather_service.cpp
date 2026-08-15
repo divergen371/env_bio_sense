@@ -14,7 +14,7 @@ WeatherService::WeatherService(SensorManager& sensorManager, WifiManager& wifiMa
 void WeatherService::begin() {
     lastFetchMs_ = 0;
     needsFetch_ = true;
-    nearestStationId_ = "";
+    numCachedStations_ = 0;
 }
 
 void WeatherService::update(uint32_t nowMs) {
@@ -23,14 +23,14 @@ void WeatherService::update(uint32_t nowMs) {
         return;
     }
     
-    // 20分（1200000ms）ごとに取得
-    if (needsFetch_ || (nowMs - lastFetchMs_ > 1200000)) {
+    // 15分（900000ms）ごとに取得
+    if (needsFetch_ || (nowMs - lastFetchMs_ > 900000)) {
         if (fetchSeaLevelPressure()) {
             needsFetch_ = false;
             lastFetchMs_ = nowMs;
         } else {
             // 失敗した場合は5分後（300000ms）にリトライするよう調整
-            lastFetchMs_ = nowMs - 1200000 + 300000;
+            lastFetchMs_ = nowMs - 900000 + 300000;
         }
     }
 }
@@ -44,7 +44,7 @@ void WeatherService::forceUpdate(float pressureHpa) {
     needsFetch_ = false;
 }
 
-bool WeatherService::fetchNearestStation() {
+bool WeatherService::fetchNearestStations() {
     Logger::info("Weather", "Fetching JMA AMeDAS station list...");
     
     WiFiClientSecure client;
@@ -64,8 +64,7 @@ bool WeatherService::fetchNearestStation() {
     float myLat = String(LOCATION_LAT).toFloat();
     float myLon = String(LOCATION_LON).toFloat();
     
-    float minDistance = 999999.0f;
-    String bestStation = "";
+    numCachedStations_ = 0;
     
     int braceLevel = 0;
     String objBuffer = "";
@@ -76,7 +75,6 @@ bool WeatherService::fetchNearestStation() {
     uint32_t lastDataTime = millis();
     bool insideRootKey = false;
     
-    // バッファリング付きの手作りストリームパーサー
     while((http.connected() || stream->available()) && (millis() - lastDataTime < 15000)) {
         size_t size = stream->available();
         if (size > 0) {
@@ -128,9 +126,18 @@ bool WeatherService::fetchNearestStation() {
                                 float dy = lat - myLat;
                                 float distSq = dx*dx + dy*dy;
                                 
-                                if (distSq < minDistance) {
-                                    minDistance = distSq;
-                                    bestStation = currentStation;
+                                // Insert into sorted array
+                                if (numCachedStations_ < 5 || distSq < nearestStations_[4].distSq) {
+                                    int pos = numCachedStations_ < 5 ? numCachedStations_ : 4;
+                                    while (pos > 0 && nearestStations_[pos-1].distSq > distSq) {
+                                        if (pos < 5) nearestStations_[pos] = nearestStations_[pos-1];
+                                        pos--;
+                                    }
+                                    if (pos < 5) {
+                                        nearestStations_[pos].id = currentStation;
+                                        nearestStations_[pos].distSq = distSq;
+                                        if (numCachedStations_ < 5) numCachedStations_++;
+                                    }
                                 }
                             }
                         }
@@ -147,16 +154,14 @@ bool WeatherService::fetchNearestStation() {
             delay(1);
         }
         
-        // 全体を囲う '{' と '}' が閉じられたら（braceLevel==0に戻ったら）終了
-        if (braceLevel == 0 && bestStation != "") {
+        if (braceLevel == 0 && numCachedStations_ > 0) {
             break;
         }
     }
     http.end();
     
-    if (bestStation != "") {
-        nearestStationId_ = bestStation;
-        Logger::info("Weather", "Found nearest AMeDAS station: %s", bestStation.c_str());
+    if (numCachedStations_ > 0) {
+        Logger::info("Weather", "Found %d AMeDAS stations.", numCachedStations_);
         return true;
     }
     
@@ -214,9 +219,9 @@ bool WeatherService::fetchSeaLevelPressure() {
     
     bool success = false;
     
-    if (nearestStationId_ == "") {
-        if (!fetchNearestStation()) {
-            Logger::error("Weather", "Failed to find nearest station");
+    if (numCachedStations_ == 0) {
+        if (!fetchNearestStations()) {
+            Logger::error("Weather", "Failed to find nearest stations");
             goto cleanup;
         }
     }
@@ -248,6 +253,9 @@ bool WeatherService::fetchSeaLevelPressure() {
             uint32_t lastDataTime = millis();
             bool insideRootKey = false;
             
+            float validPressures[5] = {0};
+            int readCount = 0;
+            
             while((http.connected() || stream->available()) && (millis() - lastDataTime < 15000)) {
                 size_t size = stream->available();
                 if (size > 0) {
@@ -269,10 +277,27 @@ bool WeatherService::fetchSeaLevelPressure() {
                         if (ch == '{') braceLevel++;
                         if (ch == '}') braceLevel--;
                         
-                        if (braceLevel >= 2 && currentStation == nearestStationId_) {
-                            objBuffer += ch;
+                        if (braceLevel >= 2) {
+                            bool isTarget = false;
+                            for (int k = 0; k < numCachedStations_; k++) {
+                                if (currentStation == nearestStations_[k].id) {
+                                    isTarget = true;
+                                    break;
+                                }
+                            }
+                            if (isTarget) {
+                                objBuffer += ch;
+                            }
                         } else if (braceLevel == 1 && ch == '}') {
-                            if (currentStation == nearestStationId_ && objBuffer.length() > 0) {
+                            int targetIdx = -1;
+                            for (int k = 0; k < numCachedStations_; k++) {
+                                if (currentStation == nearestStations_[k].id) {
+                                    targetIdx = k;
+                                    break;
+                                }
+                            }
+                            
+                            if (targetIdx >= 0 && objBuffer.length() > 0) {
                                 // "normalPressure":[1011.2,0] を探す
                                 int npIdx = objBuffer.indexOf("\"normalPressure\":[");
                                 if (npIdx >= 0) {
@@ -280,15 +305,17 @@ bool WeatherService::fetchSeaLevelPressure() {
                                     String npStr = objBuffer.substring(npIdx + 18, npEnd);
                                     float slp = npStr.toFloat();
                                     if (slp > 800.0f && slp < 1100.0f) {
-                                        Logger::info("Weather", "Success! Sea Level Pressure: %.1f hPa (Station: %s)", slp, nearestStationId_.c_str());
-                                        sensorManager_.setSeaLevelPressure(slp);
-                                        success = true;
+                                        validPressures[targetIdx] = slp;
+                                        readCount++;
                                     }
                                 }
-                                goto request_done; // 目的の観測所が見つかったら早期終了
                             }
                             objBuffer = "";
                             currentStation = "";
+                            
+                            if (readCount >= numCachedStations_) {
+                                goto request_done;
+                            }
                         }
                     }
                     if(len > 0) {
@@ -300,7 +327,52 @@ bool WeatherService::fetchSeaLevelPressure() {
                 }
             }
 request_done:
-            ; // empty statement
+            if (readCount > 0) {
+                float sumWeights = 0.0f;
+                float sumWPressures = 0.0f;
+                int usedCount = 0;
+                float minP = 9999.0f, maxP = -9999.0f;
+                float minDistSq = 999999.0f, maxDistSq = 0.0f;
+                
+                for (int k = 0; k < numCachedStations_; k++) {
+                    if (validPressures[k] > 0.0f) {
+                        float dSq = nearestStations_[k].distSq;
+                        if (dSq < 1e-6f) { // Very close, handle div-by-zero
+                            sumWPressures = validPressures[k];
+                            sumWeights = 1.0f;
+                            usedCount = 1;
+                            minP = maxP = validPressures[k];
+                            minDistSq = maxDistSq = 0.0f;
+                            break; 
+                        } else {
+                            float w = 1.0f / dSq;
+                            sumWeights += w;
+                            sumWPressures += w * validPressures[k];
+                            usedCount++;
+                            if (validPressures[k] < minP) minP = validPressures[k];
+                            if (validPressures[k] > maxP) maxP = validPressures[k];
+                            if (dSq < minDistSq) minDistSq = dSq;
+                            if (dSq > maxDistSq) maxDistSq = dSq;
+                        }
+                    }
+                }
+                
+                if (usedCount > 0 && sumWeights > 0.0f) {
+                    float interpolatedSlp = sumWPressures / sumWeights;
+                    
+                    if (interpolatedSlp < minP) interpolatedSlp = minP;
+                    if (interpolatedSlp > maxP) interpolatedSlp = maxP;
+                    
+                    float minDistKm = sqrt(minDistSq) * 111.0f;
+                    float maxDistKm = sqrt(maxDistSq) * 111.0f;
+                    
+                    core::PressureFieldState state = (usedCount >= 3) ? core::PressureFieldState::Valid : core::PressureFieldState::LastKnown;
+                    Logger::info("Weather", "IDW Success! SLP: %.1f hPa (Used %d/%d stations, MinDist: %.1fkm, MaxDist: %.1fkm), State: %d", 
+                        interpolatedSlp, usedCount, numCachedStations_, minDistKm, maxDistKm, (int)state);
+                    sensorManager_.setSeaLevelPressure(interpolatedSlp, state);
+                    success = true;
+                }
+            }
         } else {
             Logger::error("Weather", "HTTP GET map json failed: %d", httpCode);
         }

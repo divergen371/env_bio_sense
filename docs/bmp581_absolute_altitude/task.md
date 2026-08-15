@@ -1,0 +1,22 @@
+# BMP581 Absolute Altitude Implementation Tasks
+
+- `[x]` **Storage Layer**
+  - `[x]` Update `storage_records.h` with `hasValidBmp581Calibration`, `bmp581PressureOffsetHpa`, `bmp581CalibEpoch`, `bmp581CalibTempC`, `bmp581CalibSeaLevelHpa` in `FramSuperblock`
+  - `[x]` Update `storage_manager.h/cpp` with getters/setters for BMP581 calibration
+- `[x]` **Weather Service Layer**
+  - `[x]` Change interval from 20 mins to 15 mins
+  - `[x]` Update `fetchNearestStation()` to find up to 5 closest stations and cache them
+  - `[x]` Update `fetchSeaLevelPressure()` to get `normalPressure` for cached stations
+  - `[x]` Implement IDW interpolation
+  - `[x]` Compute quality status (`VALID`, `LAST_KNOWN`, etc.)
+- `[x]` **Sensor Layer (BMP581)**
+  - `[x]` Update `bmp5_sensor_base.h` with new state variables (interpolated SLP, offset, raw altitude, display altitude, quality state)
+  - `[x]` Implement `rawAbsoluteAltitudeM_` and `displayAltitudeM_` in `bmp5_sensor_base.cpp`
+  - `[x]` Implement hysteresis logic around absolute altitude calculation
+  - `[x]` Add calibration methods (`startCalibration`, `updateCalibration`) based on 13.6m reference
+- `[x]` **Integration**
+  - `[x]` Update `sensor_manager.h/cpp` to pass interpolated SLP and trigger calibration
+  - `[x]` Update logs/API outputs to include the new data fields (raw/display altitudes, quality, offsets)
+- `[x]` **Verification**
+  - `[x]` Compile and check sizes
+  - `[x]` Unit tests / manual logic verification for IDW and formula inverse

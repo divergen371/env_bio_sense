@@ -39,6 +39,13 @@ struct FramSuperblock {
     // SCD41 calibration tracking
     uint32_t lastScd41CalibrationEpoch;
 
+    // BMP581 calibration
+    bool hasValidBmp581Calibration;
+    float bmp581PressureOffsetHpa;
+    uint32_t bmp581CalibEpoch;
+    float bmp581CalibTempC;
+    float bmp581CalibSeaLevelHpa;
+
     uint16_t crc16;
 };
 

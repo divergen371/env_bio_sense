@@ -87,6 +87,12 @@ void StorageManager::initSuperblock() {
 
     // 起算日: 2026-08-15 00:00:00 UTC (1786752000)
     superblock_.lastScd41CalibrationEpoch = 1786752000;
+    
+    superblock_.hasValidBmp581Calibration = false;
+    superblock_.bmp581PressureOffsetHpa = 0.0f;
+    superblock_.bmp581CalibEpoch = 0;
+    superblock_.bmp581CalibTempC = NAN;
+    superblock_.bmp581CalibSeaLevelHpa = NAN;
 }
 
 bool StorageManager::getSgp41States(float& voc0, float& voc1) const {
@@ -117,6 +123,28 @@ void StorageManager::setScd41LastCalibrationEpoch(uint32_t epoch) {
     
     lock();
     superblock_.lastScd41CalibrationEpoch = epoch;
+    saveSuperblock();
+    unlock();
+}
+
+bool StorageManager::getBmp581Calibration(float& offsetHpa, uint32_t& epoch, float& tempC, float& slpHpa) const {
+    if (!framAvailable_ || !superblock_.hasValidBmp581Calibration) return false;
+    offsetHpa = superblock_.bmp581PressureOffsetHpa;
+    epoch = superblock_.bmp581CalibEpoch;
+    tempC = superblock_.bmp581CalibTempC;
+    slpHpa = superblock_.bmp581CalibSeaLevelHpa;
+    return true;
+}
+
+void StorageManager::setBmp581Calibration(float offsetHpa, uint32_t epoch, float tempC, float slpHpa) {
+    if (!framAvailable_) return;
+    
+    lock();
+    superblock_.hasValidBmp581Calibration = true;
+    superblock_.bmp581PressureOffsetHpa = offsetHpa;
+    superblock_.bmp581CalibEpoch = epoch;
+    superblock_.bmp581CalibTempC = tempC;
+    superblock_.bmp581CalibSeaLevelHpa = slpHpa;
     saveSuperblock();
     unlock();
 }

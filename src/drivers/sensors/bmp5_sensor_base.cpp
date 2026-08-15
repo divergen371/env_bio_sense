@@ -268,24 +268,32 @@ void Bmp5SensorBase::update(uint32_t nowMs) {
     // 外部基準気温（SHT45等）があればそれを使用し、無ければ内蔵温度を使用
     float tempForAltitude = std::isnan(referenceTemperatureC_) ? rawTemperatureC : referenceTemperatureC_;
     
-    // 気温を考慮した高度計算: h = ((T + 273.15) / 0.0065) * (1 - (P / P0)^0.190295)
-    if (seaLevelPressureHpa_ > 0) {
-        currentAltitudeM_ = ((tempForAltitude + 273.15f) / 0.0065f) * (1.0f - std::pow(pressureHpa / seaLevelPressureHpa_, 0.190295f));
+    const float correctedPressureHpa = pressureHpa - pressureOffsetHpa_;
+
+    if (isCalibrating_) {
+        processCalibration(nowMs, pressureHpa, tempForAltitude); // Pass uncorrected pressure for expected comparison
+    }
+    
+    // 気温を考慮した絶対高度計算
+    if ((pressureFieldState_ == core::PressureFieldState::Valid || pressureFieldState_ == core::PressureFieldState::LastKnown) 
+        && interpolatedSeaLevelPressureHpa_ > 0.0f && correctedPressureHpa > 0.0f) {
+        float tempK = tempForAltitude + 273.15f;
+        rawAbsoluteAltitudeM_ = (tempK / 0.0065f) * (1.0f - std::pow(correctedPressureHpa / interpolatedSeaLevelPressureHpa_, 0.190295f));
         
         // ソフトウェアデッドバンド（ヒステリシス ±0.5m）
         if (std::isnan(displayAltitudeM_)) {
-            displayAltitudeM_ = currentAltitudeM_;
+            displayAltitudeM_ = rawAbsoluteAltitudeM_;
         } else {
-            float diff = currentAltitudeM_ - displayAltitudeM_;
+            float diff = rawAbsoluteAltitudeM_ - displayAltitudeM_;
             if (diff > 0.5f) {
-                displayAltitudeM_ += (diff - 0.5f);
+                displayAltitudeM_ = rawAbsoluteAltitudeM_ - 0.5f;
             } else if (diff < -0.5f) {
-                displayAltitudeM_ += (diff + 0.5f);
+                displayAltitudeM_ = rawAbsoluteAltitudeM_ + 0.5f;
             }
         }
     } else {
-        currentAltitudeM_ = NAN;
-        displayAltitudeM_ = NAN;
+        rawAbsoluteAltitudeM_ = NAN;
+        // 表示高度は上書きせず保持する
     }
     
     hasValidData_ = true;
@@ -319,6 +327,89 @@ bool Bmp5SensorBase::readEnvironment(core::EnvironmentData& out) const {
 
 void Bmp5SensorBase::runDiagnostics() {
     Bmp5Diagnostic::runDiagnostics(&bmp5_dev_);
+}
+
+bool Bmp5SensorBase::startCalibration(float referenceAltitudeM) {
+    if (pressureFieldState_ != core::PressureFieldState::Valid) {
+        services::Logger::warn(getSensorName(), "Cannot start calibration: Pressure field is not Valid.");
+        return false;
+    }
+    isCalibrating_ = true;
+    calibRefAltitudeM_ = referenceAltitudeM;
+    calibPhase_ = 1; // Settle phase
+    calibStateStartMs_ = millis();
+    calibLastSampleMs_ = 0;
+    calibValidSamples_ = 0;
+    calibTotalSamples_ = 0;
+    calibResidualSum_ = 0.0f;
+    services::Logger::info(getSensorName(), "Calibration started. Waiting for 60s settle time.");
+    return true;
+}
+
+void Bmp5SensorBase::cancelCalibration() {
+    isCalibrating_ = false;
+    calibPhase_ = 0;
+    services::Logger::info(getSensorName(), "Calibration cancelled.");
+}
+
+void Bmp5SensorBase::processCalibration(uint32_t nowMs, float pressureHpa, float tempC) {
+    if (!isCalibrating_) return;
+    
+    // We only collect at 10Hz if we can. Actually we collect as fast as update() is called.
+    if (calibPhase_ == 1) {
+        if (nowMs - calibStateStartMs_ >= 60000) {
+            calibPhase_ = 2; // Collect phase
+            calibStateStartMs_ = nowMs;
+            services::Logger::info(getSensorName(), "Calibration settle complete. Starting 5-min data collection.");
+        }
+    } else if (calibPhase_ == 2) {
+        if (nowMs - calibLastSampleMs_ < 100) return; // Max 10Hz
+        calibLastSampleMs_ = nowMs;
+        
+        calibTotalSamples_++;
+        
+        if (pressureFieldState_ != core::PressureFieldState::Valid) {
+            services::Logger::warn(getSensorName(), "Pressure field invalid during calibration! Cancelling.");
+            cancelCalibration();
+            return;
+        }
+        
+        float tempK = tempC + 273.15f;
+        // P_expected = P_0 * (1 - L * h / T)^ (1/k)
+        float expVal = 1.0f - (0.0065f * calibRefAltitudeM_) / tempK;
+        if (expVal > 0.0f) {
+            float expectedPressureHpa = interpolatedSeaLevelPressureHpa_ * std::pow(expVal, 5.254999f);
+            float residual = pressureHpa - expectedPressureHpa;
+            
+            // Simple average for now. (trim or median would require storing all samples)
+            calibResidualSum_ += residual;
+            calibValidSamples_++;
+        }
+        
+        if (nowMs - calibStateStartMs_ >= 300000) { // 5 minutes
+            isCalibrating_ = false;
+            calibPhase_ = 0;
+            
+            float validRatio = (float)calibValidSamples_ / calibTotalSamples_;
+            if (validRatio >= 0.8f && calibValidSamples_ > 0) {
+                float avgResidual = calibResidualSum_ / calibValidSamples_;
+                if (std::abs(avgResidual) <= 5.0f) {
+                    services::Logger::info(getSensorName(), "Calibration SUCCESS! Offset: %.2f hPa (Valid samples: %u/%u)", avgResidual, calibValidSamples_, calibTotalSamples_);
+                    // We need to notify SensorManager to save it. For now we just set it.
+                    // The caller must poll and save it, or we trigger a callback.
+                    // Simple approach: we just set pressureOffsetHpa_ and someone checks if it was updated.
+                    // Wait, Bmp5SensorBase does not have access to StorageManager.
+                    // This implies we need a way to bubble up the result.
+                    pressureOffsetHpa_ = avgResidual;
+                    displayAltitudeM_ = NAN; // Reset hysteresis
+                } else {
+                    services::Logger::error(getSensorName(), "Calibration FAILED! Offset absolute value too large: %.2f hPa", avgResidual);
+                }
+            } else {
+                services::Logger::error(getSensorName(), "Calibration FAILED! Not enough valid samples: %u/%u", calibValidSamples_, calibTotalSamples_);
+            }
+        }
+    }
 }
 
 } // namespace sensors

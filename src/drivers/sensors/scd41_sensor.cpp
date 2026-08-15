@@ -70,6 +70,15 @@ bool Scd41Sensor::begin() {
             if (error) {
                 services::Logger::warn("SCD41", "Failed to set temperature offset, error: %u", error);
             }
+            
+            // ユーザー確認用のレジスタ読み出し
+            float tOffset = 0.0f;
+            uint16_t ascEnabled = 0;
+            uint16_t sensorAlt = 0;
+            scd4x_.getTemperatureOffset(tOffset);
+            scd4x_.getAutomaticSelfCalibration(ascEnabled);
+            scd4x_.getSensorAltitude(sensorAlt);
+            services::Logger::info("SCD41", "Stored Settings - TempOffset: %.2f C, ASC: %u, Altitude: %u m", tOffset, ascEnabled, sensorAlt);
         } else {
             services::Logger::error("SCD41", "Failed to acquire lock for SCD41 settings");
         }
