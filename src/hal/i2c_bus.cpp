@@ -13,7 +13,7 @@ bool I2cBus::begin() {
         mutex_ = xSemaphoreCreateRecursiveMutex();
     }
     Wire.begin(pins::I2C_SDA, pins::I2C_SCL);
-    Wire.setClock(100000); // 初期は100kHz
+    Wire.setClock(400000); // 400kHz (Fast Mode) に設定
     return true;
 }
 
