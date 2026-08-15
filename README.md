@@ -6,9 +6,10 @@ Seeed Studio XIAO ESP32S3 を用いた、複合環境センサおよび生体光
 
 ## 主な機能・特徴
 
-- **マルチセンサ統合管理 (`SensorManager`)**:
+- **マルチセンサ統合管理 (`SensorManager`) と FreeRTOSタスク分離**:
   - 環境センサ（温湿度、気圧、CO2濃度）および生体脈波センサを同一バス（I2C）上で一括管理。
-  - 各センサの更新頻度最適化（環境系1000ms、生体系リアルタイム）とエラー検知・自己復帰機能を搭載。
+  - 各センサの更新頻度最適化（環境系1000ms、生体系リアルタイム）に加え、OLED描画・SD保存・AMeDAS通信などの遅延処理をFreeRTOSのバックグラウンドタスク（Core 0 / Core 1）に分離。
+  - I2CクロックのFast Mode (400kHz) 化と再帰的Mutex (`I2cLockGuard`) による厳格な排他制御により、1本のI2Cバス上で脈波の高速サンプリングを遅延（ジッタ）なく並列実行。
 - **気象庁AMeDAS連携と絶対高度算出**:
   - 起動時や定期的に気象庁AMeDAS APIから最新の海面気圧データを取得し、逆距離加重法 (IDW) で現在地の補間海面気圧を自動計算。
     (※詳細な処理フローやメモリ節約型ストリーム解析については [気象庁AMeDAS連携とIDW補間アルゴリズム解説](docs/jma_amedas_integration_guide.md) を参照)
@@ -56,9 +57,10 @@ Seeed Studio XIAO ESP32S3 を用いた、複合環境センサおよび生体光
 - `hal/i2c_bus.h`: I2Cバス初期化、ロック制御、自動アドレススキャン機能
 - `services/logger.h`: ログレベル管理およびシリアル出力フォーマット化
 
-### [Step 2] 状態管理とディスプレイ基盤
+### [Step 2] 状態管理・タスク分離・ディスプレイ基盤
 - `core/sensor_types.h`: スナップショット形式のデータモデル定義
 - `services/sensor_manager.h`: 全センサのライフサイクル同期、外部サービス（Time/Weather）との連携統合
+- `main.cpp`: FreeRTOS (`xTaskCreatePinnedToCore`) を用いた `WeatherTask`, `StorageTask`, `DisplayTask` の非同期化
 - `services/display_manager.h`: OLED描画エンジンの統合
 
 ### [Step 3] 環境センサの統合 (SHT45 / BMP581)
