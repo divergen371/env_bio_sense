@@ -9,19 +9,22 @@
 #include "services/wifi_manager.h"
 #include "services/web_server_service.h"
 #include "services/weather_service.h"
+#include "services/archive_manager.h"
 
 services::SensorManager sensorManager;
 services::DisplayManager displayManager;
 storage::StorageManager storageManager;
+services::ArchiveManager archiveManager(storageManager);
 services::WifiManager wifiManager;
-services::WebServerService webServer(storageManager);
+services::WebServerService webServer(storageManager, archiveManager);
 services::WeatherService weatherService(sensorManager, wifiManager);
 
 // --- FreeRTOS Tasks ---
 void weatherTask(void* pvParameters) {
     while (true) {
-        weatherService.update(millis());
-        vTaskDelay(pdMS_TO_TICKS(1000)); // 1秒間隔でチェック（内部で15分判定）
+        wifiManager.update();
+        archiveManager.update(millis());
+        vTaskDelay(pdMS_TO_TICKS(10)); // 1秒間隔でチェック（内部で15分判定）
     }
 }
 
@@ -74,6 +77,7 @@ void setup() {
 
     // サービス初期化
     storageManager.begin();
+    archiveManager.begin();
     sensorManager.begin(storageManager);
     displayManager.begin();
     
@@ -97,6 +101,9 @@ void loop() {
     static uint32_t previousDisplayMs = 0;
     static uint32_t previousSensorMs = 0;
     uint32_t nowMs = millis();
+    
+    wifiManager.update();
+    archiveManager.update(nowMs);
     
     // BOOTボタンによるWi-Fiトグル (3秒長押し判定)
     static uint32_t btnPressedMs = 0;

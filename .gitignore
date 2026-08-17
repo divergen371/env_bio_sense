@@ -12,3 +12,4 @@ log/
 .vscode/settings.json
 src/config/secrets.h
 .agents/
+third_party/*

@@ -71,6 +71,16 @@ const char* htmlContent = R"rawliteral(
       🔄 Refresh & Flush
     </button>
   </div>
+  
+  <div style="margin-bottom: 15px; padding: 15px; background-color: #e2e3e5; border-radius: 5px;">
+    <h3>Archive CSV Files</h3>
+    <button onclick="selectAllCsv(true)" style="padding: 5px 10px; cursor: pointer;">Select All CSV</button>
+    <button onclick="selectAllCsv(false)" style="padding: 5px 10px; cursor: pointer;">Deselect All</button>
+    <button onclick="startArchive()" style="padding: 5px 10px; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 3px; margin-left: 10px;">Archive Selected</button>
+    <button onclick="cancelArchive()" style="padding: 5px 10px; cursor: pointer; background-color: #dc3545; color: white; border: none; border-radius: 3px; margin-left: 10px; display: none;" id="cancelArchiveBtn">Cancel Archive</button>
+    <div id="archiveStatus" style="margin-top: 10px; font-weight: bold; color: #333;"></div>
+  </div>
+  
   <ul id="file-list"></ul>
 
   <div id="chartModal" class="modal">
@@ -145,6 +155,82 @@ const char* htmlContent = R"rawliteral(
       return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
 
+    function selectAllCsv(checked) {
+      document.querySelectorAll('.csv-checkbox').forEach(cb => {
+        if (!cb.disabled) cb.checked = checked;
+      });
+    }
+
+    async function startArchive() {
+      const selected = Array.from(document.querySelectorAll('.csv-checkbox:checked')).map(cb => cb.value);
+      if (selected.length === 0) {
+        alert("Please select at least one CSV file.");
+        return;
+      }
+      
+      try {
+        const response = await fetch('/api/archive/manual', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ files: selected })
+        });
+        if (response.ok) {
+          pollArchiveStatus();
+        } else {
+          const err = await response.text();
+          alert("Failed to start archive: " + err);
+        }
+      } catch (e) {
+        alert("Network error: " + e);
+      }
+    }
+
+    async function cancelArchive() {
+      try {
+        await fetch('/api/archive/cancel', { method: 'POST' });
+      } catch (e) {}
+    }
+
+    let archiveStatusInterval = null;
+    async function pollArchiveStatus() {
+      if (archiveStatusInterval) return;
+      
+      const updateUi = async () => {
+        try {
+          const response = await fetch('/api/archive/status');
+          const data = await response.json();
+          const statusDiv = document.getElementById('archiveStatus');
+          const cancelBtn = document.getElementById('cancelArchiveBtn');
+          
+          if (data.state === 0) { // Idle
+            statusDiv.innerText = '';
+            cancelBtn.style.display = 'none';
+            clearInterval(archiveStatusInterval);
+            archiveStatusInterval = null;
+          } else if (data.state === 4) { // Completed
+            statusDiv.innerText = 'Archive Completed: ' + data.message;
+            cancelBtn.style.display = 'none';
+            clearInterval(archiveStatusInterval);
+            archiveStatusInterval = null;
+            setTimeout(() => { statusDiv.innerText = ''; loadFiles(); }, 3000);
+          } else if (data.state === 5) { // Failed
+            statusDiv.innerText = 'Archive Failed: ' + data.message;
+            statusDiv.style.color = 'red';
+            cancelBtn.style.display = 'none';
+            clearInterval(archiveStatusInterval);
+            archiveStatusInterval = null;
+          } else {
+            statusDiv.style.color = '#333';
+            statusDiv.innerText = `Archiving: ${data.message} (${data.processedFiles}/${data.totalFiles}) - Current: ${data.currentFile}`;
+            cancelBtn.style.display = 'inline-block';
+          }
+        } catch (e) {}
+      };
+      
+      updateUi();
+      archiveStatusInterval = setInterval(updateUi, 1000);
+    }
+
     async function loadFiles() {
       try {
         const response = await fetch('/api/files');
@@ -154,6 +240,25 @@ const char* htmlContent = R"rawliteral(
         data.files.forEach(f => {
           const li = document.createElement('li');
           
+          const leftDiv = document.createElement('div');
+          leftDiv.style.display = 'flex';
+          leftDiv.style.alignItems = 'center';
+          
+          if (f.name.endsWith('.csv') && !f.isCurrent) {
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.className = 'csv-checkbox';
+            cb.value = f.name;
+            cb.style.marginRight = '10px';
+            leftDiv.appendChild(cb);
+          } else if (f.name.endsWith('.csv') && f.isCurrent) {
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.disabled = true;
+            cb.style.marginRight = '10px';
+            leftDiv.appendChild(cb);
+          }
+
           const nameSpan = document.createElement('span');
           if (f.size > 0 && f.name.endsWith('.csv')) {
             nameSpan.innerHTML = `<span class="link-name" onclick="openChart('${f.name}')">${f.name}</span> (${formatBytes(f.size)})`;
@@ -164,6 +269,7 @@ const char* htmlContent = R"rawliteral(
           if (f.isCurrent) {
             nameSpan.innerHTML += ' <span style="color:#d32f2f; font-weight:bold;">[Recording...]</span>';
           }
+          leftDiv.appendChild(nameSpan);
           
           const actionsDiv = document.createElement('div');
           
@@ -200,7 +306,7 @@ const char* htmlContent = R"rawliteral(
             actionsDiv.appendChild(delBtn);
           }
 
-          li.appendChild(nameSpan);
+          li.appendChild(leftDiv);
           li.appendChild(actionsDiv);
           list.appendChild(li);
         });
@@ -506,8 +612,8 @@ const char* htmlContent = R"rawliteral(
 </html>
 )rawliteral";
 
-WebServerService::WebServerService(storage::StorageManager& storageManager)
-    : storageManager_(storageManager) {
+WebServerService::WebServerService(storage::StorageManager& storageManager, ArchiveManager& archiveManager)
+    : storageManager_(storageManager), archiveManager_(archiveManager) {
     server_.reset(new AsyncWebServer(80));
 }
 
@@ -535,14 +641,14 @@ void WebServerService::setupRoutes() {
             while(file){
                 if (!file.isDirectory()) {
                     String fileName = String(file.name());
-                    if (fileName.endsWith(".csv")) {
+                    if (fileName.endsWith(".csv") || fileName.endsWith(".zip")) {
                         JsonObject fObj = files.add<JsonObject>();
                         fObj["name"] = fileName;
                         fObj["size"] = file.size();
                         
                         // StorageManagerから取得するパスは "/log_xxx.csv" なので、
                         // fileName が "log_xxx.csv" または "/log_xxx.csv" と一致するかチェック
-                        fObj["isCurrent"] = (fileName == currentPath || ("/" + fileName) == currentPath);
+                        fObj["isCurrent"] = (fileName.endsWith(".csv") && (fileName == currentPath || ("/" + fileName) == currentPath));
                     }
                 }
                 file = root.openNextFile();
@@ -674,7 +780,16 @@ void WebServerService::setupRoutes() {
         }
 
         // Wi-Fiモード中はSDへの新規書き込みが停止しているため、直接ファイルを送信して問題ない
-        request->send(SD, fullPath, "text/csv", true);
+        String contentType = "text/csv";
+        if (fileName.endsWith(".zip")) {
+            contentType = "application/zip";
+        }
+        
+        AsyncWebServerResponse *response = request->beginResponse(SD, fullPath, contentType, true);
+        // ダウンロードが100%で完了しない現象（ESPAsyncWebServer + lwIPの既知の不具合）を回避するため
+        // 強制的にコネクションをクローズさせる
+        response->addHeader("Connection", "close");
+        request->send(response);
     });
 
     server_->on("/api/delete", HTTP_DELETE, [this](AsyncWebServerRequest *request){
@@ -700,6 +815,46 @@ void WebServerService::setupRoutes() {
             storageManager_.unlock();
             request->send(404, "text/plain", "File Not Found");
         }
+    });
+    server_->on("/api/archive/manual", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
+        [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
+            JsonDocument doc;
+            DeserializationError error = deserializeJson(doc, data, len);
+            if (error || !doc.containsKey("files")) {
+                request->send(400, "text/plain", "Invalid JSON");
+                return;
+            }
+            
+            std::vector<String> filesToArchive;
+            JsonArray arr = doc["files"].as<JsonArray>();
+            for (JsonVariant v : arr) {
+                filesToArchive.push_back("/" + v.as<String>()); // ensure absolute path
+            }
+            
+            if (archiveManager_.startManualArchive(filesToArchive)) {
+                request->send(200);
+            } else {
+                request->send(400, "text/plain", "Archive already in progress or failed to start");
+            }
+    });
+
+    server_->on("/api/archive/cancel", HTTP_POST, [this](AsyncWebServerRequest *request){
+        archiveManager_.cancelArchive();
+        request->send(200);
+    });
+
+    server_->on("/api/archive/status", HTTP_GET, [this](AsyncWebServerRequest *request){
+        ArchiveStatus status = archiveManager_.getStatus();
+        JsonDocument doc;
+        doc["state"] = static_cast<int>(status.state);
+        doc["currentFile"] = status.currentFile;
+        doc["processedFiles"] = status.processedFiles;
+        doc["totalFiles"] = status.totalFiles;
+        doc["message"] = status.message;
+        
+        String response;
+        serializeJson(doc, response);
+        request->send(200, "application/json", response);
     });
 }
 
