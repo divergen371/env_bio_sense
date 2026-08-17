@@ -70,7 +70,7 @@ private:
     bool saveSuperblock();
     
     bool initSdCard();
-    bool createNewSdFile();
+    bool createNewSdFile(const String& targetDate = "");
     void writeCsvHeader(File& file);
     void formatCsvLine(char* buffer, size_t size, const EnvironmentalRecord& rec);
 };

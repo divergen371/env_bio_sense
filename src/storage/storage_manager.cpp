@@ -294,9 +294,9 @@ bool StorageManager::initSdCard() {
     return sdAvailable_;
 }
 
-bool StorageManager::createNewSdFile() {
+bool StorageManager::createNewSdFile(const String& targetDate) {
     if (hal::Clock::isTimeSet()) {
-        currentDateString_ = hal::Clock::getFormattedDate();
+        currentDateString_ = (targetDate.length() > 0) ? targetDate : hal::Clock::getFormattedDate();
         currentFilename_ = "/log_" + currentDateString_ + ".csv";
     } else {
         currentDateString_ = "";
@@ -373,11 +373,39 @@ void StorageManager::flushPendingToSd() {
 
     // ローテーションチェック
     if (hal::Clock::isTimeSet()) {
+        // 実際の現在日付で書き込み先切り替え判定 (0時0分0秒に切り替え)
         String today = hal::Clock::getFormattedDate();
         if (today != currentDateString_) {
-            services::Logger::info("StorageMgr", "Log rotation triggered: %s -> %s", 
+            services::Logger::info("StorageMgr", "Log target switched: %s -> %s", 
                                    currentDateString_.c_str(), today.c_str());
-            createNewSdFile();
+            createNewSdFile(today);
+        }
+
+        // 翌日のファイル事前作成チェック (日付が変わる5分前以降)
+        time_t nowEpoch = hal::Clock::getEpoch() + (9 * 3600); // JST
+        time_t shiftedEpoch = nowEpoch + 300;
+        
+        struct tm timeinfoNow, timeinfoShifted;
+        gmtime_r(&nowEpoch, &timeinfoNow);
+        gmtime_r(&shiftedEpoch, &timeinfoShifted);
+
+        if (timeinfoNow.tm_mday != timeinfoShifted.tm_mday) {
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%04d%02d%02d", 
+                     timeinfoShifted.tm_year + 1900, timeinfoShifted.tm_mon + 1, timeinfoShifted.tm_mday);
+            String tomorrow = String(buf);
+            String tomorrowFilename = "/log_" + tomorrow + ".csv";
+            
+            if (!SD.exists(tomorrowFilename)) {
+                services::Logger::info("StorageMgr", "Pre-creating tomorrow's file: %s", tomorrowFilename.c_str());
+                File file = SD.open(tomorrowFilename.c_str(), FILE_WRITE);
+                if (file) {
+                    writeCsvHeader(file);
+                    file.close();
+                } else {
+                    services::Logger::error("StorageMgr", "Failed to pre-create: %s", tomorrowFilename.c_str());
+                }
+            }
         }
     }
 
