@@ -50,8 +50,16 @@ const char* htmlContent = R"rawliteral(
   <div id="status" class="status">Connecting...</div>
   
   <div style="margin-bottom: 15px; padding: 10px; background-color: #f1f8ff; border: 1px solid #c8e1ff; border-radius: 4px; font-size: 14px;">
-    <strong>Altitude Calibration:</strong> 
+    <strong>AMeDAS Sea Level Pressure:</strong> 
     <span id="sealevelStatus">Waiting for connection...</span>
+  </div>
+
+  <div style="margin-bottom: 15px; padding: 10px; background-color: #e8f5e9; border: 1px solid #c8e6c9; border-radius: 4px; font-size: 14px;">
+    <strong>BMP581 Absolute Altitude Calibration:</strong><br>
+    <small>Computes offset from actual altitude (takes 5-6 mins).</small><br>
+    Reference Altitude (m): <input type="number" id="bmp581Target" step="0.1" value="13.6" style="width: 80px; margin-top: 5px;">
+    <button onclick="calibrateBMP581()" style="padding: 4px 8px; font-size: 12px; cursor: pointer;">Calibrate</button>
+    <span id="bmp581CalibStatus" style="margin-left: 10px;"></span>
   </div>
 
   <div id="scd41RecBadge" style="display: none; margin-bottom: 15px; padding: 10px; background-color: #f8d7da; border: 1px solid #f5c6cb; border-radius: 4px; font-size: 14px; color: #721c24; font-weight: bold;">
@@ -144,6 +152,37 @@ const char* htmlContent = R"rawliteral(
       } catch (err) {
         statusSpan.innerText = 'Network error';
         statusSpan.style.color = 'red';
+      }
+    }
+
+    async function calibrateBMP581() {
+      const targetStr = document.getElementById('bmp581Target').value;
+      const target = parseFloat(targetStr);
+      if (isNaN(target)) {
+        alert("Invalid target altitude");
+        return;
+      }
+      const statusEl = document.getElementById('bmp581CalibStatus');
+      statusEl.innerText = "Starting calibration...";
+      statusEl.style.color = "#333";
+      
+      try {
+        const response = await fetch('/api/bmp581/calibrate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reference_altitude_m: target })
+        });
+        const data = await response.json();
+        if (response.ok) {
+          statusEl.style.color = "green";
+          statusEl.innerText = data.message || "Calibration started (takes 6 mins)";
+        } else {
+          statusEl.style.color = "red";
+          statusEl.innerText = "Error: " + (data.error || "Unknown error");
+        }
+      } catch (err) {
+        statusEl.style.color = "red";
+        statusEl.innerText = "Network error: " + err.message;
       }
     }
 

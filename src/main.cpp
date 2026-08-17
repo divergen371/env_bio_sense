@@ -22,9 +22,8 @@ services::WeatherService weatherService(sensorManager, wifiManager);
 // --- FreeRTOS Tasks ---
 void weatherTask(void* pvParameters) {
     while (true) {
-        wifiManager.update();
-        archiveManager.update(millis());
-        vTaskDelay(pdMS_TO_TICKS(10)); // 1秒間隔でチェック（内部で15分判定）
+        weatherService.update(millis());
+        vTaskDelay(pdMS_TO_TICKS(1000)); // 1秒間隔でチェック（内部で15分判定）
     }
 }
 
