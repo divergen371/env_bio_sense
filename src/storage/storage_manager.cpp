@@ -271,7 +271,12 @@ bool StorageManager::initSdCard() {
     // 以前のマウント状態をクリアするため、一度end()を呼ぶ
     SD.end();
 
-    SPI.begin(SCK, MISO, MOSI, hal::pins::SD_CS);
+    // CSピンを明示的にOUTPUT/HIGHに設定して安定させる
+    pinMode(hal::pins::SD_CS, OUTPUT);
+    digitalWrite(hal::pins::SD_CS, HIGH);
+    delay(10);
+
+    SPI.begin(SCK, MISO, MOSI, -1); // Hardware CSを無効化し、SDライブラリにCS制御を委ねる
     if (!SD.begin(hal::pins::SD_CS, SPI, 4000000)) {
         services::Logger::error("StorageMgr", "SD Card Mount Failed.");
         return false;
