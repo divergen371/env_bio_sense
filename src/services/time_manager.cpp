@@ -7,72 +7,98 @@
 
 namespace services {
 
+bool TimeManager::enableNtpFallback_ = true;
+uint32_t TimeManager::gnssGraceBeforeNtpMs_ = 60000;
+bool TimeManager::ntpAttempted_ = false;
+bool TimeManager::ntpRunning_ = false;
+uint32_t TimeManager::ntpStartMs_ = 0;
+bool TimeManager::ntpConnected_ = false;
+
 void TimeManager::begin() {
-    Logger::info("NTP", "Starting Wi-Fi connection...");
-    
-    // ESP32のWi-Fiスタックを確実にリセットするため、一度切断する
-    WiFi.disconnect(true, true);
-    delay(100);
-    
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    // 起動直後にはブロックしない
+    Logger::info("NTP", "TimeManager initialized (NTP fallback enabled after %ums)", gnssGraceBeforeNtpMs_);
+}
 
-    // Wi-Fi接続を待機（ルーターによってはIP取得に時間がかかるため20秒に延長）
-    uint32_t startAttempt = millis();
-    bool connected = false;
-    while (millis() - startAttempt < 20000) {
-        if (WiFi.status() == WL_CONNECTED) {
-            connected = true;
-            break;
-        }
-        delay(500);
-        Serial.print(".");
+void TimeManager::update(uint32_t nowMs, core::TimeSource currentSource, GnssTimeSyncService* timeSyncService) {
+    // すでにGNSSや手動で同期済みならNTPは試行しない
+    if (currentSource == core::TimeSource::Gnss || currentSource == core::TimeSource::Manual) {
+        return;
     }
-    Serial.println();
 
-    if (connected) {
-        Logger::info("NTP", "Wi-Fi connected. IP: %s", WiFi.localIP().toString().c_str());
-        
-        // 日本標準時(JST)を設定し、NTPサーバーへ同期
-        Logger::info("NTP", "Syncing time...");
-        configTzTime("JST-9", "pool.ntp.org", "time.nist.gov");
+    // 猶予期間が経過していない場合は何もしない
+    if (nowMs < gnssGraceBeforeNtpMs_) {
+        return;
+    }
 
-        // 時刻が同期されるのを待機（最大10秒）
-        struct tm timeinfo;
-        bool timeSynced = false;
-        startAttempt = millis();
-        while (millis() - startAttempt < 10000) {
-            // getLocalTime() は同期が完了していれば true を返す
-            if (getLocalTime(&timeinfo, 10)) {
-                // 1970年の初期時刻(年が70)から更新されていれば成功とみなす
-                if (timeinfo.tm_year > 120) { // > 2020年
-                    timeSynced = true;
-                    break;
-                }
-            }
-            delay(500);
-            Serial.print(".");
+    if (!enableNtpFallback_ || ntpAttempted_) {
+        return;
+    }
+
+    if (!ntpRunning_) {
+        Logger::info("NTP", "GNSS not synced within grace period. Starting NTP fallback...");
+        ntpRunning_ = true;
+        ntpConnected_ = false;
+        ntpStartMs_ = nowMs;
+
+        // 非同期接続の開始
+        WiFi.disconnect(true, true);
+        delay(10);
+        WiFi.mode(WIFI_STA);
+        WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+        return;
+    }
+
+    // Wi-Fi接続待ち
+    if (!ntpConnected_) {
+        if (WiFi.status() == WL_CONNECTED) {
+            ntpConnected_ = true;
+            Logger::info("NTP", "Wi-Fi connected. Syncing time...");
+            configTzTime("JST-9", "pool.ntp.org", "time.nist.gov");
+        } else if (nowMs - ntpStartMs_ > 20000) {
+            // 20秒経過しても接続できなければ失敗
+            Logger::error("NTP", "Wi-Fi connection timeout");
+            WiFi.disconnect(true, true);
+            WiFi.mode(WIFI_OFF);
+            ntpRunning_ = false;
+            ntpAttempted_ = true;
         }
-        Serial.println();
+        return;
+    }
 
-        if (timeSynced) {
+    // NTP同期待ち
+    struct tm timeinfo;
+    if (getLocalTime(&timeinfo, 0)) {
+        if (timeinfo.tm_year > 120) { // > 2020年
+            // 同期成功
             char timeStringBuff[64];
             strftime(timeStringBuff, sizeof(timeStringBuff), "%Y-%m-%d %H:%M:%S", &timeinfo);
-            Logger::info("NTP", "Time synced successfully: %s", timeStringBuff);
-            
-            // hal::Clock 側に時刻設定完了を通知
-            hal::Clock::markTimeSet();
-        } else {
-            Logger::error("NTP", "Failed to sync time via NTP.");
-        }
-    } else {
-        Logger::error("NTP", "Failed to connect to Wi-Fi. Check SSID/PASSWORD in config/secrets.h");
-    }
+            Logger::info("NTP", "Time synced successfully via NTP: %s", timeStringBuff);
 
-    // センサ計測に干渉しないようにWi-FiをOFFにする
-    Logger::info("NTP", "Disconnecting Wi-Fi to reduce noise and power consumption.");
-    WiFi.disconnect(true, true);
-    WiFi.mode(WIFI_OFF);
+            // UTC Epochを計算してGnssTimeSyncServiceへ報告
+            time_t epoch = mktime(&timeinfo); // JST設定済みなのでローカルタイムとして扱われる
+            // mktimeの挙動に注意。確実にUTCを求める場合
+            struct timeval tv;
+            gettimeofday(&tv, nullptr);
+            
+            if (timeSyncService) {
+                timeSyncService->reportNtpSync(tv.tv_sec, nowMs);
+            } else {
+                hal::Clock::setUtcAnchor((int64_t)tv.tv_sec * 1000000LL, hal::Clock::nowMonotonicUs(), core::TimeSource::Ntp);
+            }
+
+            WiFi.disconnect(true, true);
+            WiFi.mode(WIFI_OFF);
+            ntpRunning_ = false;
+            ntpAttempted_ = true;
+        }
+    } else if (nowMs - ntpStartMs_ > 30000) {
+        // 接続後10秒(全体30秒)経過しても時刻が取れなければ失敗
+        Logger::error("NTP", "NTP sync timeout");
+        WiFi.disconnect(true, true);
+        WiFi.mode(WIFI_OFF);
+        ntpRunning_ = false;
+        ntpAttempted_ = true;
+    }
 }
 
 } // namespace services

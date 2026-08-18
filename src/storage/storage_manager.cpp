@@ -154,7 +154,33 @@ bool StorageManager::loadSuperblock() {
     if (!fram_.read(ADDR_SUPERBLOCK, buffer, sizeof(buffer))) return false;
 
     FramSuperblock* sb = reinterpret_cast<FramSuperblock*>(buffer);
-    if (sb->magic != FRAM_MAGIC || sb->formatVersion != FRAM_FORMAT_VERSION) {
+    if (sb->magic != FRAM_MAGIC) {
+        return false;
+    }
+    
+    if (sb->formatVersion == 3) {
+        services::Logger::info("StorageMgr", "Detected v3 FRAM format. Checking for unflushed records...");
+        uint16_t oldMaxRecords = RING_BUFFER_SIZE / 64;
+        uint16_t pending = (sb->writeIndex >= sb->readIndex) ? 
+                           (sb->writeIndex - sb->readIndex) : 
+                           (oldMaxRecords - sb->readIndex + sb->writeIndex);
+        if (pending > 0) {
+            services::Logger::error("StorageMgr", "Found %u unflushed v3 records! Flush them before upgrading to v4.", pending);
+            return false; // Prevent using FRAM until flushed
+        }
+        
+        services::Logger::info("StorageMgr", "No pending v3 records. Migrating to v4 format.");
+        sb->formatVersion = 4;
+        sb->writeIndex = 0;
+        sb->readIndex = 0;
+        
+        // Recompute CRC for the migrated superblock
+        sb->crc16 = calculateCrc16(buffer, sizeof(FramSuperblock) - sizeof(uint16_t));
+        
+        superblock_ = *sb;
+        saveSuperblock();
+        return true;
+    } else if (sb->formatVersion != FRAM_FORMAT_VERSION) {
         return false;
     }
 
@@ -191,8 +217,8 @@ bool StorageManager::appendRecord(const core::SensorSnapshot& snapshot, uint32_t
         superblock_.readIndex = (superblock_.readIndex + 1) % MAX_RECORDS;
     }
 
-    PersistentRecord rec;
-    memset(&rec, 0, sizeof(PersistentRecord));
+    PersistentRecordV4 rec;
+    memset(&rec, 0, sizeof(PersistentRecordV4));
     
     rec.data.sequence = superblock_.nextSequence++;
     rec.data.uptimeMs = uptimeMs;
@@ -232,22 +258,75 @@ bool StorageManager::appendRecord(const core::SensorSnapshot& snapshot, uint32_t
         rec.data.validFlags |= VALID_HR | VALID_SPO2;
     }
     
+    // GNSS Fields
+    rec.data.sampleMonotonicUs = snapshot.gnss.sampleMonotonicUs;
+    
+    if (snapshot.gnss.timeValid) {
+        rec.data.utcEpochMs = snapshot.gnss.utcEpochMs;
+    } else {
+        rec.data.utcEpochMs = 0;
+    }
+
+    if (snapshot.gnss.fixValid) {
+        rec.data.gnssLatitudeE7 = static_cast<int32_t>(snapshot.gnss.latitudeDeg * 1e7);
+        rec.data.gnssLongitudeE7 = static_cast<int32_t>(snapshot.gnss.longitudeDeg * 1e7);
+        rec.data.gnssValidFlags |= GNSS_VALID_FIX;
+    }
+    
+    if (snapshot.gnss.altitudeValid) {
+        rec.data.gnssAltitudeMslM = snapshot.gnss.altitudeMslM;
+        rec.data.gnssValidFlags |= GNSS_VALID_ALTITUDE;
+    }
+    
+    if (snapshot.gnss.speedValid) {
+        rec.data.gnssSpeedMps = snapshot.gnss.speedMps;
+        rec.data.gnssValidFlags |= GNSS_VALID_SPEED;
+    }
+    
+    if (snapshot.gnss.courseValid) {
+        rec.data.gnssCourseDeg = snapshot.gnss.courseDeg;
+        rec.data.gnssValidFlags |= GNSS_VALID_COURSE;
+    }
+    
+    if (snapshot.gnss.hdopValid) {
+        rec.data.gnssHdop = snapshot.gnss.hdop;
+        rec.data.gnssValidFlags |= GNSS_VALID_HDOP;
+    }
+    
+    if (snapshot.gnss.timeValid) {
+        rec.data.gnssValidFlags |= GNSS_VALID_UTC;
+    }
+
+    rec.data.gnssSatellites = snapshot.gnss.satellites;
+    rec.data.gnssAgeMs = snapshot.gnss.ageMs;
+
+    // TimeSource status
+    // Time source information needs to be retrieved, but since we don't have direct access
+    // we use hal::Clock::source() directly here
+    core::TimeSource ts = hal::Clock::source();
+    rec.data.timeSource = static_cast<uint8_t>(ts);
+
+    // Get time status from hal::Clock
+    if (hal::Clock::isDisciplined()) {
+        rec.data.gnssValidFlags |= GNSS_TIME_DISCIPLINED;
+    }
+    
     rec.header.sequence = rec.data.sequence;
-    rec.header.length = sizeof(EnvironmentalRecord);
+    rec.header.length = sizeof(SensorRecordV4);
     rec.header.committed = 0; // まだコミットしない
-    rec.header.crc = calculateCrc16(reinterpret_cast<uint8_t*>(&rec.data), sizeof(EnvironmentalRecord));
+    rec.header.crc = calculateCrc16(reinterpret_cast<uint8_t*>(&rec.data), sizeof(SensorRecordV4));
 
     uint16_t addr = ADDR_RING_BUFFER + (superblock_.writeIndex * RECORD_SLOT_SIZE);
     
     // 1. データを書き込む (committed = 0)
-    if (!fram_.write(addr, reinterpret_cast<uint8_t*>(&rec), sizeof(PersistentRecord))) {
+    if (!fram_.write(addr, reinterpret_cast<uint8_t*>(&rec), sizeof(PersistentRecordV4))) {
         services::Logger::error("StorageMgr", "Failed to write record to FRAM");
         return false;
     }
     
     // 2. コミットマーカーを書く (電源断対策)
     rec.header.committed = 1;
-    if (!fram_.writeByte(addr + offsetof(PersistentRecord, header.committed), 1)) {
+    if (!fram_.writeByte(addr + offsetof(PersistentRecordV4, header.committed), 1)) {
         services::Logger::error("StorageMgr", "Failed to commit record in FRAM");
         return false;
     }
@@ -331,10 +410,10 @@ bool StorageManager::createNewSdFile(const String& targetDate) {
 }
 
 void StorageManager::writeCsvHeader(File& file) {
-    file.println("Sequence,UptimeMs,Timestamp,CO2_ppm,Temp_C,RH_pct,Pressure_hPa,VOC_Index,NOx_Index,HR_bpm,SpO2_pct,Altitude_m,ValidFlags");
+    file.println("Sequence,UptimeMs,SampleMonotonicUs,TimestampUtc,TimeSource,CO2_ppm,Temp_C,RH_pct,Pressure_hPa,VOC_Index,NOx_Index,HR_bpm,SpO2_pct,BMP_Altitude_m,GNSS_Lat_deg,GNSS_Lon_deg,GNSS_AltMSL_m,GNSS_Speed_mps,GNSS_Course_deg,GNSS_Satellites,GNSS_HDOP,GNSS_FixValid,GNSS_TimeValid,GNSS_AgeMs,PPS_AgeMs,GNSS_TimeDisciplined,ValidFlags");
 }
 
-void StorageManager::formatCsvLine(char* buffer, size_t size, const EnvironmentalRecord& rec) {
+void StorageManager::formatCsvLine(char* buffer, size_t size, const SensorRecordV4& rec) {
     float temp = (rec.validFlags & VALID_TEMP) ? rec.temperatureC : NAN;
     float rh = (rec.validFlags & VALID_HUMIDITY) ? rec.humidityRh : NAN;
     float press = (rec.validFlags & VALID_PRESSURE) ? rec.pressureHpa : NAN;
@@ -344,24 +423,49 @@ void StorageManager::formatCsvLine(char* buffer, size_t size, const Environmenta
     float hr = (rec.validFlags & VALID_HR) ? rec.heartRateBpm : NAN;
     float spo2 = (rec.validFlags & VALID_SPO2) ? rec.spo2Percent : NAN;
     float alt = (rec.validFlags & VALID_ALTITUDE) ? rec.altitudeM : NAN;
+    
+    // GNSS Fields
+    double lat = (rec.gnssValidFlags & GNSS_VALID_FIX) ? (rec.gnssLatitudeE7 / 1e7) : NAN;
+    double lon = (rec.gnssValidFlags & GNSS_VALID_FIX) ? (rec.gnssLongitudeE7 / 1e7) : NAN;
+    float gnssAlt = (rec.gnssValidFlags & GNSS_VALID_ALTITUDE) ? rec.gnssAltitudeMslM : NAN;
+    float speed = (rec.gnssValidFlags & GNSS_VALID_SPEED) ? rec.gnssSpeedMps : NAN;
+    float course = (rec.gnssValidFlags & GNSS_VALID_COURSE) ? rec.gnssCourseDeg : NAN;
+    float hdop = (rec.gnssValidFlags & GNSS_VALID_HDOP) ? rec.gnssHdop : NAN;
 
-    char timeStr[24] = "";
-    if (hal::Clock::isTimeSet()) {
-        uint32_t nowMs = millis();
-        int32_t diffSec = (nowMs > rec.uptimeMs) ? ((nowMs - rec.uptimeMs) / 1000) : 0;
-        
-        // JST (+9時間) に補正
-        time_t recordEpoch = hal::Clock::getEpoch() - diffSec + (9 * 3600);
-        
+    const char* tsStr = "UNSET";
+    switch (static_cast<core::TimeSource>(rec.timeSource)) {
+        case core::TimeSource::Manual: tsStr = "MANUAL"; break;
+        case core::TimeSource::Ntp: tsStr = "NTP"; break;
+        case core::TimeSource::Gnss: tsStr = "GNSS"; break;
+        case core::TimeSource::Holdover: tsStr = "HOLDOVER"; break;
+        default: break;
+    }
+
+    char timeStr[32] = "";
+    if (rec.gnssValidFlags & GNSS_VALID_UTC) {
+        time_t recordEpoch = rec.utcEpochMs / 1000;
+        uint16_t ms = rec.utcEpochMs % 1000;
         struct tm timeinfo;
         gmtime_r(&recordEpoch, &timeinfo);
         
-        snprintf(timeStr, sizeof(timeStr), "%02d:%02d:%02d",
-                 timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+        snprintf(timeStr, sizeof(timeStr), "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
+                 timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
+                 timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec, ms);
+    } else {
+        // Fallback or leave empty
+        snprintf(timeStr, sizeof(timeStr), "INVALID");
     }
 
-    snprintf(buffer, size, "%lu,%lu,%s,%.1f,%.2f,%.2f,%.2f,%.1f,%.1f,%.1f,%.1f,%.1f,0x%02X",
-             rec.sequence, rec.uptimeMs, timeStr, co2, temp, rh, press, voc, nox, hr, spo2, alt, rec.validFlags);
+    // Since the buffer might be tight for all these formats, snprintf handles truncation safely
+    snprintf(buffer, size, "%lu,%lu,%lld,%s,%s,%.1f,%.2f,%.2f,%.2f,%.1f,%.1f,%.1f,%.1f,%.1f,%.7f,%.7f,%.1f,%.1f,%.1f,%u,%.1f,%d,%d,%lu,%lu,%d,0x%02X",
+             rec.sequence, rec.uptimeMs, rec.sampleMonotonicUs, timeStr, tsStr, 
+             co2, temp, rh, press, voc, nox, hr, spo2, alt, 
+             lat, lon, gnssAlt, speed, course, rec.gnssSatellites, hdop, 
+             (rec.gnssValidFlags & GNSS_VALID_FIX) ? 1 : 0, 
+             (rec.gnssValidFlags & GNSS_VALID_UTC) ? 1 : 0, 
+             rec.gnssAgeMs, rec.ppsAgeMs, 
+             (rec.gnssValidFlags & GNSS_TIME_DISCIPLINED) ? 1 : 0, 
+             rec.validFlags);
 }
 
 void StorageManager::flushPendingToSd() {
@@ -432,13 +536,13 @@ void StorageManager::flushPendingToSd() {
     uint16_t currentIndex = superblock_.readIndex;
 
     while (currentIndex != superblock_.writeIndex) {
-        PersistentRecord rec;
+        PersistentRecordV4 rec;
         uint16_t addr = ADDR_RING_BUFFER + (currentIndex * RECORD_SLOT_SIZE);
         
-        if (fram_.read(addr, reinterpret_cast<uint8_t*>(&rec), sizeof(PersistentRecord))) {
+        if (fram_.read(addr, reinterpret_cast<uint8_t*>(&rec), sizeof(PersistentRecordV4))) {
             // Check CRC and committed
             if (rec.header.committed == 1) {
-                uint16_t crc = calculateCrc16(reinterpret_cast<uint8_t*>(&rec.data), sizeof(EnvironmentalRecord));
+                uint16_t crc = calculateCrc16(reinterpret_cast<uint8_t*>(&rec.data), sizeof(SensorRecordV4));
                 if (crc == rec.header.crc) {
                     char line[256];
                     formatCsvLine(line, sizeof(line), rec.data);

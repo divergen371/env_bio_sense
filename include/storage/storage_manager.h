@@ -72,7 +72,7 @@ private:
     bool initSdCard();
     bool createNewSdFile(const String& targetDate = "");
     void writeCsvHeader(File& file);
-    void formatCsvLine(char* buffer, size_t size, const EnvironmentalRecord& rec);
+    void formatCsvLine(char* buffer, size_t size, const SensorRecordV4& rec);
 };
 
 } // namespace storage

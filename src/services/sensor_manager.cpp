@@ -9,6 +9,9 @@ bool SensorManager::begin(storage::StorageManager& storageManager) {
     storage_ = &storageManager;
     Logger::info("SensorMgr", "Initializing Sensor Manager...");
     
+    // GNSSの初期化 (早期に行う)
+    lc76g_.begin();
+
     if (sht45_.begin()) {
         status_.sht45State = sht45_.state();
     } else {
@@ -235,6 +238,29 @@ void SensorManager::update(uint32_t nowMs) {
     if (max30102_.readPpg(snapshot_.ppg)) {
         // Step 6 では生データのみが反映される
     }
+
+    // GNSSは常に細かくupdateを呼んでUARTバッファからNMEAをパースする
+    lc76g_.update(nowMs);
+    lc76g_.readGnss(snapshot_.gnss, nowMs);
+    status_.gnss = lc76g_.status(nowMs);
+
+    // NMEAから得られた最新のUTCと、それに紐づくPPSタイムスタンプで時刻同期を試みる
+    gnssTimeSync_.update(snapshot_.gnss, nowMs);
+
+    // PPSイベントフラグをクリアしておく
+    drivers::sensors::PpsEvent pps;
+    while (lc76g_.takePpsEvent(pps)) {}
+    
+    // NMEAが途絶えたらHoldoverへ移行するなどの処理が必要
+    if (!status_.gnss.nmeaAlive || !status_.gnss.ppsRecent) {
+        gnssTimeSync_.reportHoldover(nowMs);
+    }
+    
+    // 現在のタイムソースをSystemStatusへ反映
+    status_.timeSource = hal::Clock::source();
+    
+    // TimeDisciplinedフラグを反映
+    status_.gnss.timeDisciplined = hal::Clock::isDisciplined();
 }
 
 } // namespace services

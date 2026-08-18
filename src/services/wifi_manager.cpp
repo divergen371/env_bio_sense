@@ -7,6 +7,8 @@ namespace services {
 WifiManager::WifiManager() : isOn_(false) {}
 
 void WifiManager::begin() {
+    // LwIPスタックを確実に初期化するため、一度STAモードにする
+    WiFi.mode(WIFI_STA);
     WiFi.mode(WIFI_OFF);
     isOn_ = false;
 }

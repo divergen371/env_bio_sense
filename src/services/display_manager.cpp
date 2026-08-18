@@ -62,6 +62,9 @@ void DisplayManager::render(const core::SensorSnapshot& snapshot, const core::Sy
         case ScreenId::Overview:
             renderOverview(snapshot, status);
             break;
+        case ScreenId::Gnss:
+            renderGnss(snapshot, status);
+            break;
         default:
             display_.setCursor(0, 0);
             display_.println("Screen not impl.");
@@ -129,6 +132,58 @@ void DisplayManager::renderOverview(const core::SensorSnapshot& snapshot, const 
     } else {
         display_.printf("HR   : -- bpm\n");
         display_.printf("SpO2 : -- %%\n");
+    }
+    
+    // Line 8: GNSS Overview
+    if (!status.gnss.nmeaAlive) {
+        display_.printf("G:OFFLINE ");
+    } else if (!snapshot.gnss.fixValid) {
+        display_.printf("G:SRCH S%02u ", snapshot.gnss.satellites);
+    } else {
+        display_.printf("G:FIX S%02u H%.1f ", snapshot.gnss.satellites, snapshot.gnss.hdop);
+    }
+    
+    switch (status.timeSource) {
+        case core::TimeSource::Gnss: display_.printf("T:GNSS\n"); break;
+        case core::TimeSource::Holdover: display_.printf("T:HOLD\n"); break;
+        case core::TimeSource::Ntp: display_.printf("T:NTP\n"); break;
+        default: display_.printf("T:--\n"); break;
+    }
+}
+
+void DisplayManager::renderGnss(const core::SensorSnapshot& snapshot, const core::SystemStatus& status) {
+    display_.setTextSize(1);
+    display_.setCursor(0, 0);
+    display_.println("--- GNSS Status ---");
+    
+    if (!status.gnss.nmeaAlive) {
+        display_.println("State : OFFLINE");
+    } else if (!snapshot.gnss.fixValid) {
+        display_.println("State : SEARCHING");
+    } else {
+        display_.println("State : FIX");
+    }
+    
+    display_.printf("Sats  : %u\n", snapshot.gnss.satellites);
+    display_.printf("HDOP  : %.1f\n", snapshot.gnss.hdop);
+    
+    if (snapshot.gnss.fixValid) {
+        display_.printf("Lat: %.5f\n", snapshot.gnss.latitudeDeg);
+        display_.printf("Lon: %.5f\n", snapshot.gnss.longitudeDeg);
+    } else {
+        display_.println("Lat: --");
+        display_.println("Lon: --");
+    }
+    
+    display_.printf("PPS Age: %s\n", status.gnss.ppsRecent ? "OK" : "STALE");
+    
+    display_.printf("Time: ");
+    switch (status.timeSource) {
+        case core::TimeSource::Gnss: display_.println("GNSS"); break;
+        case core::TimeSource::Holdover: display_.println("HOLDOVER"); break;
+        case core::TimeSource::Ntp: display_.println("NTP"); break;
+        case core::TimeSource::Manual: display_.println("MANUAL"); break;
+        default: display_.println("UNSYNCED"); break;
     }
 }
 

@@ -10,6 +10,7 @@ enum class ScreenId : uint8_t {
     Overview,
     Environment,
     Ppg,
+    Gnss,
     Diagnostics
 };
 
@@ -27,6 +28,7 @@ private:
     bool available_ {false};
 
     void renderOverview(const core::SensorSnapshot& snapshot, const core::SystemStatus& status);
+    void renderGnss(const core::SensorSnapshot& snapshot, const core::SystemStatus& status);
 };
 
 } // namespace services

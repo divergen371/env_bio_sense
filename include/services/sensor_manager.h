@@ -6,6 +6,8 @@
 #include "drivers/sensors/scd41_sensor.h"
 #include "drivers/sensors/sgp41_sensor.h"
 #include "drivers/sensors/max30102_sensor.h"
+#include "drivers/sensors/lc76g_sensor.h"
+#include "services/gnss_time_sync_service.h"
 #include "storage/storage_manager.h"
 #include <cstdint>
 
@@ -19,12 +21,14 @@ public:
     const core::SensorSnapshot& snapshot() const { return snapshot_; }
     const core::SystemStatus& status() const { return status_; }
     
-    // システム操作
+    // Calibration & Maintenance
     void setSeaLevelPressure(float hpa, core::PressureFieldState state = core::PressureFieldState::Valid);
     bool calibrateScd41(uint16_t targetPpm, uint16_t& frcCorrection);
-    bool triggerSht45Heater();
     bool isScd41CalibrationRecommended() const;
+    bool triggerSht45Heater();
     bool startBmp581Calibration(float referenceAltitudeM);
+
+    GnssTimeSyncService* getGnssTimeSyncService() { return &gnssTimeSync_; }
 
 private:
     storage::StorageManager* storage_ = nullptr;
@@ -39,6 +43,8 @@ private:
     drivers::sensors::Scd41Sensor scd41_;
     drivers::sensors::Sgp41Sensor sgp41_;
     drivers::sensors::Max30102Sensor max30102_;
+    drivers::sensors::Lc76gSensor lc76g_{Serial1};
+    GnssTimeSyncService gnssTimeSync_;
 };
 
 } // namespace services

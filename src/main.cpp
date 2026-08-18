@@ -67,7 +67,7 @@ void setup() {
     services::Logger::info("MAIN", "BMP5 INT: D3 / GPIO%u", hal::pins::BMP5_INT);
     services::Logger::info("MAIN", "--------------------------------");
 
-    // NTPサーバーから時刻を取得 (完了後にWi-Fi切断)
+    // NTPサーバー初期化(ノンブロッキング)
     services::TimeManager::begin();
 
     // I2Cバス初期化とスキャン
@@ -136,11 +136,16 @@ void loop() {
     // PPG (MAX30102) の高速サンプリングのため、このメインループは極力ブロックしないこと
     sensorManager.update(nowMs);
 
+    // 時刻同期サービス(NTPフォールバック)の更新
+    // ※SensorManagerの内部実装に立ち入らずグローバルに更新できるようにする
+    services::TimeManager::update(nowMs, sensorManager.status().timeSource, sensorManager.getGnssTimeSyncService());
+
     static uint32_t previousLogMs = 0;
     // 2000msごとにPPGの計算結果(HR/SpO2)または生データをシリアルに出力
     if (nowMs - previousLogMs >= 2000) {
         previousLogMs = nowMs;
         const auto& snap = sensorManager.snapshot();
+        const auto& status = sensorManager.status();
         
         // --- 環境異常の警告出力 ---
         if (snap.environment.valid && snap.environment.enclosureWarning == core::EnclosureWarning::HeatTrapped) {
@@ -163,6 +168,20 @@ void loop() {
             } else {
                 services::Logger::info("MAIN", "PPG: Measuring (Calc...) [Amp: %u]", snap.ppg.signalAmplitude);
             }
+        }
+
+        // --- GNSS Log ---
+        if (snap.gnss.fixValid) {
+            services::Logger::info("MAIN", "GNSS: FIX (Sats: %u, HDOP: %.1f) Lat: %.5f, Lon: %.5f",
+                snap.gnss.satellites, snap.gnss.hdop, snap.gnss.latitudeDeg, snap.gnss.longitudeDeg);
+            if (snap.gnss.timeValid) {
+                // UTCエポックから大雑把な秒を出すか、UTC有効であることを表示
+                services::Logger::info("MAIN", "GNSS: UTC Valid");
+            }
+        } else if (status.gnss.nmeaAlive) {
+            services::Logger::info("MAIN", "GNSS: SEARCH (Sats: %u, Baud: %u)", snap.gnss.satellites, status.gnss.uartBaud);
+        } else {
+            services::Logger::info("MAIN", "GNSS: OFFLINE");
         }
     }
 

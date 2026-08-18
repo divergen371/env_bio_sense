@@ -5,7 +5,7 @@
 namespace storage {
 
 constexpr uint32_t FRAM_MAGIC = 0x4652414D; // "FRAM"
-constexpr uint16_t FRAM_FORMAT_VERSION = 3;
+constexpr uint16_t FRAM_FORMAT_VERSION = 4;
 
 enum class EventCode : uint16_t {
     Boot = 0x01,
@@ -61,14 +61,27 @@ enum SensorValidFlags : uint32_t {
     VALID_ALTITUDE = 1u << 8,
 };
 
-struct EnvironmentalRecord {
+enum GnssValidFlags : uint16_t {
+    GNSS_VALID_FIX          = 1u << 0,
+    GNSS_VALID_ALTITUDE     = 1u << 1,
+    GNSS_VALID_SPEED        = 1u << 2,
+    GNSS_VALID_COURSE       = 1u << 3,
+    GNSS_VALID_HDOP         = 1u << 4,
+    GNSS_VALID_UTC          = 1u << 5,
+    GNSS_PPS_RECENT         = 1u << 6,
+    GNSS_TIME_DISCIPLINED   = 1u << 7
+};
+
+struct SensorRecordV4 {
     uint32_t sequence;
     uint32_t uptimeMs;
+
+    int64_t sampleMonotonicUs;
+    int64_t utcEpochMs;
 
     float temperatureC;
     float humidityRh;
     float pressureHpa;
-
     uint16_t co2Ppm;
 
     float vocIndex;
@@ -76,11 +89,24 @@ struct EnvironmentalRecord {
 
     float heartRateBpm;
     float spo2Percent;
-    
     float altitudeM;
 
+    // GNSS Fields
+    int32_t gnssLatitudeE7;
+    int32_t gnssLongitudeE7;
+    float gnssAltitudeMslM;
+    float gnssSpeedMps;
+    float gnssCourseDeg;
+    float gnssHdop;
+
+    uint32_t gnssAgeMs;
+    uint32_t ppsAgeMs;
+    uint16_t gnssSatellites;
+    uint16_t gnssValidFlags;
+    uint8_t timeSource;
+
     uint32_t validFlags;
-}; // 46 bytes
+}; // Approx 80+ bytes
 
 struct FramRecordHeader {
     uint32_t sequence;
@@ -90,17 +116,17 @@ struct FramRecordHeader {
 }; // 9 bytes
 
 // 結合して FRAM に書き込む完全なレコード
-struct PersistentRecord {
+struct PersistentRecordV4 {
     FramRecordHeader header;
-    EnvironmentalRecord data;
-}; // 51 bytes
+    SensorRecordV4 data;
+}; // Approx 90+ bytes
 
 struct EventRecord {
     FramRecordHeader header;
     uint32_t uptimeMs;
     uint16_t eventCode;
     int32_t detail;
-}; // 9 + 10 = 19 bytes
+}; // 19 bytes
 
 #pragma pack(pop)
 
@@ -112,8 +138,10 @@ constexpr uint16_t ADDR_RING_BUFFER   = 0x1000;
 
 // 容量とレコードサイズの定義
 constexpr size_t FRAM_CAPACITY        = 32768; // 32KB
-constexpr size_t RECORD_SLOT_SIZE     = 64;    // 余裕を持たせた64バイト固定枠
+constexpr size_t RECORD_SLOT_SIZE     = 128;   // GNSSデータ追加のため128バイトへ拡張
 constexpr size_t RING_BUFFER_SIZE     = FRAM_CAPACITY - ADDR_RING_BUFFER; // 28672 bytes
-constexpr size_t MAX_RECORDS          = RING_BUFFER_SIZE / RECORD_SLOT_SIZE; // 448 records
+constexpr size_t MAX_RECORDS          = RING_BUFFER_SIZE / RECORD_SLOT_SIZE; // 224 records
+
+static_assert(sizeof(PersistentRecordV4) <= RECORD_SLOT_SIZE, "PersistentRecordV4 exceeds RECORD_SLOT_SIZE");
 
 } // namespace storage

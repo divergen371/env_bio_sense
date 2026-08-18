@@ -9,7 +9,8 @@ enum class SensorId : uint8_t {
     Bmp581,
     Scd41,
     Max30102,
-    Sgp41
+    Sgp41,
+    Gnss
 };
 
 enum class DeviceState : uint8_t {
@@ -85,6 +86,55 @@ struct PpgData {
     bool calculatedValid {};
     bool signalPoor {false}; // アプローチA: 波形品質フラグ
     uint32_t signalAmplitude {0};
+};
+
+enum class TimeSource : uint8_t {
+    Unset,
+    Manual,
+    Ntp,
+    Gnss,
+    Holdover
+};
+
+struct GnssData {
+    double latitudeDeg {};
+    double longitudeDeg {};
+
+    float altitudeMslM {};
+    float speedMps {};
+    float courseDeg {};
+    float hdop {};
+    uint16_t satellites {};
+
+    bool fixValid {};
+    bool altitudeValid {};
+    bool speedValid {};
+    bool courseValid {};
+    bool hdopValid {};
+    bool timeValid {};
+
+    int64_t sampleMonotonicUs {};
+    int64_t utcEpochMs {};
+    int64_t lastPpsMonotonicUs {}; // NMEA到着時点での直近のPPS時刻
+    uint32_t ageMs {UINT32_MAX};
+};
+
+struct GnssStatus {
+    DeviceState transportState {DeviceState::Unknown};
+
+    bool nmeaAlive {};
+    bool ppsSeen {};
+    bool ppsRecent {};
+    bool timeDisciplined {};
+
+    uint32_t nmeaAgeMs {UINT32_MAX};
+    uint32_t fixAgeMs {UINT32_MAX};
+    uint32_t ppsAgeMs {UINT32_MAX};
+
+    uint32_t ppsCount {};
+    int32_t lastPpsIntervalUs {};
+    uint32_t uartBaud {};
+    uint32_t checksumFailures {};
 };
 
 template <typename T>

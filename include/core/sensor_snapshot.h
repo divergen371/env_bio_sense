@@ -7,6 +7,7 @@ namespace core {
 struct SensorSnapshot {
     EnvironmentData environment {};
     PpgData ppg {};
+    GnssData gnss {};
 };
 
 struct SystemStatus {
@@ -18,6 +19,9 @@ struct SystemStatus {
     
     uint32_t uptimeMs {};
     uint32_t i2cErrorCount {};
+
+    GnssStatus gnss {};
+    TimeSource timeSource {TimeSource::Unset};
 };
 
 } // namespace core
