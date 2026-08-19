@@ -446,7 +446,10 @@ const char* htmlContent = R"rawliteral(
       const lines = csvText.trim().split('\n');
       if (lines.length < 2) return;
       
-      // Sequence,UptimeMs,Timestamp,CO2_ppm,Temp_C,RH_pct,Pressure_hPa,VOC_Index,NOx_Index,HR_bpm,SpO2_pct,ValidFlags
+      const headerCols = lines[0].split(',').map(c => c.trim());
+      const colIdx = {};
+      headerCols.forEach((col, idx) => colIdx[col] = idx);
+
       const labels = [];
       const co2 = [];
       const temp = [];
@@ -457,26 +460,50 @@ const char* htmlContent = R"rawliteral(
       const hr = [];
       const spo2 = [];
       const altitude = [];
+      const speed = [];
+      const sats = [];
       
+      const getTimeLabel = (cols) => {
+        let t = "";
+        if (colIdx['TimestampUtc'] !== undefined) t = cols[colIdx['TimestampUtc']];
+        else if (colIdx['Timestamp'] !== undefined) t = cols[colIdx['Timestamp']];
+        if (!t || t === "") {
+          const upIdx = colIdx['UptimeMs'] !== undefined ? colIdx['UptimeMs'] : 1;
+          t = (parseInt(cols[upIdx]) / 1000).toFixed(1) + 's';
+        }
+        // Extract time from UTC ISO string if applicable
+        if (t.includes('T')) {
+           t = t.split('T')[1].replace('Z', '');
+        }
+        return t;
+      };
+
+      const getVal = (cols, names) => {
+        for (const n of names) {
+          if (colIdx[n] !== undefined) return parseFloat(cols[colIdx[n]]);
+        }
+        return NaN;
+      };
+
       for (let i = 1; i < lines.length; i++) {
         const cols = lines[i].split(',');
-        if (cols.length < 11) continue;
+        if (cols.length < 5) continue;
         
-        let timeLabel = cols[2];
-        if (!timeLabel || timeLabel === "") {
-          timeLabel = (parseInt(cols[1]) / 1000).toFixed(1) + 's';
+        labels.push(getTimeLabel(cols));
+        co2.push(getVal(cols, ['CO2_ppm']));
+        temp.push(getVal(cols, ['Temp_C']));
+        rh.push(getVal(cols, ['RH_pct']));
+        press.push(getVal(cols, ['Pressure_hPa']));
+        voc.push(getVal(cols, ['VOC_Index']));
+        nox.push(getVal(cols, ['NOx_Index']));
+        hr.push(getVal(cols, ['HR_bpm']));
+        spo2.push(getVal(cols, ['SpO2_pct']));
+        altitude.push(getVal(cols, ['BMP_Altitude_m', 'Altitude_m']));
+        
+        if (colIdx['GNSS_Speed_mps'] !== undefined) {
+           speed.push(getVal(cols, ['GNSS_Speed_mps']));
+           sats.push(getVal(cols, ['GNSS_Satellites']));
         }
-        
-        labels.push(timeLabel);
-        co2.push(parseFloat(cols[3]));
-        temp.push(parseFloat(cols[4]));
-        rh.push(parseFloat(cols[5]));
-        press.push(parseFloat(cols[6]));
-        voc.push(parseFloat(cols[7]));
-        nox.push(parseFloat(cols[8]));
-        hr.push(parseFloat(cols[9]));
-        spo2.push(parseFloat(cols[10]));
-        altitude.push(parseFloat(cols[11]));
       }
 
       const ctx = document.getElementById('myChart').getContext('2d');
@@ -495,7 +522,9 @@ const char* htmlContent = R"rawliteral(
             { label: 'NOx Index', data: nox, borderColor: '#5e35b1', backgroundColor: '#5e35b1', yAxisID: 'y2', hidden: true },
             { label: 'HR (bpm)', data: hr, borderColor: '#d81b60', backgroundColor: '#d81b60', yAxisID: 'y', hidden: true },
             { label: 'SpO2 (%)', data: spo2, borderColor: '#00acc1', backgroundColor: '#00acc1', yAxisID: 'y1', hidden: true },
-            { label: 'Altitude (m)', data: altitude, borderColor: '#78909c', backgroundColor: '#78909c', yAxisID: 'y4', hidden: false }
+            { label: 'Altitude (m)', data: altitude, borderColor: '#78909c', backgroundColor: '#78909c', yAxisID: 'y4', hidden: false },
+            { label: 'GNSS Speed (m/s)', data: speed, borderColor: '#ab47bc', backgroundColor: '#ab47bc', yAxisID: 'y5', hidden: true },
+            { label: 'Satellites', data: sats, borderColor: '#9e9d24', backgroundColor: '#9e9d24', yAxisID: 'y5', hidden: true }
           ]
         },
         options: {
@@ -525,7 +554,8 @@ const char* htmlContent = R"rawliteral(
             y1: { type: 'linear', display: true, position: 'right', title: { display: true, text: 'Temp/RH/SpO2' }, grid: { drawOnChartArea: false } },
             y2: { type: 'linear', display: false, position: 'right' },
             y3: { type: 'linear', display: false, position: 'left' },
-            y4: { type: 'linear', display: true, position: 'right', title: { display: true, text: 'Altitude (m)' }, grid: { drawOnChartArea: false } }
+            y4: { type: 'linear', display: true, position: 'right', title: { display: true, text: 'Altitude (m)' }, grid: { drawOnChartArea: false } },
+            y5: { type: 'linear', display: false, position: 'left', title: { display: true, text: 'GNSS' } }
           },
           elements: { point: { radius: 0, hitRadius: 10, hoverRadius: 5 } },
           animation: false // ESP32からのロード直後の重さを軽減
