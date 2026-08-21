@@ -428,7 +428,8 @@ const char* htmlContent = R"rawliteral(
         const text = await response.text();
         drawChart(fileName, text);
       } catch (e) {
-        document.getElementById('chartTitle').innerText = 'Error loading ' + fileName;
+        document.getElementById('chartTitle').innerText = 'Error: ' + e.message;
+        console.error("Chart error:", e);
       }
     }
 
