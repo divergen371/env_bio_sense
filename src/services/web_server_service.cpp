@@ -473,7 +473,10 @@ const char* htmlContent = R"rawliteral(
           t = (parseInt(cols[upIdx]) / 1000).toFixed(1) + 's';
         }
         // Extract time from UTC ISO string if applicable
-        if (t.includes('T')) {
+        if (t.includes('T') && t.endsWith('Z')) {
+           const d = new Date(t);
+           return d.toLocaleTimeString(); // ローカル時刻（JSTなど）に変換して表示
+        } else if (t.includes('T')) {
            t = t.split('T')[1].replace('Z', '');
         }
         return t;
