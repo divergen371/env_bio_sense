@@ -55,15 +55,13 @@ void setup() {
     services::Logger::info("MAIN", "XIAO ESP32S3 sensor station");
     services::Logger::info("MAIN", "----------------------------");
 
-    pinMode(hal::pins::MAX30102_INT, INPUT_PULLUP);
     pinMode(hal::pins::BMP5_INT, INPUT_PULLUP);
     pinMode(hal::pins::USER_LED, OUTPUT);
-    pinMode(hal::pins::BOOT_BUTTON, INPUT_PULLUP); // Boot Button for Wi-Fi toggle
+    pinMode(hal::pins::ACTION_BUTTON, INPUT_PULLDOWN); // Tact switch for Wi-Fi toggle
     digitalWrite(hal::pins::USER_LED, HIGH); // 消灯 (XIAOのLEDは通常Active-Low)
 
     services::Logger::info("MAIN", "SDA: D4 / GPIO%u", hal::pins::I2C_SDA);
     services::Logger::info("MAIN", "SCL: D5 / GPIO%u", hal::pins::I2C_SCL);
-    services::Logger::info("MAIN", "MAX30102 INT: D2 / GPIO%u", hal::pins::MAX30102_INT);
     services::Logger::info("MAIN", "BMP5 INT: D3 / GPIO%u", hal::pins::BMP5_INT);
     services::Logger::info("MAIN", "--------------------------------");
 
@@ -104,10 +102,10 @@ void loop() {
     wifiManager.update();
     archiveManager.update(nowMs);
     
-    // BOOTボタンによるWi-Fiトグル (3秒長押し判定)
+    // アクションボタンによるWi-Fiトグル (3秒長押し判定)
     static uint32_t btnPressedMs = 0;
     static bool btnHandled = false;
-    if (digitalRead(hal::pins::BOOT_BUTTON) == LOW) {
+    if (digitalRead(hal::pins::ACTION_BUTTON) == HIGH) {
         if (btnPressedMs == 0) {
             btnPressedMs = nowMs;
             btnHandled = false;
