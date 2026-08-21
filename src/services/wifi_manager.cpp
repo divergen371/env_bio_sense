@@ -56,6 +56,7 @@ void WifiManager::startAP() {
 }
 
 void WifiManager::stopAP() {
+    MDNS.end();
     WiFi.softAPdisconnect(true);
     WiFi.mode(WIFI_OFF);
 }
