@@ -38,6 +38,9 @@ private:
     uint32_t highHumidityStartMs_ = 0;
     uint32_t lastHeaterRunMs_ = 0;
     
+    float slpEma_ = NAN;
+    uint32_t lastAmedasUpdateMs_ = 0;
+    
     drivers::sensors::Sht45Sensor sht45_;
     drivers::sensors::Bmp581Sensor bmp581_;
     drivers::sensors::Scd41Sensor scd41_;

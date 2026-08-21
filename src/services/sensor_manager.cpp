@@ -2,6 +2,8 @@
 #include "services/logger.h"
 #include "hal/i2c_bus.h"
 #include "hal/clock.h"
+#include <Arduino.h>
+#include <cmath>
 
 namespace services {
 
@@ -60,6 +62,10 @@ bool SensorManager::begin(storage::StorageManager& storageManager) {
 }
 
 void SensorManager::setSeaLevelPressure(float hpa, core::PressureFieldState state) {
+    if (state == core::PressureFieldState::Valid || state == core::PressureFieldState::LastKnown) {
+        lastAmedasUpdateMs_ = millis();
+        slpEma_ = hpa;
+    }
     bmp581_.setSeaLevelPressure(hpa, state);
 }
 
@@ -243,6 +249,39 @@ void SensorManager::update(uint32_t nowMs) {
     lc76g_.update(nowMs);
     lc76g_.readGnss(snapshot_.gnss, nowMs);
     status_.gnss = lc76g_.status(nowMs);
+
+    // --- GNSS based SLP calibration ---
+    static uint32_t lastGnssSlpUpdateMs = 0;
+    if (nowMs - lastGnssSlpUpdateMs >= 1000) { // Update EMA once per second
+        lastGnssSlpUpdateMs = nowMs;
+        
+        // 2 hours without AMeDAS, or AMeDAS never fetched
+        if (nowMs - lastAmedasUpdateMs_ >= 7200000 || lastAmedasUpdateMs_ == 0) {
+            if (snapshot_.gnss.fixValid && snapshot_.gnss.hdop < 2.0f && snapshot_.gnss.speedMps < 0.5f) {
+                if (snapshot_.environment.pressureValid && !std::isnan(snapshot_.environment.pressureHpa)) {
+                    float currentP = snapshot_.environment.pressureHpa;
+                    float currentT = std::isnan(snapshot_.environment.temperatureC) ? 20.0f : snapshot_.environment.temperatureC;
+                    if (!std::isnan(snapshot_.gnss.altitudeMslM)) {
+                        float tempK = currentT + 273.15f;
+                        float expVal = 1.0f - (0.0065f * snapshot_.gnss.altitudeMslM) / tempK;
+                        if (expVal > 0.0f) {
+                            float impliedSlp = currentP / std::pow(expVal, 5.254999f);
+                            
+                            if (std::isnan(slpEma_)) {
+                                slpEma_ = impliedSlp;
+                            } else {
+                                // alpha = 1 / 3600 (approx 1 hour time constant at 1Hz)
+                                slpEma_ = slpEma_ + (impliedSlp - slpEma_) / 3600.0f;
+                            }
+                            
+                            // Apply to BMP581
+                            bmp581_.setSeaLevelPressure(slpEma_, core::PressureFieldState::Valid);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // NMEAから得られた最新のUTCと、それに紐づくPPSタイムスタンプで時刻同期を試みる
     gnssTimeSync_.update(snapshot_.gnss, nowMs);
