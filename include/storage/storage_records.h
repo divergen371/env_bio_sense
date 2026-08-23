@@ -137,10 +137,10 @@ constexpr uint16_t ADDR_EVENT_JOURNAL = 0x0200;
 constexpr uint16_t ADDR_RING_BUFFER   = 0x1000;
 
 // 容量とレコードサイズの定義
-constexpr size_t FRAM_CAPACITY        = 32768; // 32KB
+constexpr size_t FRAM_CAPACITY        = 65536; // 64KB (32KB x 2)
 constexpr size_t RECORD_SLOT_SIZE     = 128;   // GNSSデータ追加のため128バイトへ拡張
-constexpr size_t RING_BUFFER_SIZE     = FRAM_CAPACITY - ADDR_RING_BUFFER; // 28672 bytes
-constexpr size_t MAX_RECORDS          = RING_BUFFER_SIZE / RECORD_SLOT_SIZE; // 224 records
+constexpr size_t RING_BUFFER_SIZE     = FRAM_CAPACITY - ADDR_RING_BUFFER; // 61440 bytes
+constexpr size_t MAX_RECORDS          = RING_BUFFER_SIZE / RECORD_SLOT_SIZE; // 480 records
 
 static_assert(sizeof(PersistentRecordV4) <= RECORD_SLOT_SIZE, "PersistentRecordV4 exceeds RECORD_SLOT_SIZE");
 

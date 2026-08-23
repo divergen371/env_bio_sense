@@ -160,7 +160,8 @@ bool StorageManager::loadSuperblock() {
     
     if (sb->formatVersion == 3) {
         services::Logger::info("StorageMgr", "Detected v3 FRAM format. Checking for unflushed records...");
-        uint16_t oldMaxRecords = RING_BUFFER_SIZE / 64;
+        // V3時代のリングバッファサイズ(28672 bytes) / V3レコードサイズ(64 bytes)
+        uint16_t oldMaxRecords = (32768 - 4096) / 64;
         uint16_t pending = (sb->writeIndex >= sb->readIndex) ? 
                            (sb->writeIndex - sb->readIndex) : 
                            (oldMaxRecords - sb->readIndex + sb->writeIndex);

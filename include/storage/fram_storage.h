@@ -26,14 +26,15 @@ public:
     // 書き込んだデータと一致しているか検証する
     bool verify(uint16_t address, const uint8_t* data, size_t length);
 
-    bool isPresent() const { return present_; }
-    uint8_t getI2cAddress() const { return i2cAddress_; }
+    bool isPresent() const { return chipCount_ > 0; }
+    uint8_t getI2cAddress(uint8_t index = 0) const { return index < chipCount_ ? i2cAddresses_[index] : 0; }
+    uint32_t getCapacity() const { return chipCount_ * 32768; }
 
-    static constexpr size_t MAX_CAPACITY = 32768; // 32KB
+    static constexpr size_t MAX_CAPACITY = 65536; // 64KB (32KB x 2)
 
 private:
-    bool present_;
-    uint8_t i2cAddress_;
+    uint8_t chipCount_;
+    uint8_t i2cAddresses_[2];
 };
 
 } // namespace storage
