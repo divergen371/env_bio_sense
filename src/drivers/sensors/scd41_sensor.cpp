@@ -62,9 +62,9 @@ bool Scd41Sensor::begin() {
     {
         hal::I2cLockGuard lock(100);
         if (lock.acquired()) {
-            error = scd4x_.setAutomaticSelfCalibration(0);
+            error = scd4x_.setAutomaticSelfCalibration(1);
             if (error) {
-                services::Logger::warn("SCD41", "Failed to disable ASC, error: %u", error);
+                services::Logger::warn("SCD41", "Failed to enable ASC, error: %u", error);
             }
             error = scd4x_.setTemperatureOffset(2.0f);
             if (error) {
@@ -109,15 +109,52 @@ bool Scd41Sensor::begin() {
     readErrorCount_ = 0;
     notReadyCount_ = 0;
     consecutiveErrors_ = 0;
+    measurementStartMs_ = millis();
     return true;
 }
 
-bool Scd41Sensor::performManualCalibration(uint16_t targetCo2Ppm, uint16_t& frcCorrection) {
+bool Scd41Sensor::performForcedRecalibration(uint16_t referenceCo2Ppm, Scd41FrcResult& result) {
+    result.errorMessage = nullptr;
     if (state_ == core::DeviceState::Error || state_ == core::DeviceState::Offline) {
         services::Logger::error("SCD41", "Cannot perform FRC in current state");
+        result.errorMessage = "SENSOR_NOT_READY";
+        return false;
+    }
+    if (calibrationInProgress_) {
+        services::Logger::error("SCD41", "Calibration already in progress");
+        result.errorMessage = "CALIBRATION_ALREADY_IN_PROGRESS";
         return false;
     }
 
+    uint32_t nowMs = millis();
+    uint32_t uptimeMs = nowMs - measurementStartMs_;
+    if (measurementStartMs_ == 0 || uptimeMs < 180000) {
+        services::Logger::error("SCD41", "FRC rejected: measurement uptime too short (%u ms, need 180000)", uptimeMs);
+        result.errorMessage = "MEASUREMENT_UPTIME_TOO_SHORT";
+        return false;
+    }
+    if (!hasValidData_) {
+        services::Logger::error("SCD41", "FRC rejected: no valid CO2 data");
+        result.errorMessage = "NO_VALID_DATA";
+        return false;
+    }
+    if (referenceCo2Ppm < 400 || referenceCo2Ppm > 5000) {
+        services::Logger::error("SCD41", "FRC rejected: reference ppm out of range (400-5000)");
+        result.errorMessage = "REFERENCE_OUT_OF_RANGE";
+        return false;
+    }
+    // Pressure freshness check (e.g. 15 seconds)
+    if (hasAmbientPressure_ && (nowMs - lastAmbientPressureSetMs_ > 15000)) {
+        services::Logger::error("SCD41", "FRC rejected: ambient pressure is stale (%u ms old)", nowMs - lastAmbientPressureSetMs_);
+        result.errorMessage = "PRESSURE_STALE";
+        return false;
+    }
+
+    services::Logger::info("SCD41", "event=SCD41_FRC_BEGIN reference_ppm=%u pre_co2_ppm=%u ambient_pressure_hpa=%u pressure_age_ms=%u measurement_uptime_ms=%u",
+        referenceCo2Ppm, currentCo2Ppm_, hasAmbientPressure_ ? lastAmbientPressureHpa_ : 0, 
+        hasAmbientPressure_ ? (nowMs - lastAmbientPressureSetMs_) : 0, uptimeMs);
+
+    calibrationInProgress_ = true;
     uint16_t error = 0;
     char errorMessage[256];
 
@@ -128,37 +165,60 @@ bool Scd41Sensor::performManualCalibration(uint16_t targetCo2Ppm, uint16_t& frcC
             error = scd4x_.stopPeriodicMeasurement();
         } else {
             services::Logger::error("SCD41", "FRC: Failed to lock for stopPeriodicMeasurement");
+            calibrationInProgress_ = false;
             return false;
         }
     }
 
     if (error) {
         errorToString(error, errorMessage, 256);
-        services::Logger::warn("SCD41", "FRC: stopPeriodicMeasurement failed: %s", errorMessage);
+        services::Logger::error("SCD41", "FRC: stopPeriodicMeasurement failed: %s. Aborting FRC.", errorMessage);
+        calibrationInProgress_ = false;
+        result.errorMessage = "STOP_MEASUREMENT_FAILED";
+        return false;
     }
 
     // 2. Wait 500ms
     delay(500);
 
     // 3. Perform FRC
+    uint16_t rawFrc = 0;
     {
         hal::I2cLockGuard lock(100);
         if (lock.acquired()) {
-            error = scd4x_.performForcedRecalibration(targetCo2Ppm, frcCorrection);
+            error = scd4x_.performForcedRecalibration(referenceCo2Ppm, rawFrc);
         } else {
             services::Logger::error("SCD41", "FRC: Failed to lock for performForcedRecalibration");
+            calibrationInProgress_ = false;
+            result.errorMessage = "LOCK_FAILED_FOR_FRC";
             return false;
         }
     }
 
+    result.referencePpm = referenceCo2Ppm;
+    result.preCalibrationCo2Ppm = currentCo2Ppm_;
+    result.ambientPressureHpa = hasAmbientPressure_ ? lastAmbientPressureHpa_ : 0;
+    result.measurementUptimeMs = uptimeMs;
+    result.rawWord = rawFrc;
+    result.success = false;
+
     if (error) {
         errorToString(error, errorMessage, 256);
         services::Logger::error("SCD41", "FRC failed: %s", errorMessage);
-    } else if (frcCorrection == 0xFFFF) {
-        services::Logger::error("SCD41", "FRC failed: 0xFFFF returned");
-        error = 1;
+        result.errorMessage = "FRC_FAILED_COMM_ERROR";
+    } else if (rawFrc == 0xFFFF) {
+        services::Logger::error("SCD41", "FRC failed: 0xFFFF returned (sensor rejected FRC)");
+        result.errorMessage = "FRC_FAILED_SENSOR_REJECTED";
     } else {
-        services::Logger::info("SCD41", "FRC success. Correction: 0x%04X", frcCorrection);
+        result.correctionPpm = static_cast<int16_t>(rawFrc) - 0x8000;
+        result.success = true;
+        result.errorMessage = "";
+        services::Logger::info("SCD41", "event=SCD41_FRC_RESULT success=true raw_word=0x%04X correction_ppm=%d", rawFrc, result.correctionPpm);
+        postFrcLogCount_ = 5; // Log the next 5 measurements
+    }
+
+    if (!result.success) {
+        services::Logger::warn("SCD41", "event=SCD41_FRC_RESULT success=false raw_word=0x%04X", rawFrc);
     }
 
     // 4. Restart periodic measurement
@@ -175,13 +235,87 @@ bool Scd41Sensor::performManualCalibration(uint16_t targetCo2Ppm, uint16_t& frcC
     if (restartError) {
         services::Logger::error("SCD41", "FRC: startPeriodicMeasurement failed");
         state_ = core::DeviceState::Error;
+    } else {
+        measurementStartMs_ = millis();
     }
 
-    return error == 0;
+    calibrationInProgress_ = false;
+    return result.success;
+}
+
+bool Scd41Sensor::factoryResetAndReconfigure() {
+    float beforeOffset = NAN;
+    uint16_t beforeAsc = 0;
+    
+    {
+        hal::I2cLockGuard lock(100);
+        if (lock.acquired()) {
+            scd4x_.getTemperatureOffset(beforeOffset);
+            scd4x_.getAutomaticSelfCalibration(beforeAsc);
+            scd4x_.stopPeriodicMeasurement();
+        } else {
+            return false;
+        }
+    }
+    
+    services::Logger::info("SCD41", "Performing Factory Reset... (Before - TempOffset: %.2f C, ASC: %u)", beforeOffset, beforeAsc);
+    if (calibrationInProgress_) return false;
+    
+    uint16_t error = 0;
+    delay(500);
+
+    {
+        hal::I2cLockGuard lock(100);
+        if (lock.acquired()) {
+            error = scd4x_.performFactoryReset();
+        } else {
+            return false;
+        }
+    }
+    
+    delay(1200); // Wait for sensor to boot up after reset
+    
+    if (error) {
+        services::Logger::error("SCD41", "Factory Reset failed");
+        return false;
+    }
+    
+    services::Logger::info("SCD41", "Factory Reset successful, reconfiguring...");
+    
+    {
+        hal::I2cLockGuard lock(100);
+        if (lock.acquired()) {
+            scd4x_.setAutomaticSelfCalibration(1);
+            scd4x_.setTemperatureOffset(2.0f);
+            
+            float tOffset = 0.0f;
+            uint16_t ascEnabled = 0;
+            scd4x_.getTemperatureOffset(tOffset);
+            scd4x_.getAutomaticSelfCalibration(ascEnabled);
+            services::Logger::info("SCD41", "Reconfigured - TempOffset: %.2f C, ASC: %u", tOffset, ascEnabled);
+            
+            error = scd4x_.startPeriodicMeasurement();
+        } else {
+            return false;
+        }
+    }
+    
+    if (error) {
+        services::Logger::error("SCD41", "Failed to restart measurement after factory reset");
+        state_ = core::DeviceState::Error;
+        return false;
+    }
+    
+    measurementStartMs_ = millis();
+    hasValidData_ = false;
+    return true;
 }
 
 void Scd41Sensor::update(uint32_t nowMs) {
     if (state_ == core::DeviceState::Error || state_ == core::DeviceState::Offline) {
+        return;
+    }
+    if (calibrationInProgress_) {
         return;
     }
 
@@ -247,6 +381,12 @@ void Scd41Sensor::update(uint32_t nowMs) {
     
     services::Logger::info("SCD41", "SCD41 ts=%u lock=OK ready=1 read=OK co2=%u temp=%.2f rh=%.2f crc=OK succ=%u err=%u nr=%u",
         nowMs, co2, temperature, humidity, successCount_, readErrorCount_, notReadyCount_);
+        
+    if (postFrcLogCount_ > 0) {
+        services::Logger::info("SCD41", "event=SCD41_POST_FRC elapsed_ms=%u co2_ppm=%u pressure_hpa=%u",
+            nowMs - measurementStartMs_, currentCo2Ppm_, hasAmbientPressure_ ? lastAmbientPressureHpa_ : 0);
+        postFrcLogCount_--;
+    }
 }
 
 bool Scd41Sensor::readEnvironment(core::EnvironmentData& out) const {
@@ -264,16 +404,20 @@ bool Scd41Sensor::readEnvironment(core::EnvironmentData& out) const {
     return true;
 }
 
-void Scd41Sensor::setAmbientPressure(uint16_t pressureHpa) {
-    if (state_ == core::DeviceState::Error || state_ == core::DeviceState::Offline) {
+void Scd41Sensor::setAmbientPressure(uint16_t ambientPressureHpa) {
+    if (state_ == core::DeviceState::Error || state_ == core::DeviceState::Offline || calibrationInProgress_) {
         return;
     }
     
     hal::I2cLockGuard lock(100);
     if (lock.acquired()) {
-        uint16_t error = scd4x_.setAmbientPressure(pressureHpa);
+        uint16_t error = scd4x_.setAmbientPressure(ambientPressureHpa);
         if (error) {
-            services::Logger::warn("SCD41", "Failed to set ambient pressure: %u hPa", pressureHpa);
+            services::Logger::warn("SCD41", "Failed to set ambient pressure: %u hPa", ambientPressureHpa);
+        } else {
+            lastAmbientPressureHpa_ = ambientPressureHpa;
+            lastAmbientPressureSetMs_ = millis();
+            hasAmbientPressure_ = true;
         }
     }
 }

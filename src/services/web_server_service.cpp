@@ -62,16 +62,25 @@ const char* htmlContent = R"rawliteral(
     <span id="bmp581CalibStatus" style="margin-left: 10px;"></span>
   </div>
 
-  <div id="scd41RecBadge" style="display: none; margin-bottom: 15px; padding: 10px; background-color: #f8d7da; border: 1px solid #f5c6cb; border-radius: 4px; font-size: 14px; color: #721c24; font-weight: bold;">
-    ⚠️ SCD41 Manual Calibration is recommended! (Last calibration > 7 days ago)
-  </div>
-
   <div style="margin-bottom: 15px; padding: 10px; background-color: #fff3cd; border: 1px solid #ffeeba; border-radius: 4px; font-size: 14px;">
-    <strong>SCD41 Manual Calibration:</strong><br>
-    <small>Expose sensor to fresh air (>3 mins) before calibrating.</small><br>
-    Target CO2 (ppm): <input type="number" id="scd41Target" value="400" style="width: 80px; margin-top: 5px;">
+    <strong>SCD41 Advanced / External Reference Calibration (FRC):</strong><br>
+    <small style="color: #c62828;">⚠️ 外部の信頼できる CO₂ 基準器または既知濃度の校正環境がある場合のみ使用する。SCD41 自身の表示値や「外気だから 400 ppm」という推定値を入力してはならない。</small><br>
+    <div style="margin-top: 8px; margin-bottom: 8px;">
+      <input type="checkbox" id="scd41ConfirmRef"> <label for="scd41ConfirmRef">This is a confirmed external reference value</label>
+    </div>
+    Reference CO2 (ppm): <input type="number" id="scd41Reference" value="" placeholder="e.g. 430" style="width: 80px;">
     <button onclick="calibrateSCD41()" style="padding: 4px 8px; font-size: 12px; cursor: pointer;">Calibrate</button>
     <span id="scd41CalibStatus" style="margin-left: 10px;"></span>
+  </div>
+
+  <div style="margin-bottom: 15px; padding: 10px; background-color: #f8d7da; border: 1px solid #f5c6cb; border-radius: 4px; font-size: 14px;">
+    <strong>Advanced / Maintenance:</strong><br>
+    <small style="color: #721c24;">⚠️ Factory Reset clears all user settings and calibration history.</small><br>
+    <div style="margin-top: 8px; margin-bottom: 8px;">
+      <input type="checkbox" id="scd41ConfirmReset"> <label for="scd41ConfirmReset">I understand this deletes calibration history</label>
+    </div>
+    <button onclick="factoryResetSCD41()" style="padding: 4px 8px; font-size: 12px; cursor: pointer; color: red;">Factory Reset SCD41</button>
+    <span id="scd41ResetStatus" style="margin-left: 10px;"></span>
   </div>
   
   <div style="margin-bottom: 15px;">
@@ -129,8 +138,22 @@ const char* htmlContent = R"rawliteral(
     }
 
     async function calibrateSCD41() {
-      const targetPpm = document.getElementById('scd41Target').value;
+      const referencePpm = document.getElementById('scd41Reference').value;
+      const confirmRef = document.getElementById('scd41ConfirmRef').checked;
       const statusSpan = document.getElementById('scd41CalibStatus');
+      
+      if (!referencePpm || isNaN(referencePpm)) {
+        statusSpan.innerText = 'Please enter a valid reference ppm';
+        statusSpan.style.color = 'red';
+        return;
+      }
+      
+      if (!confirmRef) {
+        statusSpan.innerText = 'Please confirm that this is an external reference';
+        statusSpan.style.color = 'red';
+        return;
+      }
+      
       statusSpan.innerText = 'Calibrating... (takes ~500ms)';
       statusSpan.style.color = '#856404';
       
@@ -138,13 +161,41 @@ const char* htmlContent = R"rawliteral(
         const response = await fetch('/api/scd41/calibrate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ target_ppm: parseInt(targetPpm) })
+          body: JSON.stringify({ reference_ppm: parseInt(referencePpm), confirm_external_reference: confirmRef })
         });
         const data = await response.json();
         if (response.ok) {
-          statusSpan.innerText = 'Success! Correction: 0x' + data.correction.toString(16).toUpperCase();
+          statusSpan.innerText = 'Success! Correction: ' + data.correction_ppm + ' ppm';
           statusSpan.style.color = 'green';
-          document.getElementById('scd41RecBadge').style.display = 'none';
+        } else {
+          statusSpan.innerText = 'Failed: ' + (data.error || data.message || 'Unknown error');
+          statusSpan.style.color = 'red';
+        }
+      } catch (err) {
+        statusSpan.innerText = 'Network error';
+        statusSpan.style.color = 'red';
+      }
+    }
+
+    async function factoryResetSCD41() {
+      const confirmReset = document.getElementById('scd41ConfirmReset').checked;
+      const statusSpan = document.getElementById('scd41ResetStatus');
+      
+      if (!confirmReset) {
+        statusSpan.innerText = 'Please check the confirmation box.';
+        statusSpan.style.color = 'red';
+        return;
+      }
+      
+      statusSpan.innerText = 'Resetting... (takes ~2s)';
+      statusSpan.style.color = '#856404';
+      
+      try {
+        const response = await fetch('/api/scd41/factory_reset', { method: 'POST' });
+        const data = await response.json();
+        if (response.ok) {
+          statusSpan.innerText = 'Success! Sensor factory reset.';
+          statusSpan.style.color = 'green';
         } else {
           statusSpan.innerText = 'Failed: ' + (data.error || 'Unknown error');
           statusSpan.style.color = 'red';
@@ -379,12 +430,7 @@ const char* htmlContent = R"rawliteral(
           textSpan.innerText = `${data.pending} / ${data.max} (${pct}%)`;
         }
         
-        const scdBadge = document.getElementById('scd41RecBadge');
-        if (data.scd41CalibRecommended) {
-          scdBadge.style.display = 'block';
-        } else {
-          scdBadge.style.display = 'none';
-        }
+        // SCD41 calibration recommendation logic has been removed.
       } catch (e) {
         console.error("Status fetch failed", e);
       }
@@ -762,22 +808,7 @@ void WebServerService::setupRoutes() {
     server_->on("/api/status", HTTP_GET, [this](AsyncWebServerRequest *request){
         String response = "{";
         response += "\"pending\":" + String(storageManager_.getPendingCount()) + ",";
-        response += "\"max\":" + String(storageManager_.getMaxRecords()) + ",";
-        
-        bool scd41Rec = false;
-        if (hal::Clock::isTimeSet()) {
-            uint32_t lastEpoch = storageManager_.getScd41LastCalibrationEpoch();
-            if (lastEpoch == 0) {
-                scd41Rec = true;
-            } else {
-                uint32_t nowEpoch = hal::Clock::getEpoch();
-                if (nowEpoch > lastEpoch && (nowEpoch - lastEpoch) >= 604800) {
-                    scd41Rec = true;
-                }
-            }
-        }
-        
-        response += "\"scd41CalibRecommended\":" + String(scd41Rec ? "true" : "false");
+        response += "\"max\":" + String(storageManager_.getMaxRecords());
         response += "}";
         request->send(200, "application/json", response);
     });
@@ -790,19 +821,43 @@ void WebServerService::setupRoutes() {
                 request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
                 return;
             }
-            if (doc.containsKey("target_ppm")) {
-                uint16_t targetPpm = doc["target_ppm"].as<uint16_t>();
-                uint16_t frcCorrection = 0;
+            if (doc.containsKey("reference_ppm") && doc.containsKey("confirm_external_reference")) {
+                bool confirmed = doc["confirm_external_reference"].as<bool>();
+                if (!confirmed) {
+                    request->send(400, "application/json", "{\"status\":\"rejected\",\"error_code\":\"EXTERNAL_REFERENCE_NOT_CONFIRMED\",\"message\":\"FRC requires an externally obtained CO2 reference value.\"}");
+                    return;
+                }
+                
+                uint16_t referencePpm = doc["reference_ppm"].as<uint16_t>();
+                drivers::sensors::Scd41FrcResult frcResult;
+                
                 // 注意: この呼び出しは約500msブロックします
-                if (sensorManager.calibrateScd41(targetPpm, frcCorrection)) {
-                    String resp = "{\"status\":\"ok\",\"correction\":" + String(frcCorrection) + "}";
+                if (sensorManager.calibrateScd41(referencePpm, frcResult)) {
+                    String resp = "{\"status\":\"ok\",";
+                    resp += "\"reference_ppm\":" + String(frcResult.referencePpm) + ",";
+                    resp += "\"pre_co2_ppm\":" + String(frcResult.preCalibrationCo2Ppm) + ",";
+                    resp += "\"correction_ppm\":" + String(frcResult.correctionPpm) + ",";
+                    resp += "\"raw_word\":" + String(frcResult.rawWord) + ",";
+                    resp += "\"ambient_pressure_hpa\":" + String(frcResult.ambientPressureHpa) + ",";
+                    resp += "\"measurement_uptime_ms\":" + String(frcResult.measurementUptimeMs) + "}";
                     request->send(200, "application/json", resp);
                 } else {
-                    request->send(500, "application/json", "{\"error\":\"Calibration failed\"}");
+                    String resp = "{\"error\":\"Calibration failed or preconditions not met\",\"message\":\"";
+                    resp += (frcResult.errorMessage != nullptr) ? frcResult.errorMessage : "Unknown";
+                    resp += "\"}";
+                    request->send(500, "application/json", resp);
                 }
             } else {
-                request->send(400, "application/json", "{\"error\":\"Missing target_ppm\"}");
+                request->send(400, "application/json", "{\"error\":\"Missing reference_ppm or confirm_external_reference\"}");
             }
+    });
+
+    server_->on("/api/scd41/factory_reset", HTTP_POST, [this](AsyncWebServerRequest *request){
+        if (sensorManager.factoryResetScd41()) {
+            request->send(200, "application/json", "{\"status\":\"ok\"}");
+        } else {
+            request->send(500, "application/json", "{\"error\":\"Factory reset failed\"}");
+        }
     });
 
     server_->on("/api/sealevel", HTTP_POST, [](AsyncWebServerRequest *request){

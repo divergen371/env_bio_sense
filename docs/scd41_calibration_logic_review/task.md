@@ -1,0 +1,23 @@
+- [ ] `scd41_sensor.h`, `scd41_sensor.cpp` の変更
+  - [ ] ASC有効化の既定動作へ変更
+  - [ ] FRC APIの改修 (`Scd41FrcResult` 構造体追加、3分以上チェック、生値・補正値分離、`0xFFFF` 扱い)
+  - [ ] 排他制御の追加 (`calibrationInProgress_` フラグなど)
+  - [ ] `stopPeriodicMeasurement()` 失敗時の FRC 中止処理
+- [x] `scd41_sensor.h`, `scd41_sensor.cpp` の変更
+  - [x] ASC有効化の既定動作へ変更
+  - [x] FRC APIの改修 (`Scd41FrcResult` 構造体追加、3分以上チェック、生値・補正値分離、`0xFFFF` 扱い)
+  - [x] 排他制御の追加 (`calibrationInProgress_` フラグなど)
+  - [x] `stopPeriodicMeasurement()` 失敗時の FRC 中止処理
+  - [x] `setAmbientPressure` の引数単位明確化と鮮度管理追加
+  - [x] `factoryResetAndReconfigure()` の実装
+- [x] `sensor_manager.h`, `sensor_manager.cpp` の変更
+  - [x] `isScd41CalibrationRecommended` と7日周期FRC推奨ロジックの削除
+  - [x] 新しいFRC APIに合わせて `calibrateScd41` の引数・戻り値を修正
+- [x] `web_server_service.cpp` の変更
+  - [x] UI上の "SCD41 Manual Calibration is recommended!" 警告を削除
+  - [x] SCD41校正 Target CO2 の初期値(400)を削除し、警告文を追加
+  - [x] 校正API `/api/scd41/calibrate` のリクエスト/レスポンス仕様変更（`reference_ppm`, `confirm_external_reference` の処理）
+- [x] テストの追加・更新
+  - [x] 補正値デコード、FRCの事前条件ロジックのユニットテスト
+  - [x] FRCコマンドの順序と割り込みテスト
+- [x] ビルド確認と全体テスト (PlatformIO Build)

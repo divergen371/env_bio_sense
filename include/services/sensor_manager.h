@@ -23,8 +23,8 @@ public:
     
     // Calibration & Maintenance
     void setSeaLevelPressure(float hpa, core::PressureFieldState state = core::PressureFieldState::Valid);
-    bool calibrateScd41(uint16_t targetPpm, uint16_t& frcCorrection);
-    bool isScd41CalibrationRecommended() const;
+    bool calibrateScd41(uint16_t referencePpm, drivers::sensors::Scd41FrcResult& result);
+    bool factoryResetScd41();
     bool triggerSht45Heater();
     bool startBmp581Calibration(float referenceAltitudeM);
 

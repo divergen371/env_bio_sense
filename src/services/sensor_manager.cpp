@@ -69,10 +69,10 @@ void SensorManager::setSeaLevelPressure(float hpa, core::PressureFieldState stat
     bmp581_.setSeaLevelPressure(hpa, state);
 }
 
-bool SensorManager::calibrateScd41(uint16_t targetPpm, uint16_t& frcCorrection) {
-    bool success = scd41_.performManualCalibration(targetPpm, frcCorrection);
+bool SensorManager::calibrateScd41(uint16_t referencePpm, drivers::sensors::Scd41FrcResult& result) {
+    bool success = scd41_.performForcedRecalibration(referencePpm, result);
     if (success) {
-        services::Logger::info("SensorMgr", "SCD41 manual calibration succeeded (target: %u ppm, correction: 0x%04X)", targetPpm, frcCorrection);
+        services::Logger::info("SensorMgr", "SCD41 manual calibration succeeded (reference: %u ppm, correction: %d ppm)", referencePpm, result.correctionPpm);
         if (storage_ != nullptr && hal::Clock::isTimeSet()) {
             storage_->setScd41LastCalibrationEpoch(hal::Clock::getEpoch());
         }
@@ -82,22 +82,8 @@ bool SensorManager::calibrateScd41(uint16_t targetPpm, uint16_t& frcCorrection) 
     return success;
 }
 
-bool SensorManager::isScd41CalibrationRecommended() const {
-    if (storage_ == nullptr || !hal::Clock::isTimeSet()) {
-        return false;
-    }
-    uint32_t lastEpoch = storage_->getScd41LastCalibrationEpoch();
-    if (lastEpoch == 0) return true; // 未校正
-    
-    uint32_t nowEpoch = hal::Clock::getEpoch();
-    if (nowEpoch > lastEpoch) {
-        uint32_t diff = nowEpoch - lastEpoch;
-        // 7 days = 7 * 24 * 60 * 60 = 604800 seconds
-        if (diff >= 604800) {
-            return true;
-        }
-    }
-    return false;
+bool SensorManager::factoryResetScd41() {
+    return scd41_.factoryResetAndReconfigure();
 }
 
 bool SensorManager::triggerSht45Heater() {
