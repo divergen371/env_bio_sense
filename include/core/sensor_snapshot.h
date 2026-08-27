@@ -8,6 +8,7 @@ struct SensorSnapshot {
     EnvironmentData environment {};
     PpgData ppg {};
     GnssData gnss {};
+    Bme690Data bme690 {};
 };
 
 struct SystemStatus {
@@ -16,6 +17,7 @@ struct SystemStatus {
     DeviceState scd41State {DeviceState::Unknown};
     DeviceState max30102State {DeviceState::Unknown};
     DeviceState displayState {DeviceState::Unknown};
+    DeviceState bme690State {DeviceState::Unknown};
     
     uint32_t uptimeMs {};
     uint32_t i2cErrorCount {};

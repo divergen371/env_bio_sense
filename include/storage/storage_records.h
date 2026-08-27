@@ -5,7 +5,7 @@
 namespace storage {
 
 constexpr uint32_t FRAM_MAGIC = 0x4652414D; // "FRAM"
-constexpr uint16_t FRAM_FORMAT_VERSION = 4;
+constexpr uint16_t FRAM_FORMAT_VERSION = 5;
 
 enum class EventCode : uint16_t {
     Boot = 0x01,
@@ -59,6 +59,8 @@ enum SensorValidFlags : uint32_t {
     VALID_HR       = 1u << 6,
     VALID_SPO2     = 1u << 7,
     VALID_ALTITUDE = 1u << 8,
+    VALID_BME690_TPH = 1u << 9,
+    VALID_BME690_GAS = 1u << 10,
 };
 
 enum GnssValidFlags : uint16_t {
@@ -72,7 +74,7 @@ enum GnssValidFlags : uint16_t {
     GNSS_TIME_DISCIPLINED   = 1u << 7
 };
 
-struct SensorRecordV4 {
+struct SensorRecordV5 {
     uint32_t sequence;
     uint32_t uptimeMs;
 
@@ -106,7 +108,14 @@ struct SensorRecordV4 {
     uint8_t timeSource;
 
     uint32_t validFlags;
-}; // Approx 80+ bytes
+
+    float bme690TemperatureC;
+    float bme690HumidityRh;
+    float bme690PressureHpa;
+    float bme690GasResistanceOhm;
+    uint8_t bme690GasIndex;
+    uint8_t bme690Status;
+};
 
 struct FramRecordHeader {
     uint32_t sequence;
@@ -116,10 +125,10 @@ struct FramRecordHeader {
 }; // 9 bytes
 
 // 結合して FRAM に書き込む完全なレコード
-struct PersistentRecordV4 {
+struct PersistentRecordV5 {
     FramRecordHeader header;
-    SensorRecordV4 data;
-}; // Approx 90+ bytes
+    SensorRecordV5 data;
+};
 
 struct EventRecord {
     FramRecordHeader header;
@@ -142,6 +151,6 @@ constexpr size_t RECORD_SLOT_SIZE     = 128;   // GNSSデータ追加のため12
 constexpr size_t RING_BUFFER_SIZE     = FRAM_CAPACITY - ADDR_RING_BUFFER; // 61440 bytes
 constexpr size_t MAX_RECORDS          = RING_BUFFER_SIZE / RECORD_SLOT_SIZE; // 480 records
 
-static_assert(sizeof(PersistentRecordV4) <= RECORD_SLOT_SIZE, "PersistentRecordV4 exceeds RECORD_SLOT_SIZE");
+static_assert(sizeof(PersistentRecordV5) <= RECORD_SLOT_SIZE, "PersistentRecordV5 exceeds RECORD_SLOT_SIZE");
 
 } // namespace storage

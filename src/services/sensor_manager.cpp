@@ -54,6 +54,13 @@ bool SensorManager::begin(storage::StorageManager& storageManager) {
         services::Logger::error("SensorMgr", "Failed to initialize MAX30102");
     }
 
+    if (bme690_.begin()) {
+        status_.bme690State = bme690_.state();
+    } else {
+        services::Logger::error("SensorMgr", "Failed to initialize BME690");
+        status_.bme690State = core::DeviceState::Error;
+    }
+
     Logger::info("SensorMgr", "Sensor Manager initialized.");
     
     status_.max30102State = max30102_.state();
@@ -197,6 +204,10 @@ void SensorManager::update(uint32_t nowMs) {
     // MAX30102 (脈波センサ) は FIFO の取りこぼしを防ぐため常に更新する
     max30102_.update(nowMs);
     status_.max30102State = max30102_.state();
+
+    // BME690 (非ブロッキング状態機械のため頻繁に呼ぶ)
+    bme690_.update(nowMs);
+    status_.bme690State = bme690_.state();
     
     // スナップショットに反映
     bool envValid = false;
@@ -214,6 +225,9 @@ void SensorManager::update(uint32_t nowMs) {
     }
     
     snapshot_.environment.valid = envValid;
+
+    // BME690 データ取得
+    bme690_.readData(snapshot_.bme690);
 
     // --- Enclosure Warning (空気循環・熱ごもり異常検知) ---
     if (envValid && sht45_.state() == core::DeviceState::Ready && scd41_.state() == core::DeviceState::Ready) {

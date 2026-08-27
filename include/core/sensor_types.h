@@ -10,7 +10,8 @@ enum class SensorId : uint8_t {
     Scd41,
     Max30102,
     Sgp41,
-    Gnss
+    Gnss,
+    Bme690
 };
 
 enum class DeviceState : uint8_t {
@@ -45,6 +46,19 @@ enum class PressureFieldState : uint8_t {
     LastKnown,
     StaticFallback,
     Invalid
+};
+
+struct Bme690Data {
+    float temperatureC {};
+    float humidityRh {};
+    float pressureHpa {};
+    float gasResistanceOhm {};
+    uint32_t timestampMs {};
+    uint8_t gasIndex {};
+    uint8_t status {};
+    bool tphValid {false};
+    bool gasValid {false};
+    bool heaterStable {false};
 };
 
 struct EnvironmentData {

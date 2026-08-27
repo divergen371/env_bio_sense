@@ -7,6 +7,7 @@
 #include "drivers/sensors/sgp41_sensor.h"
 #include "drivers/sensors/max30102_sensor.h"
 #include "drivers/sensors/lc76g_sensor.h"
+#include "drivers/sensors/bme690_sensor.h"
 #include "services/gnss_time_sync_service.h"
 #include "storage/storage_manager.h"
 #include <cstdint>
@@ -47,6 +48,7 @@ private:
     drivers::sensors::Sgp41Sensor sgp41_;
     drivers::sensors::Max30102Sensor max30102_;
     drivers::sensors::Lc76gSensor lc76g_{Serial1};
+    drivers::sensors::Bme690Sensor bme690_;
     GnssTimeSyncService gnssTimeSync_;
 };
 

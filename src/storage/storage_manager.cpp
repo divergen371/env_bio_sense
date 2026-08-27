@@ -181,6 +181,27 @@ bool StorageManager::loadSuperblock() {
         superblock_ = *sb;
         saveSuperblock();
         return true;
+    } else if (sb->formatVersion == 4) {
+        services::Logger::info("StorageMgr", "Detected v4 FRAM format. Checking for unflushed records...");
+        uint16_t pending = (sb->writeIndex >= sb->readIndex) ? 
+                           (sb->writeIndex - sb->readIndex) : 
+                           (MAX_RECORDS - sb->readIndex + sb->writeIndex);
+        if (pending > 0) {
+            services::Logger::error("StorageMgr", "Found %u unflushed v4 records! Flush them before upgrading to v5.", pending);
+            return false; // Prevent using FRAM until flushed
+        }
+        
+        services::Logger::info("StorageMgr", "No pending v4 records. Migrating to v5 format.");
+        sb->formatVersion = 5;
+        sb->writeIndex = 0;
+        sb->readIndex = 0;
+        
+        // Recompute CRC for the migrated superblock
+        sb->crc16 = calculateCrc16(buffer, sizeof(FramSuperblock) - sizeof(uint16_t));
+        
+        superblock_ = *sb;
+        saveSuperblock();
+        return true;
     } else if (sb->formatVersion != FRAM_FORMAT_VERSION) {
         return false;
     }
@@ -218,8 +239,8 @@ bool StorageManager::appendRecord(const core::SensorSnapshot& snapshot, uint32_t
         superblock_.readIndex = (superblock_.readIndex + 1) % MAX_RECORDS;
     }
 
-    PersistentRecordV4 rec;
-    memset(&rec, 0, sizeof(PersistentRecordV4));
+    PersistentRecordV5 rec;
+    memset(&rec, 0, sizeof(PersistentRecordV5));
     
     rec.data.sequence = superblock_.nextSequence++;
     rec.data.uptimeMs = uptimeMs;
@@ -300,6 +321,21 @@ bool StorageManager::appendRecord(const core::SensorSnapshot& snapshot, uint32_t
 
     rec.data.gnssSatellites = snapshot.gnss.satellites;
     rec.data.gnssAgeMs = snapshot.gnss.ageMs;
+    
+    if (snapshot.bme690.tphValid) {
+        rec.data.bme690TemperatureC = snapshot.bme690.temperatureC;
+        rec.data.bme690HumidityRh = snapshot.bme690.humidityRh;
+        rec.data.bme690PressureHpa = snapshot.bme690.pressureHpa;
+        rec.data.validFlags |= VALID_BME690_TPH;
+    }
+    
+    if (snapshot.bme690.gasValid) {
+        rec.data.bme690GasResistanceOhm = snapshot.bme690.gasResistanceOhm;
+        rec.data.validFlags |= VALID_BME690_GAS;
+    }
+
+    rec.data.bme690GasIndex = snapshot.bme690.gasIndex;
+    rec.data.bme690Status = snapshot.bme690.status;
 
     // TimeSource status
     // Time source information needs to be retrieved, but since we don't have direct access
@@ -313,21 +349,21 @@ bool StorageManager::appendRecord(const core::SensorSnapshot& snapshot, uint32_t
     }
     
     rec.header.sequence = rec.data.sequence;
-    rec.header.length = sizeof(SensorRecordV4);
+    rec.header.length = sizeof(SensorRecordV5);
     rec.header.committed = 0; // まだコミットしない
-    rec.header.crc = calculateCrc16(reinterpret_cast<uint8_t*>(&rec.data), sizeof(SensorRecordV4));
+    rec.header.crc = calculateCrc16(reinterpret_cast<uint8_t*>(&rec.data), sizeof(SensorRecordV5));
 
     uint16_t addr = ADDR_RING_BUFFER + (superblock_.writeIndex * RECORD_SLOT_SIZE);
     
     // 1. データを書き込む (committed = 0)
-    if (!fram_.write(addr, reinterpret_cast<uint8_t*>(&rec), sizeof(PersistentRecordV4))) {
+    if (!fram_.write(addr, reinterpret_cast<uint8_t*>(&rec), sizeof(PersistentRecordV5))) {
         services::Logger::error("StorageMgr", "Failed to write record to FRAM");
         return false;
     }
     
     // 2. コミットマーカーを書く (電源断対策)
     rec.header.committed = 1;
-    if (!fram_.writeByte(addr + offsetof(PersistentRecordV4, header.committed), 1)) {
+    if (!fram_.writeByte(addr + offsetof(PersistentRecordV5, header.committed), 1)) {
         services::Logger::error("StorageMgr", "Failed to commit record in FRAM");
         return false;
     }
@@ -382,12 +418,12 @@ bool StorageManager::initSdCard() {
 bool StorageManager::createNewSdFile(const String& targetDate) {
     if (hal::Clock::isTimeSet()) {
         currentDateString_ = (targetDate.length() > 0) ? targetDate : hal::Clock::getFormattedDate();
-        currentFilename_ = "/log_" + currentDateString_ + ".csv";
+        currentFilename_ = "/log_" + currentDateString_ + "_v5.csv";
     } else {
         currentDateString_ = "";
         for (int i = 0; i < 1000; i++) {
             char filename[32];
-            snprintf(filename, sizeof(filename), "/log_boot_%03d.csv", i);
+            snprintf(filename, sizeof(filename), "/log_boot_%03d_v5.csv", i);
             if (!SD.exists(filename)) {
                 currentFilename_ = filename;
                 break;
@@ -411,10 +447,10 @@ bool StorageManager::createNewSdFile(const String& targetDate) {
 }
 
 void StorageManager::writeCsvHeader(File& file) {
-    file.println("Sequence,UptimeMs,SampleMonotonicUs,TimestampUtc,TimeSource,CO2_ppm,Temp_C,RH_pct,Pressure_hPa,VOC_Index,NOx_Index,HR_bpm,SpO2_pct,BMP_Altitude_m,GNSS_Lat_deg,GNSS_Lon_deg,GNSS_AltMSL_m,GNSS_Speed_mps,GNSS_Course_deg,GNSS_Satellites,GNSS_HDOP,GNSS_FixValid,GNSS_TimeValid,GNSS_AgeMs,PPS_AgeMs,GNSS_TimeDisciplined,ValidFlags");
+    file.println("Sequence,UptimeMs,SampleMonotonicUs,TimestampUtc,TimeSource,CO2_ppm,Temp_C,RH_pct,Pressure_hPa,VOC_Index,NOx_Index,HR_bpm,SpO2_pct,BMP_Altitude_m,GNSS_Lat_deg,GNSS_Lon_deg,GNSS_AltMSL_m,GNSS_Speed_mps,GNSS_Course_deg,GNSS_Satellites,GNSS_HDOP,GNSS_FixValid,GNSS_TimeValid,GNSS_AgeMs,PPS_AgeMs,GNSS_TimeDisciplined,ValidFlags,BME690_Temp_C,BME690_RH_pct,BME690_Pressure_hPa,BME690_GasResistance_Ohm,BME690_GasValid,BME690_HeaterStable,BME690_GasIndex,BME690_StatusHex");
 }
 
-void StorageManager::formatCsvLine(char* buffer, size_t size, const SensorRecordV4& rec) {
+void StorageManager::formatCsvLine(char* buffer, size_t size, const SensorRecordV5& rec) {
     float temp = (rec.validFlags & VALID_TEMP) ? rec.temperatureC : NAN;
     float rh = (rec.validFlags & VALID_HUMIDITY) ? rec.humidityRh : NAN;
     float press = (rec.validFlags & VALID_PRESSURE) ? rec.pressureHpa : NAN;
@@ -432,6 +468,14 @@ void StorageManager::formatCsvLine(char* buffer, size_t size, const SensorRecord
     float speed = (rec.gnssValidFlags & GNSS_VALID_SPEED) ? rec.gnssSpeedMps : NAN;
     float course = (rec.gnssValidFlags & GNSS_VALID_COURSE) ? rec.gnssCourseDeg : NAN;
     float hdop = (rec.gnssValidFlags & GNSS_VALID_HDOP) ? rec.gnssHdop : NAN;
+    
+    // BME690 Fields
+    float bmeTemp = (rec.validFlags & VALID_BME690_TPH) ? rec.bme690TemperatureC : NAN;
+    float bmeRh = (rec.validFlags & VALID_BME690_TPH) ? rec.bme690HumidityRh : NAN;
+    float bmePress = (rec.validFlags & VALID_BME690_TPH) ? rec.bme690PressureHpa : NAN;
+    float bmeGas = (rec.validFlags & VALID_BME690_GAS) ? rec.bme690GasResistanceOhm : NAN;
+    uint8_t bmeGasValid = (rec.validFlags & VALID_BME690_GAS) ? 1 : 0;
+    uint8_t bmeHeaterStable = (rec.bme690Status & 0x10) ? 1 : 0; // HEAT_STAB_MSK is 0x10
 
     const char* tsStr = "UNSET";
     switch (static_cast<core::TimeSource>(rec.timeSource)) {
@@ -458,7 +502,7 @@ void StorageManager::formatCsvLine(char* buffer, size_t size, const SensorRecord
     }
 
     // Since the buffer might be tight for all these formats, snprintf handles truncation safely
-    snprintf(buffer, size, "%lu,%lu,%lld,%s,%s,%.1f,%.2f,%.2f,%.2f,%.1f,%.1f,%.1f,%.1f,%.1f,%.7f,%.7f,%.1f,%.1f,%.1f,%u,%.1f,%d,%d,%lu,%lu,%d,0x%02X",
+    int charsWritten = snprintf(buffer, size, "%lu,%lu,%lld,%s,%s,%.1f,%.2f,%.2f,%.2f,%.1f,%.1f,%.1f,%.1f,%.1f,%.7f,%.7f,%.1f,%.1f,%.1f,%u,%.1f,%d,%d,%lu,%lu,%d,0x%02X,%.2f,%.2f,%.2f,%.0f,%d,%d,%d,0x%02X",
              rec.sequence, rec.uptimeMs, rec.sampleMonotonicUs, timeStr, tsStr, 
              co2, temp, rh, press, voc, nox, hr, spo2, alt, 
              lat, lon, gnssAlt, speed, course, rec.gnssSatellites, hdop, 
@@ -466,7 +510,13 @@ void StorageManager::formatCsvLine(char* buffer, size_t size, const SensorRecord
              (rec.gnssValidFlags & GNSS_VALID_UTC) ? 1 : 0, 
              rec.gnssAgeMs, rec.ppsAgeMs, 
              (rec.gnssValidFlags & GNSS_TIME_DISCIPLINED) ? 1 : 0, 
-             rec.validFlags);
+             rec.validFlags,
+             bmeTemp, bmeRh, bmePress, bmeGas, bmeGasValid, bmeHeaterStable, rec.bme690GasIndex, rec.bme690Status);
+             
+    if (charsWritten < 0 || (size_t)charsWritten >= size) {
+        services::Logger::warn("StorageMgr", "CSV line truncated. Need %d bytes, got %zu bytes", charsWritten, size);
+        buffer[0] = '\0';
+    }
 }
 
 void StorageManager::flushPendingToSd() {
@@ -504,7 +554,7 @@ void StorageManager::flushPendingToSd() {
             snprintf(buf, sizeof(buf), "%04d%02d%02d", 
                      timeinfoShifted.tm_year + 1900, timeinfoShifted.tm_mon + 1, timeinfoShifted.tm_mday);
             String tomorrow = String(buf);
-            String tomorrowFilename = "/log_" + tomorrow + ".csv";
+            String tomorrowFilename = "/log_" + tomorrow + "_v5.csv";
             
             if (!SD.exists(tomorrowFilename)) {
                 services::Logger::info("StorageMgr", "Pre-creating tomorrow's file: %s", tomorrowFilename.c_str());
@@ -537,18 +587,20 @@ void StorageManager::flushPendingToSd() {
     uint16_t currentIndex = superblock_.readIndex;
 
     while (currentIndex != superblock_.writeIndex) {
-        PersistentRecordV4 rec;
+        PersistentRecordV5 rec;
         uint16_t addr = ADDR_RING_BUFFER + (currentIndex * RECORD_SLOT_SIZE);
         
-        if (fram_.read(addr, reinterpret_cast<uint8_t*>(&rec), sizeof(PersistentRecordV4))) {
+        if (fram_.read(addr, reinterpret_cast<uint8_t*>(&rec), sizeof(PersistentRecordV5))) {
             // Check CRC and committed
             if (rec.header.committed == 1) {
-                uint16_t crc = calculateCrc16(reinterpret_cast<uint8_t*>(&rec.data), sizeof(SensorRecordV4));
+                uint16_t crc = calculateCrc16(reinterpret_cast<uint8_t*>(&rec.data), sizeof(SensorRecordV5));
                 if (crc == rec.header.crc) {
-                    char line[256];
+                    char line[512];
                     formatCsvLine(line, sizeof(line), rec.data);
-                    file.println(line);
-                    flushedCount++;
+                    if (line[0] != '\0') {
+                        file.println(line);
+                        flushedCount++;
+                    }
                 } else {
                     services::Logger::warn("StorageMgr", "CRC mismatch at slot %u (seq %lu)", currentIndex, rec.header.sequence);
                 }
