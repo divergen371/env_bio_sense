@@ -12,6 +12,14 @@ Scd41Sensor::Scd41Sensor() {}
 bool Scd41Sensor::begin() {
     services::Logger::info("SCD41", "Initializing SCD41...");
     state_ = core::DeviceState::Initializing;
+    lastError_ = core::ErrorCode::None;
+    condition_ = Scd41Condition::AwaitingFirstSample;
+    lastRawError_ = 0;
+    hasValidData_ = false;
+    lastSuccessMs_ = 0;
+    recoveryPhase_ = RecoveryPhase::Idle;
+    measurementStartMs_ = millis();
+    nextRecoveryAttemptMs_ = measurementStartMs_ + 1000;
     
     scd4x_.begin(Wire);
 
@@ -26,6 +34,9 @@ bool Scd41Sensor::begin() {
             error = scd4x_.stopPeriodicMeasurement();
         } else {
             services::Logger::error("SCD41", "Failed to acquire lock for stopPeriodicMeasurement");
+            state_ = core::DeviceState::Error;
+            lastError_ = core::ErrorCode::Timeout;
+            condition_ = Scd41Condition::LockTimeout;
             return false;
         }
     }
@@ -44,6 +55,9 @@ bool Scd41Sensor::begin() {
             error = scd4x_.getSerialNumber(serial0, serial1, serial2);
         } else {
             services::Logger::error("SCD41", "Failed to acquire lock for getSerialNumber");
+            state_ = core::DeviceState::Error;
+            lastError_ = core::ErrorCode::Timeout;
+            condition_ = Scd41Condition::LockTimeout;
             return false;
         }
     }
@@ -53,6 +67,8 @@ bool Scd41Sensor::begin() {
         services::Logger::error("SCD41", "Failed to get serial: %s", errorMessage);
         state_ = core::DeviceState::Error;
         lastError_ = core::ErrorCode::InitFailed;
+        condition_ = Scd41Condition::DriverError;
+        lastRawError_ = error;
         return false;
     }
 
@@ -91,6 +107,9 @@ bool Scd41Sensor::begin() {
             error = scd4x_.startPeriodicMeasurement();
         } else {
             services::Logger::error("SCD41", "Failed to acquire lock for startPeriodicMeasurement");
+            state_ = core::DeviceState::Error;
+            lastError_ = core::ErrorCode::Timeout;
+            condition_ = Scd41Condition::LockTimeout;
             return false;
         }
     }
@@ -100,6 +119,8 @@ bool Scd41Sensor::begin() {
         services::Logger::error("SCD41", "Failed to start periodic measurement: %s", errorMessage);
         state_ = core::DeviceState::Error;
         lastError_ = core::ErrorCode::InitFailed;
+        condition_ = Scd41Condition::DriverError;
+        lastRawError_ = error;
         return false;
     }
 
@@ -110,12 +131,14 @@ bool Scd41Sensor::begin() {
     notReadyCount_ = 0;
     consecutiveErrors_ = 0;
     measurementStartMs_ = millis();
+    nextRecoveryAttemptMs_ = 0;
+    condition_ = Scd41Condition::AwaitingFirstSample;
     return true;
 }
 
 bool Scd41Sensor::performForcedRecalibration(uint16_t referenceCo2Ppm, Scd41FrcResult& result) {
     result.errorMessage = nullptr;
-    if (state_ == core::DeviceState::Error || state_ == core::DeviceState::Offline) {
+    if (state_ != core::DeviceState::Ready || condition_ != Scd41Condition::Healthy) {
         services::Logger::error("SCD41", "Cannot perform FRC in current state");
         result.errorMessage = "SENSOR_NOT_READY";
         return false;
@@ -133,7 +156,7 @@ bool Scd41Sensor::performForcedRecalibration(uint16_t referenceCo2Ppm, Scd41FrcR
         result.errorMessage = "MEASUREMENT_UPTIME_TOO_SHORT";
         return false;
     }
-    if (!hasValidData_) {
+    if (!hasValidData_ || lastSuccessMs_ == 0 || nowMs - lastSuccessMs_ > DATA_STALE_MS) {
         services::Logger::error("SCD41", "FRC rejected: no valid CO2 data");
         result.errorMessage = "NO_VALID_DATA";
         return false;
@@ -166,6 +189,7 @@ bool Scd41Sensor::performForcedRecalibration(uint16_t referenceCo2Ppm, Scd41FrcR
         } else {
             services::Logger::error("SCD41", "FRC: Failed to lock for stopPeriodicMeasurement");
             calibrationInProgress_ = false;
+            result.errorMessage = "LOCK_FAILED_FOR_STOP";
             return false;
         }
     }
@@ -183,15 +207,17 @@ bool Scd41Sensor::performForcedRecalibration(uint16_t referenceCo2Ppm, Scd41FrcR
 
     // 3. Perform FRC
     uint16_t rawFrc = 0;
+    bool frcLockAcquired = false;
     {
         hal::I2cLockGuard lock(100);
         if (lock.acquired()) {
+            frcLockAcquired = true;
             error = scd4x_.performForcedRecalibration(referenceCo2Ppm, rawFrc);
         } else {
             services::Logger::error("SCD41", "FRC: Failed to lock for performForcedRecalibration");
-            calibrationInProgress_ = false;
-            result.errorMessage = "LOCK_FAILED_FOR_FRC";
-            return false;
+            // The sensor is already stopped. Continue to the common restart
+            // path so a transient lock timeout cannot leave it stopped.
+            error = 0xFFFE;
         }
     }
 
@@ -202,7 +228,10 @@ bool Scd41Sensor::performForcedRecalibration(uint16_t referenceCo2Ppm, Scd41FrcR
     result.rawWord = rawFrc;
     result.success = false;
 
-    if (error) {
+    if (!frcLockAcquired) {
+        services::Logger::error("SCD41", "FRC failed: I2C lock timeout");
+        result.errorMessage = "LOCK_FAILED_FOR_FRC";
+    } else if (error) {
         errorToString(error, errorMessage, 256);
         services::Logger::error("SCD41", "FRC failed: %s", errorMessage);
         result.errorMessage = "FRC_FAILED_COMM_ERROR";
@@ -223,20 +252,36 @@ bool Scd41Sensor::performForcedRecalibration(uint16_t referenceCo2Ppm, Scd41FrcR
 
     // 4. Restart periodic measurement
     uint16_t restartError = 0;
+    bool restartLockAcquired = false;
     {
         hal::I2cLockGuard lock(100);
         if (lock.acquired()) {
+            restartLockAcquired = true;
             restartError = scd4x_.startPeriodicMeasurement();
         } else {
             services::Logger::error("SCD41", "FRC: Failed to lock for startPeriodicMeasurement");
+            restartError = 0xFFFE;
         }
     }
     
     if (restartError) {
         services::Logger::error("SCD41", "FRC: startPeriodicMeasurement failed");
-        state_ = core::DeviceState::Error;
+        state_ = core::DeviceState::RetryWait;
+        lastError_ = restartLockAcquired ? core::ErrorCode::ReadFailed : core::ErrorCode::Timeout;
+        condition_ = Scd41Condition::RecoveryFailed;
+        lastRawError_ = restartError;
+        hasValidData_ = false;
+        nextRecoveryAttemptMs_ = millis() + 1000;
+        result.success = false;
+        result.errorMessage = "RESTART_MEASUREMENT_FAILED";
     } else {
         measurementStartMs_ = millis();
+        lastSuccessMs_ = 0;
+        hasValidData_ = false;
+        state_ = core::DeviceState::Ready;
+        lastError_ = core::ErrorCode::None;
+        condition_ = Scd41Condition::AwaitingFirstSample;
+        nextRecoveryAttemptMs_ = 0;
     }
 
     calibrationInProgress_ = false;
@@ -244,6 +289,8 @@ bool Scd41Sensor::performForcedRecalibration(uint16_t referenceCo2Ppm, Scd41FrcR
 }
 
 bool Scd41Sensor::factoryResetAndReconfigure() {
+    if (calibrationInProgress_) return false;
+
     float beforeOffset = NAN;
     uint16_t beforeAsc = 0;
     
@@ -259,8 +306,7 @@ bool Scd41Sensor::factoryResetAndReconfigure() {
     }
     
     services::Logger::info("SCD41", "Performing Factory Reset... (Before - TempOffset: %.2f C, ASC: %u)", beforeOffset, beforeAsc);
-    if (calibrationInProgress_) return false;
-    
+
     uint16_t error = 0;
     delay(500);
 
@@ -269,6 +315,8 @@ bool Scd41Sensor::factoryResetAndReconfigure() {
         if (lock.acquired()) {
             error = scd4x_.performFactoryReset();
         } else {
+            markRecoveryFailure(millis(), Scd41Condition::RecoveryFailed,
+                                core::ErrorCode::Timeout, 0xFFFE);
             return false;
         }
     }
@@ -277,6 +325,11 @@ bool Scd41Sensor::factoryResetAndReconfigure() {
     
     if (error) {
         services::Logger::error("SCD41", "Factory Reset failed");
+        state_ = core::DeviceState::RetryWait;
+        lastError_ = core::ErrorCode::ReadFailed;
+        condition_ = Scd41Condition::RecoveryFailed;
+        lastRawError_ = error;
+        nextRecoveryAttemptMs_ = millis() + RECOVERY_RETRY_MS;
         return false;
     }
     
@@ -296,92 +349,221 @@ bool Scd41Sensor::factoryResetAndReconfigure() {
             
             error = scd4x_.startPeriodicMeasurement();
         } else {
+            markRecoveryFailure(millis(), Scd41Condition::RecoveryFailed,
+                                core::ErrorCode::Timeout, 0xFFFE);
             return false;
         }
     }
     
     if (error) {
         services::Logger::error("SCD41", "Failed to restart measurement after factory reset");
-        state_ = core::DeviceState::Error;
+        state_ = core::DeviceState::RetryWait;
+        lastError_ = core::ErrorCode::ReadFailed;
+        condition_ = Scd41Condition::RecoveryFailed;
+        lastRawError_ = error;
+        nextRecoveryAttemptMs_ = millis() + RECOVERY_RETRY_MS;
         return false;
     }
     
     measurementStartMs_ = millis();
+    lastSuccessMs_ = 0;
     hasValidData_ = false;
+    state_ = core::DeviceState::Ready;
+    lastError_ = core::ErrorCode::None;
+    condition_ = Scd41Condition::AwaitingFirstSample;
+    nextRecoveryAttemptMs_ = 0;
     return true;
 }
 
-void Scd41Sensor::update(uint32_t nowMs) {
-    if (state_ == core::DeviceState::Error || state_ == core::DeviceState::Offline) {
-        return;
-    }
-    if (calibrationInProgress_) {
-        return;
-    }
+void Scd41Sensor::markRecoveryFailure(uint32_t nowMs, Scd41Condition condition,
+                                      core::ErrorCode errorCode, uint16_t rawError) {
+    recoveryPhase_ = RecoveryPhase::Idle;
+    state_ = core::DeviceState::RetryWait;
+    lastError_ = errorCode;
+    condition_ = condition;
+    lastRawError_ = rawError;
+    hasValidData_ = false;
+    consecutiveErrors_++;
+    nextRecoveryAttemptMs_ = nowMs + RECOVERY_RETRY_MS;
+}
 
-    // 最新のデータがないかポーリング (約5秒ごとに準備完了になる)
-    bool isDataReady = false;
+bool Scd41Sensor::beginRecovery(uint32_t nowMs) {
+    hasValidData_ = false;
+    state_ = core::DeviceState::Degraded;
+    condition_ = Scd41Condition::RecoveryStopping;
+    nextRecoveryAttemptMs_ = nowMs + RECOVERY_RETRY_MS;
+
     uint16_t error = 0;
-    
     {
         hal::I2cLockGuard lock(100);
         if (!lock.acquired()) {
+            services::Logger::warn("SCD41", "Recovery stop lock timeout");
+            markRecoveryFailure(nowMs, Scd41Condition::RecoveryFailed,
+                                core::ErrorCode::Timeout, 0xFFFE);
+            return false;
+        }
+        error = scd4x_.stopPeriodicMeasurement();
+    }
+
+    if (error) {
+        // The sensor may already be stopped (for example after an interrupted
+        // FRC). Waiting and attempting start is still the safest recovery path.
+        services::Logger::warn("SCD41", "Recovery stop returned %u; continuing with restart", error);
+    }
+
+    recoveryPhase_ = RecoveryPhase::WaitAfterStop;
+    recoveryDeadlineMs_ = nowMs + STOP_TO_START_DELAY_MS;
+    condition_ = Scd41Condition::RecoveryWaiting;
+    lastRawError_ = error;
+    services::Logger::warn("SCD41", "Recovery initiated after stale/failed measurements");
+    return true;
+}
+
+void Scd41Sensor::continueRecovery(uint32_t nowMs) {
+    if (recoveryPhase_ != RecoveryPhase::WaitAfterStop) return;
+    if (static_cast<int32_t>(nowMs - recoveryDeadlineMs_) < 0) return;
+
+    uint16_t error = 0;
+    {
+        hal::I2cLockGuard lock(100);
+        if (!lock.acquired()) {
+            services::Logger::warn("SCD41", "Recovery start lock timeout");
+            markRecoveryFailure(nowMs, Scd41Condition::RecoveryFailed,
+                                core::ErrorCode::Timeout, 0xFFFE);
+            return;
+        }
+        error = scd4x_.startPeriodicMeasurement();
+    }
+
+    if (error) {
+        services::Logger::warn("SCD41", "Recovery start failed: %u", error);
+        markRecoveryFailure(nowMs, Scd41Condition::RecoveryFailed,
+                            core::ErrorCode::ReadFailed, error);
+        return;
+    }
+
+    recoveryPhase_ = RecoveryPhase::Idle;
+    state_ = core::DeviceState::Ready;
+    lastError_ = core::ErrorCode::None;
+    lastRawError_ = 0;
+    hasValidData_ = false;
+    lastSuccessMs_ = 0;
+    measurementStartMs_ = nowMs;
+    consecutiveErrors_ = 0;
+    condition_ = Scd41Condition::AwaitingFirstSample;
+    services::Logger::info("SCD41", "Periodic measurement restarted; awaiting fresh sample");
+}
+
+void Scd41Sensor::update(uint32_t nowMs) {
+    if (calibrationInProgress_) return;
+
+    if (recoveryPhase_ != RecoveryPhase::Idle) {
+        continueRecovery(nowMs);
+        return;
+    }
+
+    bool firstSampleTimedOut = lastSuccessMs_ == 0 &&
+                               nowMs - measurementStartMs_ > DATA_STALE_MS;
+    bool lastSampleStale = lastSuccessMs_ != 0 && nowMs - lastSuccessMs_ > DATA_STALE_MS;
+    bool driverUnavailable = state_ == core::DeviceState::Error ||
+                             state_ == core::DeviceState::Offline ||
+                             state_ == core::DeviceState::RetryWait;
+
+    if (firstSampleTimedOut || lastSampleStale || driverUnavailable) {
+        hasValidData_ = false;
+        if (!driverUnavailable) {
+            state_ = core::DeviceState::Degraded;
+            lastError_ = core::ErrorCode::Timeout;
+            condition_ = Scd41Condition::DataNotReadyTimeout;
+        }
+
+        if (nextRecoveryAttemptMs_ == 0 ||
+            static_cast<int32_t>(nowMs - nextRecoveryAttemptMs_) >= 0) {
+            beginRecovery(nowMs);
+        }
+        return;
+    }
+
+    // Latest data is polled every second; the SCD41 normally produces a sample
+    // approximately every five seconds.
+    bool isDataReady = false;
+    uint16_t error = 0;
+
+    {
+        hal::I2cLockGuard lock(100);
+        if (!lock.acquired()) {
+            consecutiveErrors_++;
+            lastError_ = core::ErrorCode::Timeout;
+            lastRawError_ = 0;
+            condition_ = Scd41Condition::LockTimeout;
             services::Logger::warn("SCD41", "SCD41 ts=%u lock=TIMEOUT ready=? read=SKIPPED", nowMs);
             return;
         }
         error = scd4x_.getDataReadyFlag(isDataReady);
     }
-    
+
     if (error) {
         readErrorCount_++;
         consecutiveErrors_++;
+        lastError_ = core::ErrorCode::BusError;
+        lastRawError_ = error;
+        condition_ = Scd41Condition::DataReadyError;
         services::Logger::warn("SCD41", "SCD41 ts=%u lock=OK ready=ERR error=%d read=SKIPPED", nowMs, error);
         return;
     }
 
     if (!isDataReady) {
         notReadyCount_++;
-        return; // データはまだない
+        return;
     }
 
-    // データ読み取り
     uint16_t co2 = 0;
     float temperature = NAN;
     float humidity = NAN;
-    
+
     {
         hal::I2cLockGuard lock(100);
         if (!lock.acquired()) {
+            consecutiveErrors_++;
+            lastError_ = core::ErrorCode::Timeout;
+            lastRawError_ = 0;
+            condition_ = Scd41Condition::LockTimeout;
             services::Logger::warn("SCD41", "SCD41 ts=%u lock=TIMEOUT ready=1 read=SKIPPED", nowMs);
             return;
         }
         error = scd4x_.readMeasurement(co2, temperature, humidity);
     }
-    
+
     if (error || co2 == 0 || !std::isfinite(temperature) || !std::isfinite(humidity)) {
         readErrorCount_++;
         consecutiveErrors_++;
-        hasValidData_ = false; // 無効値の場合は最新データを保持しない (stale状態にする)
+        hasValidData_ = false;
+        state_ = core::DeviceState::Degraded;
         lastError_ = core::ErrorCode::ReadFailed;
+        lastRawError_ = error;
+        condition_ = Scd41Condition::ReadError;
         services::Logger::warn("SCD41", "SCD41 ts=%u lock=OK ready=1 read=NG error=%d co2=%u temp=%.2f rh=%.2f (consec_err=%u)",
             nowMs, error, co2, temperature, humidity, consecutiveErrors_);
         return;
     }
 
-    // 正常データの保存
     currentCo2Ppm_ = co2;
     currentTemperature_ = temperature;
     currentHumidity_ = humidity;
-    
+
     successCount_++;
     consecutiveErrors_ = 0;
     hasValidData_ = true;
     lastSuccessMs_ = nowMs;
     lastError_ = core::ErrorCode::None;
-    
+    lastRawError_ = 0;
+    state_ = core::DeviceState::Ready;
+    condition_ = Scd41Condition::Healthy;
+    nextRecoveryAttemptMs_ = 0;
+
     services::Logger::info("SCD41", "SCD41 ts=%u lock=OK ready=1 read=OK co2=%u temp=%.2f rh=%.2f crc=OK succ=%u err=%u nr=%u",
         nowMs, co2, temperature, humidity, successCount_, readErrorCount_, notReadyCount_);
-        
+
     if (postFrcLogCount_ > 0) {
         services::Logger::info("SCD41", "event=SCD41_POST_FRC elapsed_ms=%u co2_ppm=%u pressure_hpa=%u",
             nowMs - measurementStartMs_, currentCo2Ppm_, hasAmbientPressure_ ? lastAmbientPressureHpa_ : 0);
@@ -389,23 +571,47 @@ void Scd41Sensor::update(uint32_t nowMs) {
     }
 }
 
+Scd41Health Scd41Sensor::health(uint32_t nowMs) const {
+    Scd41Health result;
+    result.condition = condition_;
+    result.state = state_;
+    result.lastSuccessMs = lastSuccessMs_;
+    result.ageMs = lastSuccessMs_ == 0 ? nowMs - measurementStartMs_ : nowMs - lastSuccessMs_;
+    result.rawError = lastRawError_;
+    result.consecutiveErrors = consecutiveErrors_;
+    return result;
+}
+
 bool Scd41Sensor::readEnvironment(core::EnvironmentData& out) const {
-    if (!hasValidData_) return false;
-    
+    uint32_t nowMs = millis();
+    uint32_t ageMs = lastSuccessMs_ == 0 ? UINT32_MAX : nowMs - lastSuccessMs_;
+
+    out.co2Ppm = 0;
+    out.co2Valid = false;
+    out.co2AgeMs = ageMs;
+    out.scd41State = state_;
+    out.scd41TemperatureC = NAN;
+    out.scd41HumidityRh = NAN;
+
+    if (!hasValidData_ || ageMs > DATA_STALE_MS ||
+        state_ == core::DeviceState::Error || state_ == core::DeviceState::Offline ||
+        state_ == core::DeviceState::RetryWait) {
+        return false;
+    }
+
     out.co2Ppm = currentCo2Ppm_;
+    out.co2Valid = true;
     out.scd41TemperatureC = currentTemperature_;
     out.scd41HumidityRh = currentHumidity_;
-    
-    if (lastSuccessMs_ > out.timestampMs) {
-        out.timestampMs = lastSuccessMs_;
-    }
-    
+
+    if (lastSuccessMs_ > out.timestampMs) out.timestampMs = lastSuccessMs_;
     out.valid = true;
     return true;
 }
 
 void Scd41Sensor::setAmbientPressure(uint16_t ambientPressureHpa) {
-    if (state_ == core::DeviceState::Error || state_ == core::DeviceState::Offline || calibrationInProgress_) {
+    if (state_ != core::DeviceState::Ready ||
+        recoveryPhase_ != RecoveryPhase::Idle || calibrationInProgress_) {
         return;
     }
     

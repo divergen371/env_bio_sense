@@ -17,6 +17,27 @@ struct Scd41FrcResult {
     const char* errorMessage;
 };
 
+enum class Scd41Condition : uint8_t {
+    AwaitingFirstSample = 0,
+    Healthy,
+    LockTimeout,
+    DataReadyError,
+    DataNotReadyTimeout,
+    ReadError,
+    DriverError,
+    RecoveryStopping,
+    RecoveryWaiting,
+    RecoveryFailed
+};
+
+struct Scd41Health {
+    Scd41Condition condition {Scd41Condition::AwaitingFirstSample};
+    core::DeviceState state {core::DeviceState::Unknown};
+    uint32_t lastSuccessMs {0};
+    uint32_t ageMs {UINT32_MAX};
+    uint16_t rawError {0};
+    uint32_t consecutiveErrors {0};
+};
 
 class Scd41Sensor : public IEnvironmentSensor {
 public:
@@ -37,6 +58,7 @@ public:
     core::DeviceState state() const override { return state_; }
     core::ErrorCode lastError() const override { return lastError_; }
     uint32_t lastSuccessMs() const override { return lastSuccessMs_; }
+    Scd41Health health(uint32_t nowMs) const;
 
     // IEnvironmentSensor 実装
     bool readEnvironment(core::EnvironmentData& out) const override;
@@ -46,6 +68,20 @@ public:
     void setAmbientPressure(uint16_t ambientPressureHpa);
 
 private:
+    enum class RecoveryPhase : uint8_t {
+        Idle,
+        WaitAfterStop
+    };
+
+    static constexpr uint32_t DATA_STALE_MS = 15000;
+    static constexpr uint32_t RECOVERY_RETRY_MS = 60000;
+    static constexpr uint32_t STOP_TO_START_DELAY_MS = 500;
+
+    bool beginRecovery(uint32_t nowMs);
+    void continueRecovery(uint32_t nowMs);
+    void markRecoveryFailure(uint32_t nowMs, Scd41Condition condition,
+                             core::ErrorCode errorCode, uint16_t rawError);
+
     SensirionI2CScd4x scd4x_;
     
     core::DeviceState state_ {core::DeviceState::Unknown};
@@ -65,6 +101,12 @@ private:
     uint32_t readErrorCount_ {0};
     uint32_t notReadyCount_ {0};
     uint32_t consecutiveErrors_ {0};
+    Scd41Condition condition_ {Scd41Condition::AwaitingFirstSample};
+    uint16_t lastRawError_ {0};
+
+    RecoveryPhase recoveryPhase_ {RecoveryPhase::Idle};
+    uint32_t recoveryDeadlineMs_ {0};
+    uint32_t nextRecoveryAttemptMs_ {0};
     
     // FRC および 状態管理用
     bool calibrationInProgress_ {false};

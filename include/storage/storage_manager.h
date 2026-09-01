@@ -28,6 +28,13 @@ public:
     uint16_t getPendingCount() const;
     uint16_t getMaxRecords() const { return MAX_RECORDS; }
 
+    // Compact abnormal-state journal. Records survive reboot and are kept in a
+    // separate circular area so routine CSV samples do not crowd them out.
+    bool appendEvent(EventCode code, int32_t detail, uint32_t uptimeMs);
+    size_t readRecentEvents(EventRecord* out, size_t maxCount);
+    uint16_t getEventCount() const { return eventCount_; }
+    uint16_t getMaxEventRecords() const { return MAX_EVENT_RECORDS; }
+
     // Wi-Fiモード中はSDへの書き出しを一時停止するためのフラグ
     void setWifiActive(bool active) { wifiActive_ = active; }
     
@@ -63,11 +70,17 @@ private:
     String currentDateString_;
     uint32_t lastSdInitAttempt_;
     SemaphoreHandle_t mutex_;
+
+    uint16_t eventWriteIndex_ {0};
+    uint16_t eventCount_ {0};
+    uint32_t nextEventSequence_ {1};
     
     uint16_t calculateCrc16(const uint8_t* data, size_t length);
     void initSuperblock();
     bool loadSuperblock();
     bool saveSuperblock();
+    void loadEventJournal();
+    bool readEventSlot(uint16_t index, EventRecord& record);
     
     bool initSdCard();
     bool createNewSdFile(const String& targetDate = "");

@@ -48,6 +48,12 @@ const char* htmlContent = R"rawliteral(
   </div>
 
   <div id="status" class="status">Connecting...</div>
+
+  <div style="margin-bottom: 15px; padding: 10px; background-color: #f1f8ff; border: 1px solid #c8e1ff; border-radius: 4px; font-size: 14px;">
+    <strong>SCD41 diagnostics:</strong>
+    <a href="/api/events" download="scd41_events.json" style="margin-left: 8px;">Download compact event history</a>
+    <br><small>Only state changes and recovery results are retained in FRAM; continuous serial output is not stored.</small>
+  </div>
   
   <div style="margin-bottom: 15px; padding: 10px; background-color: #f1f8ff; border: 1px solid #c8e1ff; border-radius: 4px; font-size: 14px;">
     <strong>AMeDAS Sea Level Pressure:</strong> 
@@ -808,9 +814,50 @@ void WebServerService::setupRoutes() {
     server_->on("/api/status", HTTP_GET, [this](AsyncWebServerRequest *request){
         String response = "{";
         response += "\"pending\":" + String(storageManager_.getPendingCount()) + ",";
-        response += "\"max\":" + String(storageManager_.getMaxRecords());
+        response += "\"max\":" + String(storageManager_.getMaxRecords()) + ",";
+        response += "\"event_count\":" + String(storageManager_.getEventCount()) + ",";
+        response += "\"event_max\":" + String(storageManager_.getMaxEventRecords());
         response += "}";
         request->send(200, "application/json", response);
+    });
+
+    server_->on("/api/events", HTTP_GET, [this](AsyncWebServerRequest *request){
+        constexpr size_t MAX_API_EVENTS = 64;
+        size_t requested = MAX_API_EVENTS;
+        if (request->hasParam("limit")) {
+            long value = request->getParam("limit")->value().toInt();
+            if (value > 0 && value < static_cast<long>(MAX_API_EVENTS)) {
+                requested = static_cast<size_t>(value);
+            }
+        }
+
+        storage::EventRecord events[MAX_API_EVENTS];
+        size_t count = storageManager_.readRecentEvents(events, requested);
+
+        AsyncResponseStream* response = request->beginResponseStream("application/json");
+        response->printf("{\"retained\":%u,\"returned\":%u,\"events\":[",
+            storageManager_.getEventCount(), static_cast<unsigned>(count));
+        for (size_t i = 0; i < count; ++i) {
+            if (i > 0) response->print(',');
+            storage::EventCode code = static_cast<storage::EventCode>(events[i].eventCode);
+            response->printf(
+                "{\"sequence\":%lu,\"uptime_ms\":%lu,\"code\":%u,\"name\":\"%s\",\"detail\":%ld",
+                events[i].header.sequence, events[i].uptimeMs, events[i].eventCode,
+                storage::eventCodeName(code), static_cast<long>(events[i].detail));
+
+            if (events[i].eventCode >= static_cast<uint16_t>(storage::EventCode::Scd41Stale) &&
+                events[i].eventCode <= static_cast<uint16_t>(storage::EventCode::Scd41DriverError)) {
+                uint32_t packed = static_cast<uint32_t>(events[i].detail);
+                uint16_t rawError = static_cast<uint16_t>(packed >> 16);
+                uint16_t ageSeconds = static_cast<uint16_t>(packed & 0xFFFFu);
+                response->printf(",\"raw_error\":%u,\"age_ms\":", rawError);
+                if (ageSeconds == UINT16_MAX) response->print("null");
+                else response->printf("%lu", static_cast<unsigned long>(ageSeconds) * 1000ul);
+            }
+            response->print('}');
+        }
+        response->print("]}");
+        request->send(response);
     });
 
     server_->on("/api/scd41/calibrate", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,

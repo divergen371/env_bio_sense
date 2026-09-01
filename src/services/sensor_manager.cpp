@@ -113,6 +113,85 @@ bool SensorManager::startBmp581Calibration(float referenceAltitudeM) {
     return false;
 }
 
+void SensorManager::trackScd41Health(uint32_t nowMs) {
+    if (storage_ == nullptr || !storage_->isFramAvailable()) return;
+
+    drivers::sensors::Scd41Health health = scd41_.health(nowMs);
+    bool changed = !scd41ConditionInitialized_ || health.condition != lastScd41Condition_;
+    if (!changed) return;
+
+    uint32_t ageSeconds = health.ageMs == UINT32_MAX
+        ? 0xFFFFu
+        : (health.ageMs / 1000u > 0xFFFFu ? 0xFFFFu : health.ageMs / 1000u);
+    int32_t detail = static_cast<int32_t>(
+        (static_cast<uint32_t>(health.rawError) << 16) | ageSeconds);
+
+    bool persisted = true;
+    bool nextFaultActive = scd41FaultActive_;
+    auto record = [&](storage::EventCode code) {
+        if (!storage_->appendEvent(code, detail, nowMs)) {
+            persisted = false;
+            Logger::warn("SensorMgr", "Failed to persist SCD41 event code=0x%02X",
+                static_cast<unsigned>(code));
+        }
+    };
+
+    using drivers::sensors::Scd41Condition;
+    switch (health.condition) {
+        case Scd41Condition::Healthy:
+            if (scd41FaultActive_) record(storage::EventCode::Scd41Recovered);
+            nextFaultActive = false;
+            break;
+        case Scd41Condition::AwaitingFirstSample:
+            if (scd41ConditionInitialized_ &&
+                lastScd41Condition_ == Scd41Condition::RecoveryWaiting) {
+                record(storage::EventCode::Scd41RecoveryRestarted);
+            }
+            break;
+        case Scd41Condition::LockTimeout:
+            record(storage::EventCode::Scd41LockTimeout);
+            nextFaultActive = true;
+            break;
+        case Scd41Condition::DataReadyError:
+            record(storage::EventCode::Scd41DataReadyError);
+            nextFaultActive = true;
+            break;
+        case Scd41Condition::DataNotReadyTimeout:
+            record(storage::EventCode::Scd41Stale);
+            nextFaultActive = true;
+            break;
+        case Scd41Condition::ReadError:
+            record(storage::EventCode::Scd41ReadError);
+            nextFaultActive = true;
+            break;
+        case Scd41Condition::DriverError:
+            record(storage::EventCode::Scd41DriverError);
+            nextFaultActive = true;
+            break;
+        case Scd41Condition::RecoveryStopping:
+            record(storage::EventCode::Scd41RecoveryAttempt);
+            nextFaultActive = true;
+            break;
+        case Scd41Condition::RecoveryWaiting:
+            if (!scd41FaultActive_) record(storage::EventCode::Scd41Stale);
+            record(storage::EventCode::Scd41RecoveryAttempt);
+            nextFaultActive = true;
+            break;
+        case Scd41Condition::RecoveryFailed:
+            record(storage::EventCode::Scd41RecoveryFailed);
+            nextFaultActive = true;
+            break;
+    }
+
+    // If FRAM was temporarily unavailable, keep the previous transition state
+    // so the next one-second update retries persisting the event.
+    if (!persisted) return;
+
+    scd41FaultActive_ = nextFaultActive;
+    lastScd41Condition_ = health.condition;
+    scd41ConditionInitialized_ = true;
+}
+
 void SensorManager::update(uint32_t nowMs) {
     status_.uptimeMs = nowMs;
     
@@ -139,6 +218,7 @@ void SensorManager::update(uint32_t nowMs) {
         
         scd41_.update(nowMs);
         status_.scd41State = scd41_.state();
+        trackScd41Health(nowMs);
         
         // SGP41 needs temperature and humidity for compensation
         // We prefer SHT45 data as it represents ambient air
@@ -209,7 +289,15 @@ void SensorManager::update(uint32_t nowMs) {
     bme690_.update(nowMs);
     status_.bme690State = bme690_.state();
     
-    // スナップショットに反映
+    // スナップショットに反映。SCD41が読めなかった周期に前回値を
+    // 持ち越さないよう、CO2固有フィールドは毎回明示的に初期化する。
+    snapshot_.environment.co2Ppm = 0;
+    snapshot_.environment.co2Valid = false;
+    snapshot_.environment.co2AgeMs = UINT32_MAX;
+    snapshot_.environment.scd41State = scd41_.state();
+    snapshot_.environment.scd41TemperatureC = NAN;
+    snapshot_.environment.scd41HumidityRh = NAN;
+
     bool envValid = false;
     if (sht45_.readEnvironment(snapshot_.environment)) {
         envValid = true;

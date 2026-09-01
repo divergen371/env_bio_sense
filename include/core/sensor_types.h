@@ -66,6 +66,9 @@ struct EnvironmentData {
     float humidityRh {};
     float pressureHpa {};
     uint16_t co2Ppm {};
+    bool co2Valid {false};
+    uint32_t co2AgeMs {UINT32_MAX};
+    DeviceState scd41State {DeviceState::Unknown};
     float scd41TemperatureC {};
     float scd41HumidityRh {};
     int32_t vocIndex {};

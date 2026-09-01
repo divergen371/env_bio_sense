@@ -84,7 +84,11 @@ void DisplayManager::renderOverview(const core::SensorSnapshot& snapshot, const 
     display_.setCursor(0, 0);
     
     if (snapshot.environment.valid) {
-        display_.printf("CO2  : %u ppm\n", snapshot.environment.co2Ppm);
+        if (snapshot.environment.co2Valid) {
+            display_.printf("CO2  : %u ppm\n", snapshot.environment.co2Ppm);
+        } else {
+            display_.println("CO2  : --");
+        }
         display_.printf("T    : %.1f C\n", snapshot.environment.temperatureC);
         display_.printf("RH   : %.1f %%\n", snapshot.environment.humidityRh);
         

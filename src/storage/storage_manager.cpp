@@ -65,6 +65,9 @@ bool StorageManager::begin() {
             services::Logger::info("StorageMgr", "FRAM loaded. Boot count: %u, pending: %u", 
                 superblock_.bootCount, getPendingCount());
         }
+
+        loadEventJournal();
+        appendEvent(EventCode::Boot, static_cast<int32_t>(superblock_.bootCount), millis());
     }
 
     initSdCard();
@@ -230,6 +233,121 @@ uint16_t StorageManager::getPendingCount() const {
     }
 }
 
+bool StorageManager::readEventSlot(uint16_t index, EventRecord& record) {
+    if (!framAvailable_ || index >= MAX_EVENT_RECORDS) return false;
+
+    memset(&record, 0, sizeof(record));
+    uint16_t addr = ADDR_EVENT_JOURNAL + (index * EVENT_SLOT_SIZE);
+    if (!fram_.read(addr, reinterpret_cast<uint8_t*>(&record), sizeof(record))) return false;
+
+    if (record.header.committed != 1 ||
+        record.header.length != EVENT_PAYLOAD_SIZE ||
+        record.header.sequence == 0) {
+        return false;
+    }
+
+    uint16_t code = record.eventCode;
+    bool knownCode = (code >= static_cast<uint16_t>(EventCode::Boot) &&
+                      code <= static_cast<uint16_t>(EventCode::SensorError)) ||
+                     (code >= static_cast<uint16_t>(EventCode::Scd41Stale) &&
+                      code <= static_cast<uint16_t>(EventCode::Scd41DriverError));
+    if (!knownCode) return false;
+
+    const uint8_t* payload = reinterpret_cast<const uint8_t*>(&record.uptimeMs);
+    return calculateCrc16(payload, record.header.length) == record.header.crc;
+}
+
+void StorageManager::loadEventJournal() {
+    eventWriteIndex_ = 0;
+    eventCount_ = 0;
+    nextEventSequence_ = 1;
+
+    uint32_t newestSequence = 0;
+    uint16_t newestIndex = 0;
+    for (uint16_t i = 0; i < MAX_EVENT_RECORDS; ++i) {
+        EventRecord record;
+        if (!readEventSlot(i, record)) continue;
+
+        eventCount_++;
+        if (record.header.sequence > newestSequence) {
+            newestSequence = record.header.sequence;
+            newestIndex = i;
+        }
+    }
+
+    if (newestSequence > 0) {
+        eventWriteIndex_ = (newestIndex + 1) % MAX_EVENT_RECORDS;
+        nextEventSequence_ = newestSequence + 1;
+        if (nextEventSequence_ == 0) nextEventSequence_ = 1;
+    }
+
+    services::Logger::info("StorageMgr", "Event journal loaded. events=%u next_seq=%lu",
+        eventCount_, nextEventSequence_);
+}
+
+bool StorageManager::appendEvent(EventCode code, int32_t detail, uint32_t uptimeMs) {
+    if (!framAvailable_) return false;
+
+    lock();
+
+    EventRecord record;
+    memset(&record, 0, sizeof(record));
+    record.header.sequence = nextEventSequence_++;
+    if (nextEventSequence_ == 0) nextEventSequence_ = 1;
+    record.header.length = EVENT_PAYLOAD_SIZE;
+    record.header.committed = 0;
+    record.uptimeMs = uptimeMs;
+    record.eventCode = static_cast<uint16_t>(code);
+    record.detail = detail;
+    record.header.crc = calculateCrc16(
+        reinterpret_cast<const uint8_t*>(&record.uptimeMs), record.header.length);
+
+    uint16_t addr = ADDR_EVENT_JOURNAL + (eventWriteIndex_ * EVENT_SLOT_SIZE);
+    bool ok = fram_.write(addr, reinterpret_cast<const uint8_t*>(&record), sizeof(record));
+    if (ok) {
+        ok = fram_.writeByte(addr + offsetof(EventRecord, header.committed), 1);
+    }
+
+    if (ok) {
+        eventWriteIndex_ = (eventWriteIndex_ + 1) % MAX_EVENT_RECORDS;
+        if (eventCount_ < MAX_EVENT_RECORDS) eventCount_++;
+    }
+
+    unlock();
+    return ok;
+}
+
+size_t StorageManager::readRecentEvents(EventRecord* out, size_t maxCount) {
+    if (!framAvailable_ || out == nullptr || maxCount == 0) return 0;
+
+    lock();
+
+    // Keep the newest maxCount records sorted by sequence. Scanning the small
+    // fixed journal also tolerates a partially written slot after power loss.
+    size_t count = 0;
+    for (uint16_t i = 0; i < MAX_EVENT_RECORDS; ++i) {
+        EventRecord record;
+        if (!readEventSlot(i, record)) continue;
+
+        size_t insertAt = count;
+        while (insertAt > 0 && out[insertAt - 1].header.sequence > record.header.sequence) {
+            insertAt--;
+        }
+
+        if (count < maxCount) {
+            for (size_t j = count; j > insertAt; --j) out[j] = out[j - 1];
+            out[insertAt] = record;
+            count++;
+        } else if (insertAt > 0) {
+            for (size_t j = 0; j + 1 < insertAt; ++j) out[j] = out[j + 1];
+            out[insertAt - 1] = record;
+        }
+    }
+
+    unlock();
+    return count;
+}
+
 bool StorageManager::appendRecord(const core::SensorSnapshot& snapshot, uint32_t uptimeMs) {
     if (!framAvailable_) return false;
 
@@ -246,6 +364,14 @@ bool StorageManager::appendRecord(const core::SensorSnapshot& snapshot, uint32_t
     rec.data.uptimeMs = uptimeMs;
     
     rec.data.validFlags = 0;
+    uint8_t scd41State = static_cast<uint8_t>(snapshot.environment.scd41State) & 0x7u;
+    rec.data.validFlags |= static_cast<uint32_t>(scd41State) << SCD41_STATE_SHIFT;
+    if (snapshot.environment.co2AgeMs == UINT32_MAX) {
+        rec.data.co2AgeSeconds = UINT16_MAX;
+    } else {
+        uint32_t ageSeconds = snapshot.environment.co2AgeMs / 1000u;
+        rec.data.co2AgeSeconds = static_cast<uint16_t>(ageSeconds > 65534u ? 65534u : ageSeconds);
+    }
     
     if (snapshot.environment.valid) {
         rec.data.temperatureC = snapshot.environment.temperatureC;
@@ -262,7 +388,7 @@ bool StorageManager::appendRecord(const core::SensorSnapshot& snapshot, uint32_t
             rec.data.validFlags |= VALID_ALTITUDE;
         }
         
-        if (snapshot.environment.co2Ppm > 0) {
+        if (snapshot.environment.co2Valid && snapshot.environment.co2Ppm > 0) {
             rec.data.co2Ppm = snapshot.environment.co2Ppm;
             rec.data.validFlags |= VALID_CO2;
         }
@@ -418,12 +544,12 @@ bool StorageManager::initSdCard() {
 bool StorageManager::createNewSdFile(const String& targetDate) {
     if (hal::Clock::isTimeSet()) {
         currentDateString_ = (targetDate.length() > 0) ? targetDate : hal::Clock::getFormattedDate();
-        currentFilename_ = "/log_" + currentDateString_ + "_v5.csv";
+        currentFilename_ = "/log_" + currentDateString_ + "_v" + String(CSV_SCHEMA_VERSION) + ".csv";
     } else {
         currentDateString_ = "";
         for (int i = 0; i < 1000; i++) {
             char filename[32];
-            snprintf(filename, sizeof(filename), "/log_boot_%03d_v5.csv", i);
+            snprintf(filename, sizeof(filename), "/log_boot_%03d_v%u.csv", i, CSV_SCHEMA_VERSION);
             if (!SD.exists(filename)) {
                 currentFilename_ = filename;
                 break;
@@ -447,7 +573,7 @@ bool StorageManager::createNewSdFile(const String& targetDate) {
 }
 
 void StorageManager::writeCsvHeader(File& file) {
-    file.println("Sequence,UptimeMs,SampleMonotonicUs,TimestampUtc,TimeSource,CO2_ppm,Temp_C,RH_pct,Pressure_hPa,VOC_Index,NOx_Index,HR_bpm,SpO2_pct,BMP_Altitude_m,GNSS_Lat_deg,GNSS_Lon_deg,GNSS_AltMSL_m,GNSS_Speed_mps,GNSS_Course_deg,GNSS_Satellites,GNSS_HDOP,GNSS_FixValid,GNSS_TimeValid,GNSS_AgeMs,PPS_AgeMs,GNSS_TimeDisciplined,ValidFlags,BME690_Temp_C,BME690_RH_pct,BME690_Pressure_hPa,BME690_GasResistance_Ohm,BME690_GasValid,BME690_HeaterStable,BME690_GasIndex,BME690_StatusHex");
+    file.println("Sequence,UptimeMs,SampleMonotonicUs,TimestampUtc,TimeSource,CO2_ppm,Temp_C,RH_pct,Pressure_hPa,VOC_Index,NOx_Index,HR_bpm,SpO2_pct,BMP_Altitude_m,GNSS_Lat_deg,GNSS_Lon_deg,GNSS_AltMSL_m,GNSS_Speed_mps,GNSS_Course_deg,GNSS_Satellites,GNSS_HDOP,GNSS_FixValid,GNSS_TimeValid,GNSS_AgeMs,PPS_AgeMs,GNSS_TimeDisciplined,ValidFlags,BME690_Temp_C,BME690_RH_pct,BME690_Pressure_hPa,BME690_GasResistance_Ohm,BME690_GasValid,BME690_HeaterStable,BME690_GasIndex,BME690_StatusHex,CO2_Valid,CO2_AgeMs,SCD41_State");
 }
 
 void StorageManager::formatCsvLine(char* buffer, size_t size, const SensorRecordV5& rec) {
@@ -477,6 +603,21 @@ void StorageManager::formatCsvLine(char* buffer, size_t size, const SensorRecord
     uint8_t bmeGasValid = (rec.validFlags & VALID_BME690_GAS) ? 1 : 0;
     uint8_t bmeHeaterStable = (rec.bme690Status & 0x10) ? 1 : 0; // HEAT_STAB_MSK is 0x10
 
+    int32_t co2AgeMs = rec.co2AgeSeconds == UINT16_MAX
+        ? -1
+        : static_cast<int32_t>(rec.co2AgeSeconds) * 1000;
+    const char* scd41State = "UNKNOWN";
+    switch ((rec.validFlags & SCD41_STATE_MASK) >> SCD41_STATE_SHIFT) {
+        case 1: scd41State = "INITIALIZING"; break;
+        case 2: scd41State = "READY"; break;
+        case 3: scd41State = "DEGRADED"; break;
+        case 4: scd41State = "WARNING"; break;
+        case 5: scd41State = "OFFLINE"; break;
+        case 6: scd41State = "RETRY_WAIT"; break;
+        case 7: scd41State = "ERROR"; break;
+        default: break;
+    }
+
     const char* tsStr = "UNSET";
     switch (static_cast<core::TimeSource>(rec.timeSource)) {
         case core::TimeSource::Manual: tsStr = "MANUAL"; break;
@@ -502,7 +643,7 @@ void StorageManager::formatCsvLine(char* buffer, size_t size, const SensorRecord
     }
 
     // Since the buffer might be tight for all these formats, snprintf handles truncation safely
-    int charsWritten = snprintf(buffer, size, "%lu,%lu,%lld,%s,%s,%.1f,%.2f,%.2f,%.2f,%.1f,%.1f,%.1f,%.1f,%.1f,%.7f,%.7f,%.1f,%.1f,%.1f,%u,%.1f,%d,%d,%lu,%lu,%d,0x%02X,%.2f,%.2f,%.2f,%.0f,%d,%d,%d,0x%02X",
+    int charsWritten = snprintf(buffer, size, "%lu,%lu,%lld,%s,%s,%.1f,%.2f,%.2f,%.2f,%.1f,%.1f,%.1f,%.1f,%.1f,%.7f,%.7f,%.1f,%.1f,%.1f,%u,%.1f,%d,%d,%lu,%lu,%d,0x%08lX,%.2f,%.2f,%.2f,%.0f,%d,%d,%d,0x%02X,%d,%ld,%s",
              rec.sequence, rec.uptimeMs, rec.sampleMonotonicUs, timeStr, tsStr, 
              co2, temp, rh, press, voc, nox, hr, spo2, alt, 
              lat, lon, gnssAlt, speed, course, rec.gnssSatellites, hdop, 
@@ -510,8 +651,11 @@ void StorageManager::formatCsvLine(char* buffer, size_t size, const SensorRecord
              (rec.gnssValidFlags & GNSS_VALID_UTC) ? 1 : 0, 
              rec.gnssAgeMs, rec.ppsAgeMs, 
              (rec.gnssValidFlags & GNSS_TIME_DISCIPLINED) ? 1 : 0, 
-             rec.validFlags,
-             bmeTemp, bmeRh, bmePress, bmeGas, bmeGasValid, bmeHeaterStable, rec.bme690GasIndex, rec.bme690Status);
+             static_cast<unsigned long>(rec.validFlags),
+             bmeTemp, bmeRh, bmePress, bmeGas, bmeGasValid, bmeHeaterStable,
+             rec.bme690GasIndex, rec.bme690Status,
+             (rec.validFlags & VALID_CO2) ? 1 : 0,
+             static_cast<long>(co2AgeMs), scd41State);
              
     if (charsWritten < 0 || (size_t)charsWritten >= size) {
         services::Logger::warn("StorageMgr", "CSV line truncated. Need %d bytes, got %zu bytes", charsWritten, size);
@@ -554,7 +698,7 @@ void StorageManager::flushPendingToSd() {
             snprintf(buf, sizeof(buf), "%04d%02d%02d", 
                      timeinfoShifted.tm_year + 1900, timeinfoShifted.tm_mon + 1, timeinfoShifted.tm_mday);
             String tomorrow = String(buf);
-            String tomorrowFilename = "/log_" + tomorrow + "_v5.csv";
+            String tomorrowFilename = "/log_" + tomorrow + "_v" + String(CSV_SCHEMA_VERSION) + ".csv";
             
             if (!SD.exists(tomorrowFilename)) {
                 services::Logger::info("StorageMgr", "Pre-creating tomorrow's file: %s", tomorrowFilename.c_str());
@@ -588,19 +732,31 @@ void StorageManager::flushPendingToSd() {
 
     while (currentIndex != superblock_.writeIndex) {
         PersistentRecordV5 rec;
+        memset(&rec, 0, sizeof(rec));
         uint16_t addr = ADDR_RING_BUFFER + (currentIndex * RECORD_SLOT_SIZE);
         
         if (fram_.read(addr, reinterpret_cast<uint8_t*>(&rec), sizeof(PersistentRecordV5))) {
             // Check CRC and committed
             if (rec.header.committed == 1) {
-                uint16_t crc = calculateCrc16(reinterpret_cast<uint8_t*>(&rec.data), sizeof(SensorRecordV5));
-                if (crc == rec.header.crc) {
+                bool supportedLength = rec.header.length == sizeof(SensorRecordV5) ||
+                                       rec.header.length == LEGACY_SENSOR_RECORD_V5_SIZE;
+                uint16_t crc = supportedLength
+                    ? calculateCrc16(reinterpret_cast<uint8_t*>(&rec.data), rec.header.length)
+                    : 0;
+                if (supportedLength && crc == rec.header.crc) {
+                    if (rec.header.length == LEGACY_SENSOR_RECORD_V5_SIZE) {
+                        rec.data.co2AgeSeconds = UINT16_MAX;
+                        rec.data.validFlags &= ~SCD41_STATE_MASK;
+                    }
                     char line[512];
                     formatCsvLine(line, sizeof(line), rec.data);
                     if (line[0] != '\0') {
                         file.println(line);
                         flushedCount++;
                     }
+                } else if (!supportedLength) {
+                    services::Logger::warn("StorageMgr", "Unsupported record length at slot %u: %u",
+                        currentIndex, rec.header.length);
                 } else {
                     services::Logger::warn("StorageMgr", "CRC mismatch at slot %u (seq %lu)", currentIndex, rec.header.sequence);
                 }

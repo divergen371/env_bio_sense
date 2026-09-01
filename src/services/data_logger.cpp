@@ -76,7 +76,7 @@ void DataLogger::logSnapshot(const core::SensorSnapshot& snapshot, uint32_t upti
     char line[256];
     
     // Env Data
-    float co2 = snapshot.environment.valid ? (float)snapshot.environment.co2Ppm : NAN;
+    float co2 = snapshot.environment.co2Valid ? (float)snapshot.environment.co2Ppm : NAN;
     float temp = snapshot.environment.valid ? snapshot.environment.temperatureC : NAN;
     float rh = snapshot.environment.valid ? snapshot.environment.humidityRh : NAN;
     float press = (snapshot.environment.valid && snapshot.environment.pressureValid) ? snapshot.environment.pressureHpa : NAN;

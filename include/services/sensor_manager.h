@@ -32,6 +32,8 @@ public:
     GnssTimeSyncService* getGnssTimeSyncService() { return &gnssTimeSync_; }
 
 private:
+    void trackScd41Health(uint32_t nowMs);
+
     storage::StorageManager* storage_ = nullptr;
     core::SensorSnapshot snapshot_ {};
     core::SystemStatus status_ {};
@@ -41,6 +43,11 @@ private:
     
     float slpEma_ = NAN;
     uint32_t lastAmedasUpdateMs_ = 0;
+
+    drivers::sensors::Scd41Condition lastScd41Condition_ {
+        drivers::sensors::Scd41Condition::AwaitingFirstSample};
+    bool scd41ConditionInitialized_ {false};
+    bool scd41FaultActive_ {false};
     
     drivers::sensors::Sht45Sensor sht45_;
     drivers::sensors::Bmp581Sensor bmp581_;
