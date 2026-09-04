@@ -113,6 +113,24 @@ enum class TimeSource : uint8_t {
     Holdover
 };
 
+struct TimeSnapshot {
+    int64_t monotonicUs {};
+    int64_t utcEpochUs {};
+    uint32_t ppsAgeMs {UINT32_MAX};
+    TimeSource source {TimeSource::Unset};
+    bool utcValid {false};
+    bool disciplined {false};
+};
+
+inline bool isDisciplinedTimeSource(TimeSource source) {
+    return source == TimeSource::Gnss || source == TimeSource::Ntp;
+}
+
+inline TimeSource timeSourceAfterGnssLoss(TimeSource source, bool utcValid) {
+    return utcValid && source == TimeSource::Gnss
+        ? TimeSource::Holdover : source;
+}
+
 struct GnssData {
     double latitudeDeg {};
     double longitudeDeg {};
@@ -134,6 +152,7 @@ struct GnssData {
     int64_t utcEpochMs {};
     int64_t lastPpsMonotonicUs {}; // NMEA到着時点での直近のPPS時刻
     uint32_t ageMs {UINT32_MAX};
+    uint32_t ppsAgeMs {UINT32_MAX};
 };
 
 struct GnssStatus {

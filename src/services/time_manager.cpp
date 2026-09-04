@@ -74,14 +74,12 @@ void TimeManager::update(uint32_t nowMs, core::TimeSource currentSource, GnssTim
             strftime(timeStringBuff, sizeof(timeStringBuff), "%Y-%m-%d %H:%M:%S", &timeinfo);
             Logger::info("NTP", "Time synced successfully via NTP: %s", timeStringBuff);
 
-            // UTC Epochを計算してGnssTimeSyncServiceへ報告
-            time_t epoch = mktime(&timeinfo); // JST設定済みなのでローカルタイムとして扱われる
-            // mktimeの挙動に注意。確実にUTCを求める場合
+            // POSIX clock is UTC. Keep the unit explicit at the service boundary.
             struct timeval tv;
             gettimeofday(&tv, nullptr);
             
             if (timeSyncService) {
-                timeSyncService->reportNtpSync(tv.tv_sec, nowMs);
+                timeSyncService->reportNtpSyncSeconds(tv.tv_sec, nowMs);
             } else {
                 hal::Clock::setUtcAnchor((int64_t)tv.tv_sec * 1000000LL, hal::Clock::nowMonotonicUs(), core::TimeSource::Ntp);
             }

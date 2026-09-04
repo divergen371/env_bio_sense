@@ -12,6 +12,8 @@ public:
     
     // アンカー設定
     static void setUtcAnchor(int64_t utcEpochUs, int64_t monotonicUs, core::TimeSource source);
+    static void reportPps(int64_t ppsMonotonicUs);
+    static void enterHoldover();
     
     // 時刻変換
     static int64_t utcEpochUsAt(int64_t monotonicUs);
@@ -21,6 +23,7 @@ public:
     static core::TimeSource source();
     static bool isTimeSet();
     static bool isDisciplined();
+    static core::TimeSnapshot snapshot();
     static void markTimeSet(); // レガシー互換用
     
     // POSIX互換
@@ -40,6 +43,7 @@ private:
     static int64_t anchorMonotonicUs_;
     static core::TimeSource source_;
     static bool timeSet_;
+    static int64_t lastPpsMonotonicUs_;
 };
 
 } // namespace hal

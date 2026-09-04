@@ -1,9 +1,12 @@
 #include "services/gnss_time_sync_service.h"
 #include "services/logger.h"
+#include "utils/utc_time.h"
 
 namespace services {
 
 void GnssTimeSyncService::update(const core::GnssData& gnss, uint32_t nowMs) {
+    (void)nowMs;
+    hal::Clock::reportPps(gnss.lastPpsMonotonicUs);
     if (!gnss.timeValid || gnss.lastPpsMonotonicUs == 0) {
         return;
     }
@@ -73,18 +76,26 @@ void GnssTimeSyncService::establishGnssSync(int64_t utcUs, int64_t monotonicUs) 
 }
 
 void GnssTimeSyncService::reportHoldover(uint32_t nowMs) {
+    (void)nowMs;
     if (state_ == core::TimeSource::Gnss) {
         services::Logger::warn("TimeSync", "GNSS Time Sync Lost -> Holdover");
         state_ = core::TimeSource::Holdover;
+        hal::Clock::enterHoldover();
     }
     consecutiveMatches_ = 0;
 }
 
-void GnssTimeSyncService::reportNtpSync(int64_t ntpUtcEpochMs, uint32_t nowMs) {
+void GnssTimeSyncService::reportNtpSyncSeconds(int64_t ntpUtcEpochSeconds, uint32_t nowMs) {
+    (void)nowMs;
     if (state_ == core::TimeSource::Unset || state_ == core::TimeSource::Holdover) {
+        int64_t ntpUtcEpochUs = 0;
+        if (!utils::epochSecondsToMicroseconds(ntpUtcEpochSeconds, ntpUtcEpochUs)) {
+            services::Logger::error("TimeSync", "NTP epoch seconds overflow");
+            return;
+        }
         services::Logger::info("TimeSync", "NTP Time Sync Applied");
         state_ = core::TimeSource::Ntp;
-        hal::Clock::setUtcAnchor(ntpUtcEpochMs * 1000LL, hal::Clock::nowMonotonicUs(), core::TimeSource::Ntp);
+        hal::Clock::setUtcAnchor(ntpUtcEpochUs, hal::Clock::nowMonotonicUs(), core::TimeSource::Ntp);
     }
 }
 

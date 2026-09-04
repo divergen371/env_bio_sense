@@ -410,14 +410,17 @@ bool StorageManager::appendRecord(const core::SensorSnapshot& snapshot, uint32_t
         rec.data.validFlags |= VALID_HR | VALID_SPO2;
     }
     
-    // GNSS Fields
-    rec.data.sampleMonotonicUs = snapshot.gnss.sampleMonotonicUs;
-    
-    if (snapshot.gnss.timeValid) {
-        rec.data.utcEpochMs = snapshot.gnss.utcEpochMs;
-    } else {
-        rec.data.utcEpochMs = 0;
-    }
+    // Record time is captured at append, independently of the age of the
+    // latest GNSS position fix. UTC/source/discipline/PPS age come from one
+    // coherent Clock snapshot.
+    const core::TimeSnapshot time = hal::Clock::snapshot();
+    rec.data.sampleMonotonicUs = time.monotonicUs;
+    rec.data.utcEpochMs = time.utcValid ? time.utcEpochUs / 1000LL : 0;
+    rec.data.ppsAgeMs = time.ppsAgeMs;
+    rec.data.timeSource = static_cast<uint8_t>(time.source);
+    if (time.utcValid) rec.data.gnssValidFlags |= GNSS_VALID_UTC;
+    if (time.disciplined) rec.data.gnssValidFlags |= GNSS_TIME_DISCIPLINED;
+    if (time.ppsAgeMs <= 2500u) rec.data.gnssValidFlags |= GNSS_PPS_RECENT;
 
     if (snapshot.gnss.fixValid) {
         rec.data.gnssLatitudeE7 = static_cast<int32_t>(snapshot.gnss.latitudeDeg * 1e7);
@@ -445,10 +448,6 @@ bool StorageManager::appendRecord(const core::SensorSnapshot& snapshot, uint32_t
         rec.data.gnssValidFlags |= GNSS_VALID_HDOP;
     }
     
-    if (snapshot.gnss.timeValid) {
-        rec.data.gnssValidFlags |= GNSS_VALID_UTC;
-    }
-
     rec.data.gnssSatellites = snapshot.gnss.satellites;
     rec.data.gnssAgeMs = snapshot.gnss.ageMs;
     
@@ -467,17 +466,6 @@ bool StorageManager::appendRecord(const core::SensorSnapshot& snapshot, uint32_t
     rec.data.bme690GasIndex = snapshot.bme690.gasIndex;
     rec.data.bme690Status = snapshot.bme690.status;
 
-    // TimeSource status
-    // Time source information needs to be retrieved, but since we don't have direct access
-    // we use hal::Clock::source() directly here
-    core::TimeSource ts = hal::Clock::source();
-    rec.data.timeSource = static_cast<uint8_t>(ts);
-
-    // Get time status from hal::Clock
-    if (hal::Clock::isDisciplined()) {
-        rec.data.gnssValidFlags |= GNSS_TIME_DISCIPLINED;
-    }
-    
     const FramWalStatus status = wal_.append(rec.data, superblock_, walStats_);
     const uint32_t droppedRecords = walStats_.droppedRecords;
     const bool reportFull = status == FramWalStatus::Full &&

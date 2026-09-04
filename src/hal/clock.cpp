@@ -1,4 +1,5 @@
 #include "hal/clock.h"
+#include "utils/utc_time.h"
 #include <sys/time.h>
 #include <esp_timer.h>
 
@@ -9,6 +10,7 @@ int64_t Clock::anchorUtcUs_ = 0;
 int64_t Clock::anchorMonotonicUs_ = 0;
 core::TimeSource Clock::source_ = core::TimeSource::Unset;
 bool Clock::timeSet_ = false;
+int64_t Clock::lastPpsMonotonicUs_ = 0;
 
 int64_t Clock::nowMonotonicUs() {
     return esp_timer_get_time();
@@ -36,14 +38,31 @@ void Clock::setUtcAnchor(int64_t utcEpochUs, int64_t monotonicUs, core::TimeSour
     }
 }
 
+void Clock::reportPps(int64_t ppsMonotonicUs) {
+    if (ppsMonotonicUs <= 0) return;
+    portENTER_CRITICAL(&mux_);
+    if (ppsMonotonicUs > lastPpsMonotonicUs_) {
+        lastPpsMonotonicUs_ = ppsMonotonicUs;
+    }
+    portEXIT_CRITICAL(&mux_);
+}
+
+void Clock::enterHoldover() {
+    portENTER_CRITICAL(&mux_);
+    source_ = core::timeSourceAfterGnssLoss(source_, timeSet_);
+    portEXIT_CRITICAL(&mux_);
+}
+
 int64_t Clock::utcEpochUsAt(int64_t monotonicUs) {
     int64_t aUtc, aMon;
+    bool set;
     portENTER_CRITICAL(&mux_);
     aUtc = anchorUtcUs_;
     aMon = anchorMonotonicUs_;
+    set = timeSet_;
     portEXIT_CRITICAL(&mux_);
 
-    if (!timeSet_) {
+    if (!set) {
         // 未同期の場合は単なるuptimeとして扱うか、またはフォールバック
         return monotonicUs;
     }
@@ -72,8 +91,29 @@ bool Clock::isTimeSet() {
 }
 
 bool Clock::isDisciplined() {
-    core::TimeSource s = source();
-    return s == core::TimeSource::Gnss || s == core::TimeSource::Ntp;
+    return core::isDisciplinedTimeSource(source());
+}
+
+core::TimeSnapshot Clock::snapshot() {
+    core::TimeSnapshot result {};
+    result.monotonicUs = nowMonotonicUs();
+
+    int64_t anchorUtc;
+    int64_t anchorMonotonic;
+    int64_t lastPps;
+    portENTER_CRITICAL(&mux_);
+    anchorUtc = anchorUtcUs_;
+    anchorMonotonic = anchorMonotonicUs_;
+    lastPps = lastPpsMonotonicUs_;
+    result.source = source_;
+    result.utcValid = timeSet_;
+    portEXIT_CRITICAL(&mux_);
+
+    result.disciplined = core::isDisciplinedTimeSource(result.source);
+    result.utcEpochUs = result.utcValid
+        ? anchorUtc + (result.monotonicUs - anchorMonotonic) : 0;
+    result.ppsAgeMs = utils::monotonicAgeMs(result.monotonicUs, lastPps);
+    return result;
 }
 
 void Clock::markTimeSet() {

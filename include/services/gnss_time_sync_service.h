@@ -10,7 +10,7 @@ class GnssTimeSyncService {
 public:
     void update(const core::GnssData& gnss, uint32_t nowMs);
     void reportHoldover(uint32_t nowMs);
-    void reportNtpSync(int64_t ntpUtcEpochMs, uint32_t nowMs);
+    void reportNtpSyncSeconds(int64_t ntpUtcEpochSeconds, uint32_t nowMs);
 
     core::TimeSource currentState() const { return state_; }
 

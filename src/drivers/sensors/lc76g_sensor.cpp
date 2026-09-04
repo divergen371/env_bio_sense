@@ -1,6 +1,7 @@
 #include "drivers/sensors/lc76g_sensor.h"
 #include "hal/pins.h"
 #include "services/logger.h"
+#include "utils/utc_time.h"
 #include <esp_timer.h>
 
 namespace drivers {
@@ -134,18 +135,12 @@ void Lc76gSensor::updateFixStatus(uint32_t nowMs) {
     
     // タイムスタンプの更新
     if (gps_.time.isUpdated() && gps_.time.isValid() && gps_.date.isUpdated() && gps_.date.isValid()) {
-        struct tm t = {0};
-        t.tm_year = gps_.date.year() - 1900;
-        t.tm_mon = gps_.date.month() - 1;
-        t.tm_mday = gps_.date.day();
-        t.tm_hour = gps_.time.hour();
-        t.tm_min = gps_.time.minute();
-        t.tm_sec = gps_.time.second();
-        // C言語のtimegm相当
-        time_t epoch = mktime(&t);
-        // mktimeはローカルタイムと解釈するためTZ設定に注意。ここでは後でClockで統一的に扱うので仮にUTCとして保持
-        data_.utcEpochMs = static_cast<int64_t>(epoch) * 1000 + gps_.time.centisecond() * 10;
-        data_.timeValid = true;
+        int64_t epochMs = 0;
+        data_.timeValid = utils::utcEpochMsFromCalendar(
+            gps_.date.year(), gps_.date.month(), gps_.date.day(),
+            gps_.time.hour(), gps_.time.minute(), gps_.time.second(),
+            gps_.time.centisecond() * 10, epochMs);
+        data_.utcEpochMs = data_.timeValid ? epochMs : 0;
 
         int64_t ppsCopy;
         portENTER_CRITICAL(&ppsMux);
@@ -217,11 +212,17 @@ void Lc76gSensor::updateState(uint32_t nowMs) {
     ppsCountCopy = ppsSequenceCounter;
     portEXIT_CRITICAL(&ppsMux);
 
-    int64_t ppsAgeUs = esp_timer_get_time() - lastPpsCopy;
-    if (ppsCountCopy > 0 && ppsAgeUs < PPS_RECENT_TIMEOUT_MS * 1000) {
+    data_.lastPpsMonotonicUs = lastPpsCopy;
+    data_.ppsAgeMs = UINT32_MAX;
+    status_.ppsCount = ppsCountCopy;
+
+    const uint32_t ppsAgeMs = utils::monotonicAgeMs(
+        esp_timer_get_time(), lastPpsCopy);
+    if (ppsCountCopy > 0 && ppsAgeMs < PPS_RECENT_TIMEOUT_MS) {
         status_.ppsSeen = true;
         status_.ppsRecent = true;
-        status_.ppsAgeMs = ppsAgeUs / 1000;
+        status_.ppsAgeMs = ppsAgeMs;
+        data_.ppsAgeMs = status_.ppsAgeMs;
     } else {
         status_.ppsRecent = false;
         status_.ppsAgeMs = UINT32_MAX;
