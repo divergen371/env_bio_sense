@@ -200,7 +200,11 @@ const char* htmlContent = R"rawliteral(
       statusSpan.style.color = '#856404';
       
       try {
-        const response = await fetch('/api/scd41/factory_reset', { method: 'POST' });
+        const response = await fetch('/api/scd41/factory_reset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ confirmation: 'RESET_SCD41' })
+        });
         const data = await response.json();
         if (response.ok) {
           statusSpan.innerText = 'Success! Sensor factory reset.';
@@ -892,13 +896,23 @@ void WebServerService::setupRoutes() {
                 storage::eventCodeName(code), static_cast<long>(events[i].detail));
 
             if (events[i].eventCode >= static_cast<uint16_t>(storage::EventCode::Scd41Stale) &&
-                events[i].eventCode <= static_cast<uint16_t>(storage::EventCode::Scd41DriverError)) {
+                events[i].eventCode <= static_cast<uint16_t>(storage::EventCode::Scd41Stabilizing)) {
                 uint32_t packed = static_cast<uint32_t>(events[i].detail);
                 uint16_t rawError = static_cast<uint16_t>(packed >> 16);
                 uint16_t ageSeconds = static_cast<uint16_t>(packed & 0xFFFFu);
                 response->printf(",\"raw_error\":%u,\"age_ms\":", rawError);
                 if (ageSeconds == UINT16_MAX) response->print("null");
                 else response->printf("%lu", static_cast<unsigned long>(ageSeconds) * 1000ul);
+            } else if (events[i].eventCode == static_cast<uint16_t>(storage::EventCode::Scd41FrcSucceeded) ||
+                       events[i].eventCode == static_cast<uint16_t>(storage::EventCode::Scd41FrcFailed)) {
+                const uint32_t packed = static_cast<uint32_t>(events[i].detail);
+                const uint16_t rawWord = static_cast<uint16_t>(packed >> 16u);
+                response->printf(",\"reference_ppm\":%u,\"raw_word\":%u",
+                    static_cast<unsigned>(packed & 0xFFFFu), rawWord);
+                if (rawWord != 0xFFFFu) {
+                    response->printf(",\"correction_ppm\":%ld",
+                        static_cast<long>(static_cast<int32_t>(rawWord) - 0x8000L));
+                }
             } else if (events[i].eventCode == static_cast<uint16_t>(storage::EventCode::I2cLockTimeout) ||
                        events[i].eventCode == static_cast<uint16_t>(storage::EventCode::I2cCommunicationError)) {
                 const uint32_t packed = static_cast<uint32_t>(events[i].detail);
@@ -953,13 +967,29 @@ void WebServerService::setupRoutes() {
             }
     });
 
-    server_->on("/api/scd41/factory_reset", HTTP_POST, [this](AsyncWebServerRequest *request){
-        if (sensorManager.factoryResetScd41()) {
-            request->send(200, "application/json", "{\"status\":\"ok\"}");
-        } else {
-            request->send(500, "application/json", "{\"error\":\"Factory reset failed\"}");
-        }
-    });
+    server_->on("/api/scd41/factory_reset", HTTP_POST,
+        [](AsyncWebServerRequest *request){}, NULL,
+        [](AsyncWebServerRequest *request, uint8_t *data, size_t len,
+           size_t index, size_t total){
+            if (index != 0 || len != total) {
+                request->send(400, "application/json",
+                    "{\"status\":\"rejected\",\"error_code\":\"INVALID_BODY\"}");
+                return;
+            }
+            JsonDocument doc;
+            if (deserializeJson(doc, data, len) ||
+                !doc["confirmation"].is<const char*>() ||
+                strcmp(doc["confirmation"].as<const char*>(), "RESET_SCD41") != 0) {
+                request->send(400, "application/json",
+                    "{\"status\":\"rejected\",\"error_code\":\"CONFIRMATION_REQUIRED\"}");
+                return;
+            }
+            if (sensorManager.factoryResetScd41()) {
+                request->send(200, "application/json", "{\"status\":\"ok\"}");
+            } else {
+                request->send(500, "application/json", "{\"error\":\"Factory reset failed\"}");
+            }
+        });
 
     server_->on("/api/sealevel", HTTP_POST, [](AsyncWebServerRequest *request){
         if (request->hasParam("pressure", true)) {

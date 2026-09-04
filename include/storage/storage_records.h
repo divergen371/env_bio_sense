@@ -30,6 +30,11 @@ enum class EventCode : uint16_t {
     Scd41RecoveryFailed = 0x26,
     Scd41Recovered = 0x27,
     Scd41DriverError = 0x28,
+    Scd41Stabilizing = 0x29,
+    Scd41FrcSucceeded = 0x2A,
+    Scd41FrcFailed = 0x2B,
+    Scd41FactoryResetSucceeded = 0x2C,
+    Scd41FactoryResetFailed = 0x2D,
     FramRecordCorrupt = 0x30,
     FramCheckpointFailed = 0x31
 };
@@ -53,6 +58,11 @@ inline const char* eventCodeName(EventCode code) {
         case EventCode::Scd41RecoveryFailed: return "SCD41_RECOVERY_FAILED";
         case EventCode::Scd41Recovered: return "SCD41_RECOVERED";
         case EventCode::Scd41DriverError: return "SCD41_DRIVER_ERROR";
+        case EventCode::Scd41Stabilizing: return "SCD41_STABILIZING";
+        case EventCode::Scd41FrcSucceeded: return "SCD41_FRC_SUCCEEDED";
+        case EventCode::Scd41FrcFailed: return "SCD41_FRC_FAILED";
+        case EventCode::Scd41FactoryResetSucceeded: return "SCD41_FACTORY_RESET_SUCCEEDED";
+        case EventCode::Scd41FactoryResetFailed: return "SCD41_FACTORY_RESET_FAILED";
         case EventCode::FramRecordCorrupt: return "FRAM_RECORD_CORRUPT";
         case EventCode::FramCheckpointFailed: return "FRAM_CHECKPOINT_FAILED";
     }

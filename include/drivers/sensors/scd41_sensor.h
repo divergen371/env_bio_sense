@@ -2,19 +2,22 @@
 
 #include "drivers/sensors/sensor_interface.h"
 #include <SensirionI2CScd4x.h>
+#include <atomic>
 
 namespace drivers {
 namespace sensors {
 
 struct Scd41FrcResult {
-    bool success;
-    uint16_t referencePpm;
-    uint16_t preCalibrationCo2Ppm;
-    int16_t correctionPpm;
-    uint16_t rawWord;
-    uint16_t ambientPressureHpa;
-    uint32_t measurementUptimeMs;
-    const char* errorMessage;
+    bool success {false};
+    bool restartSuccess {false};
+    uint16_t referencePpm {0};
+    uint16_t preCalibrationCo2Ppm {0};
+    int16_t correctionPpm {0};
+    uint16_t rawWord {0};
+    uint16_t ambientPressureHpa {0};
+    uint32_t pressureAgeMs {UINT32_MAX};
+    uint32_t measurementUptimeMs {0};
+    const char* errorMessage {nullptr};
 };
 
 enum class Scd41Condition : uint8_t {
@@ -27,7 +30,8 @@ enum class Scd41Condition : uint8_t {
     DriverError,
     RecoveryStopping,
     RecoveryWaiting,
-    RecoveryFailed
+    RecoveryFailed,
+    Stabilizing
 };
 
 struct Scd41Health {
@@ -74,11 +78,12 @@ private:
     };
 
     static constexpr uint32_t DATA_STALE_MS = 15000;
-    static constexpr uint32_t RECOVERY_RETRY_MS = 60000;
     static constexpr uint32_t STOP_TO_START_DELAY_MS = 500;
 
     bool beginRecovery(uint32_t nowMs);
     void continueRecovery(uint32_t nowMs);
+    bool reinitializeAfterStop(uint16_t& rawError);
+    void enterRecoveryQuarantine(uint32_t nowMs);
     void markRecoveryFailure(uint32_t nowMs, Scd41Condition condition,
                              core::ErrorCode errorCode, uint16_t rawError);
 
@@ -107,12 +112,18 @@ private:
     RecoveryPhase recoveryPhase_ {RecoveryPhase::Idle};
     uint32_t recoveryDeadlineMs_ {0};
     uint32_t nextRecoveryAttemptMs_ {0};
+    uint8_t recoveryAttemptsSinceStable_ {0};
+    bool recoveryUsesReinit_ {false};
+    bool recoveryQuarantine_ {false};
+    uint8_t recoveryGoodSamples_ {0};
+    uint32_t stableRunStartMs_ {0};
     
     // FRC および 状態管理用
-    bool calibrationInProgress_ {false};
+    std::atomic<bool> maintenanceInProgress_ {false};
     uint32_t measurementStartMs_ {0};
-    uint32_t lastAmbientPressureHpa_ {0};
-    uint32_t lastAmbientPressureSetMs_ {0};
+    uint16_t lastAmbientPressureHpa_ {0};
+    uint32_t lastAmbientPressureInputMs_ {0};
+    uint32_t lastAmbientPressureCommandMs_ {0};
     bool hasAmbientPressure_ {false};
 };
 

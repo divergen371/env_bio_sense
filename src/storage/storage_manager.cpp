@@ -259,7 +259,7 @@ bool StorageManager::readEventSlot(uint16_t index, EventRecord& record) {
                      (code >= static_cast<uint16_t>(EventCode::I2cLockTimeout) &&
                       code <= static_cast<uint16_t>(EventCode::I2cCommunicationError)) ||
                      (code >= static_cast<uint16_t>(EventCode::Scd41Stale) &&
-                      code <= static_cast<uint16_t>(EventCode::Scd41DriverError)) ||
+                      code <= static_cast<uint16_t>(EventCode::Scd41FactoryResetFailed)) ||
                      (code >= static_cast<uint16_t>(EventCode::FramRecordCorrupt) &&
                       code <= static_cast<uint16_t>(EventCode::FramCheckpointFailed));
     if (!knownCode) return false;

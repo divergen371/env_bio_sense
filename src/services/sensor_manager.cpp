@@ -110,6 +110,15 @@ void SensorManager::setSeaLevelPressure(float hpa,
 
 bool SensorManager::calibrateScd41(uint16_t referencePpm, drivers::sensors::Scd41FrcResult& result) {
     bool success = scd41_.performForcedRecalibration(referencePpm, result);
+    if (storage_ != nullptr) {
+        const uint32_t detail =
+            (static_cast<uint32_t>(result.rawWord) << 16u) |
+            static_cast<uint32_t>(result.referencePpm);
+        storage_->appendEvent(
+            success ? storage::EventCode::Scd41FrcSucceeded
+                    : storage::EventCode::Scd41FrcFailed,
+            static_cast<int32_t>(detail), millis());
+    }
     if (success) {
         services::Logger::info("SensorMgr", "SCD41 manual calibration succeeded (reference: %u ppm, correction: %d ppm)", referencePpm, result.correctionPpm);
         if (storage_ != nullptr && hal::Clock::isTimeSet()) {
@@ -122,7 +131,15 @@ bool SensorManager::calibrateScd41(uint16_t referencePpm, drivers::sensors::Scd4
 }
 
 bool SensorManager::factoryResetScd41() {
-    return scd41_.factoryResetAndReconfigure();
+    const bool success = scd41_.factoryResetAndReconfigure();
+    if (storage_ != nullptr) {
+        storage_->appendEvent(
+            success ? storage::EventCode::Scd41FactoryResetSucceeded
+                    : storage::EventCode::Scd41FactoryResetFailed,
+            0, millis());
+        if (success) storage_->setScd41LastCalibrationEpoch(0);
+    }
+    return success;
 }
 
 bool SensorManager::triggerSht45Heater() {
@@ -211,6 +228,10 @@ void SensorManager::trackScd41Health(uint32_t nowMs) {
             break;
         case Scd41Condition::RecoveryFailed:
             record(storage::EventCode::Scd41RecoveryFailed);
+            nextFaultActive = true;
+            break;
+        case Scd41Condition::Stabilizing:
+            record(storage::EventCode::Scd41Stabilizing);
             nextFaultActive = true;
             break;
     }
