@@ -18,6 +18,7 @@ public:
     core::DeviceState state() const override { return state_; }
     core::ErrorCode lastError() const override { return lastError_; }
     uint32_t lastSuccessMs() const override { return lastSuccessMs_; }
+    uint32_t consecutiveErrors() const { return consecutiveErrors_; }
     
     // 海面気圧の設定（高度計算用）
     void setSeaLevelPressure(float hpa, core::PressureFieldState state = core::PressureFieldState::Valid) { 
@@ -30,6 +31,8 @@ public:
     // 校正
     void setCalibrationOffset(float offsetHpa) { pressureOffsetHpa_ = offsetHpa; }
     float getCalibrationOffset() const { return pressureOffsetHpa_; }
+    float getRawAltitude() const { return rawAbsoluteAltitudeM_; }
+    float getDisplayAltitude() const { return displayAltitudeM_; }
     bool startCalibration(float referenceAltitudeM = 13.6f);
     void cancelCalibration();
     bool isCalibrating() const { return isCalibrating_; }
@@ -48,6 +51,8 @@ protected:
     virtual const char* getSensorName() const = 0;
 
 private:
+    static constexpr uint32_t DATA_MAX_AGE_MS = 3000;
+
     struct bmp5_dev bmp5_dev_;
     struct bmp5_osr_odr_press_config osr_odr_press_cfg_;
 

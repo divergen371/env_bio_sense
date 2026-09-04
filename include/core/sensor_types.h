@@ -48,6 +48,14 @@ enum class PressureFieldState : uint8_t {
     Invalid
 };
 
+enum class PressureReferenceSource : uint8_t {
+    Unset,
+    Amedas,
+    Gnss,
+    Manual,
+    Stored
+};
+
 struct Bme690Data {
     float temperatureC {};
     float humidityRh {};

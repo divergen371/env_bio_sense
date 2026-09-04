@@ -24,7 +24,10 @@ public:
     core::SystemStatus status() const;
     
     // Calibration & Maintenance
-    void setSeaLevelPressure(float hpa, core::PressureFieldState state = core::PressureFieldState::Valid);
+    void setSeaLevelPressure(
+        float hpa,
+        core::PressureFieldState state = core::PressureFieldState::Valid,
+        core::PressureReferenceSource source = core::PressureReferenceSource::Manual);
     bool calibrateScd41(uint16_t referencePpm, drivers::sensors::Scd41FrcResult& result);
     bool factoryResetScd41();
     bool triggerSht45Heater();
@@ -48,6 +51,9 @@ private:
     
     float slpEma_ = NAN;
     uint32_t lastAmedasUpdateMs_ = 0;
+    uint32_t pressureReferenceUpdatedMs_ = 0;
+    core::PressureReferenceSource pressureReferenceSource_ {
+        core::PressureReferenceSource::Unset};
 
     drivers::sensors::Scd41Condition lastScd41Condition_ {
         drivers::sensors::Scd41Condition::AwaitingFirstSample};

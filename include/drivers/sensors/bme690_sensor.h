@@ -20,11 +20,14 @@ public:
     core::DeviceState state() const override { return state_; }
     core::ErrorCode lastError() const override { return lastError_; }
     uint32_t lastSuccessMs() const override { return lastSuccessMs_; }
+    uint32_t consecutiveErrors() const { return errorCount_; }
     
     // BME690固有のデータ取得
     bool readData(core::Bme690Data& out) const;
 
 private:
+    static constexpr uint32_t DATA_MAX_AGE_MS = 15000;
+
     struct bme69x_dev bmeDev_;
     struct bme69x_conf bmeConf_;
     struct bme69x_heatr_conf heatrConf_;

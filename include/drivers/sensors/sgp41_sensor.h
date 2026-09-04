@@ -19,6 +19,7 @@ public:
     core::DeviceState state() const override { return state_; }
     core::ErrorCode lastError() const override { return lastError_; }
     uint32_t lastSuccessMs() const override { return lastSuccessMs_; }
+    uint32_t consecutiveErrors() const { return consecutiveErrors_; }
 
     // IEnvironmentSensor 実装
     bool readEnvironment(core::EnvironmentData& out) const override;
@@ -29,8 +30,19 @@ public:
     // アルゴリズム状態（ベースライン）の保存・復元
     void getAlgorithmStates(float& voc0, float& voc1) const;
     void setAlgorithmStates(float voc0, float voc1);
+    void getRawTelemetry(uint16_t& srawVoc, uint16_t& srawNox,
+                         uint16_t& compensationRh,
+                         uint16_t& compensationTemperature) const;
 
 private:
+    static constexpr uint32_t DATA_MAX_AGE_MS = 3000;
+    static constexpr uint32_t RETRY_DELAY_MS = 60000;
+    static constexpr uint32_t MAX_CONSECUTIVE_ERRORS = 3;
+
+    static bool deadlineReached(uint32_t nowMs, uint32_t deadlineMs);
+    void markFailure(core::ErrorCode error, uint32_t nowMs,
+                     const char* operation, bool communicationError);
+
     SensirionI2CSgp41 sgp41_;
     VOCGasIndexAlgorithm vocAlgorithm_;
     NOxGasIndexAlgorithm noxAlgorithm_;
@@ -53,6 +65,7 @@ private:
 
     bool hasValidData_ {false};
     uint32_t startMs_ {0};
+    uint32_t retryAtMs_ {0};
     
     // Diagnostic tracking
     uint32_t successCount_ {0};

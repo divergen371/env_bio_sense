@@ -2,6 +2,7 @@
 
 #include "drivers/sensors/sensor_interface.h"
 #include <SensirionI2CSht4x.h>
+#include <atomic>
 
 namespace drivers {
 namespace sensors {
@@ -24,11 +25,27 @@ public:
     core::DeviceState state() const override { return state_; }
     core::ErrorCode lastError() const override { return lastError_; }
     uint32_t lastSuccessMs() const override { return lastSuccessMs_; }
+    uint32_t consecutiveErrors() const { return consecutiveErrors_; }
 
     // IEnvironmentSensor 実装
     bool readEnvironment(core::EnvironmentData& out) const override;
 
 private:
+    enum class HeaterPhase : uint8_t { Idle, Waiting, Cooldown };
+
+    static constexpr uint8_t HEATER_ACTIVE = 0x80;
+    static constexpr uint32_t DATA_MAX_AGE_MS = 3000;
+    static constexpr uint32_t RETRY_DELAY_MS = 60000;
+    static constexpr uint32_t HEATER_COOLDOWN_MS = 15000;
+
+    static uint8_t heaterCommand(HeaterPower power, HeaterDuration duration);
+    static bool deadlineReached(uint32_t nowMs, uint32_t deadlineMs);
+    void processHeater(uint32_t nowMs);
+    bool sendHeaterCommand(uint8_t command);
+    bool readHeaterResult(float& temperatureC, float& humidityRh);
+    void markFailure(core::ErrorCode error, uint32_t nowMs,
+                     const char* operation);
+
     SensirionI2cSht4x sht4x_;
     core::DeviceState state_ = core::DeviceState::Offline;
     core::ErrorCode lastError_ = core::ErrorCode::None;
@@ -37,10 +54,10 @@ private:
     float currentHumidity_ = 0.0f;
     bool hasValidData_ = false;
 
-    uint32_t lastReadMs_ = 0;
-    uint32_t heaterCooldownUntilMs_ = 0;
-    float preHeaterTempC_ = 0.0f;
-    float preHeaterHumRh_ = 0.0f;
+    std::atomic<uint8_t> heaterRequest_ {0};
+    HeaterPhase heaterPhase_ {HeaterPhase::Idle};
+    uint32_t heaterDeadlineMs_ {0};
+    uint32_t retryAtMs_ {0};
 
     // 統計・診断用
     uint32_t successCount_ = 0;
