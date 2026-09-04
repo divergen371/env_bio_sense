@@ -102,8 +102,9 @@ bool Bmp5SensorBase::begin() {
     uint8_t chip_id = 0;
     if (bmp5_get_regs(BMP5_REG_CHIP_ID, &chip_id, 1, &bmp5_dev_) != BMP5_OK) {
         services::Logger::error(getSensorName(), "Failed to communicate on I2C address 0x%02X", dev_addr_);
-        changeState(core::DeviceState::Error);
+        changeState(core::DeviceState::RetryWait);
         lastError_ = core::ErrorCode::InitFailed;
+        nextReinitMs_ = millis() + 10000;
         return false;
     }
     if (chip_id != getExpectedChipId()) {
@@ -123,8 +124,9 @@ bool Bmp5SensorBase::begin() {
 
     if (rslt != BMP5_OK) {
         services::Logger::error(getSensorName(), "Failed to init after retries. Error: %d", rslt);
-        changeState(core::DeviceState::Error);
+        changeState(core::DeviceState::RetryWait);
         lastError_ = core::ErrorCode::InitFailed;
+        nextReinitMs_ = millis() + 10000;
         return false;
     }
 
@@ -149,16 +151,18 @@ bool Bmp5SensorBase::begin() {
 
     if (rslt != BMP5_OK) {
         services::Logger::error(getSensorName(), "Failed to config. Error: %d", rslt);
-        changeState(core::DeviceState::Error);
+        changeState(core::DeviceState::RetryWait);
         lastError_ = core::ErrorCode::InitFailed;
+        nextReinitMs_ = millis() + 10000;
         return false;
     }
 
     rslt = bmp5_set_power_mode(BMP5_POWERMODE_NORMAL, &bmp5_dev_);
     if (rslt != BMP5_OK) {
         services::Logger::error(getSensorName(), "Failed to set power mode. Error: %d", rslt);
-        changeState(core::DeviceState::Error);
+        changeState(core::DeviceState::RetryWait);
         lastError_ = core::ErrorCode::InitFailed;
+        nextReinitMs_ = millis() + 10000;
         return false;
     }
 
@@ -170,7 +174,7 @@ bool Bmp5SensorBase::begin() {
 }
 
 bool Bmp5SensorBase::reinitSensor(uint32_t nowMs) {
-    if (nowMs < nextReinitMs_) {
+    if (static_cast<int32_t>(nowMs - nextReinitMs_) < 0) {
         return false;
     }
     
@@ -194,6 +198,7 @@ bool Bmp5SensorBase::reinitSensor(uint32_t nowMs) {
         }
         services::Logger::warn(getSensorName(), "Re-init failed. Backing off until %u ms", nextReinitMs_);
         changeState(core::DeviceState::RetryWait);
+        lastError_ = core::ErrorCode::InitFailed;
         return false;
     }
 
@@ -201,6 +206,7 @@ bool Bmp5SensorBase::reinitSensor(uint32_t nowMs) {
     if (rslt != BMP5_OK) {
         nextReinitMs_ = nowMs + 300000;
         changeState(core::DeviceState::RetryWait);
+        lastError_ = core::ErrorCode::InitFailed;
         return false;
     }
 
@@ -216,21 +222,21 @@ bool Bmp5SensorBase::reinitSensor(uint32_t nowMs) {
     if (rslt != BMP5_OK) {
         nextReinitMs_ = nowMs + 300000;
         changeState(core::DeviceState::RetryWait);
+        lastError_ = core::ErrorCode::InitFailed;
         return false;
     }
     
     nextReinitMs_ = 0;
     changeState(core::DeviceState::Ready);
+    lastError_ = core::ErrorCode::None;
     return true;
 }
 
 void Bmp5SensorBase::update(uint32_t nowMs) {
-    if (state_ == core::DeviceState::Error || state_ == core::DeviceState::Offline) {
-        return;
-    }
-    
-    if (state_ == core::DeviceState::RetryWait) {
-        if (nowMs >= nextReinitMs_) {
+    if (state_ == core::DeviceState::Error ||
+        state_ == core::DeviceState::Offline ||
+        state_ == core::DeviceState::RetryWait) {
+        if (static_cast<int32_t>(nowMs - nextReinitMs_) >= 0) {
             if (reinitSensor(nowMs)) {
                 services::Logger::info(getSensorName(), "Sensor recovered successfully after re-init");
                 consecutiveErrors_ = 0;
@@ -240,7 +246,7 @@ void Bmp5SensorBase::update(uint32_t nowMs) {
         return;
     }
 
-    struct bmp5_sensor_data sensor_data;
+    struct bmp5_sensor_data sensor_data {};
     int8_t rslt = bmp5_get_sensor_data(&sensor_data, &osr_odr_press_cfg_, &bmp5_dev_);
     float rawPressurePa = sensor_data.pressure;
     float rawTemperatureC = sensor_data.temperature;
@@ -261,16 +267,19 @@ void Bmp5SensorBase::update(uint32_t nowMs) {
     if (!validReading) {
         consecutiveErrors_++;
         isStale_ = true;
+        lastError_ = rslt == BMP5_OK
+            ? core::ErrorCode::InvalidData : core::ErrorCode::BusError;
+        changeState(core::DeviceState::Warning);
         
         services::Logger::warn(getSensorName(), "ts=%u read=NG error=%d raw_pressure=%.1fPa pressure=%.2fhPa invalid_count=%u reset_count=%u",
             nowMs, rslt, rawPressurePa, pressureHpa, consecutiveErrors_, resetCount_);
             
         if (consecutiveErrors_ >= 3) {
-            changeState(core::DeviceState::Warning);
             if (reinitSensor(nowMs)) {
                 services::Logger::info(getSensorName(), "Sensor recovered successfully after re-init");
                 consecutiveErrors_ = 0;
                 resetCount_ = 0;
+                lastError_ = core::ErrorCode::None;
             } else {
                 changeState(core::DeviceState::RetryWait);
             }
@@ -324,17 +333,20 @@ void Bmp5SensorBase::update(uint32_t nowMs) {
 }
 
 bool Bmp5SensorBase::readEnvironment(core::EnvironmentData& out) const {
-    if (!hasValidData_) {
+    const bool expired = millis() - lastSuccessMs_ > DATA_MAX_AGE_MS;
+    if (!hasValidData_ || isStale_ || expired) {
         out.pressureValid = false;
+        out.pressureStale = hasValidData_;
+        out.altitudeValid = false;
         return false;
     }
     
     out.pressureHpa = currentPressureHpa_;
-    out.pressureValid = !isStale_;
-    out.pressureStale = isStale_;
+    out.pressureValid = true;
+    out.pressureStale = false;
     
     out.altitudeM = displayAltitudeM_; // ヒステリシス適用済みの高度を出力
-    out.altitudeValid = (!isStale_ && !std::isnan(displayAltitudeM_));
+    out.altitudeValid = !std::isnan(displayAltitudeM_);
     
     if (lastSuccessMs_ > out.timestampMs) {
         out.timestampMs = lastSuccessMs_;

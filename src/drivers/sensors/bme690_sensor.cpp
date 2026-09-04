@@ -84,9 +84,13 @@ bool Bme690Sensor::begin() {
     services::Logger::info("Bme690", "Initializing BME690...");
     if (initDevice()) {
         state_ = core::DeviceState::Ready;
+        lastError_ = core::ErrorCode::None;
         return true;
     } else {
         state_ = core::DeviceState::Error;
+        lastError_ = core::ErrorCode::InitFailed;
+        lastData_.tphValid = false;
+        lastData_.gasValid = false;
         return false;
     }
 }
@@ -142,6 +146,8 @@ bool Bme690Sensor::initDevice() {
 
 void Bme690Sensor::setError(core::ErrorCode err) {
     lastError_ = err;
+    lastData_.tphValid = false;
+    lastData_.gasValid = false;
     errorCount_++;
     if (errorCount_ > 5) {
         state_ = core::DeviceState::Offline;
@@ -157,6 +163,7 @@ void Bme690Sensor::update(uint32_t nowMs) {
             lastReinitMs_ = nowMs;
             if (initDevice()) {
                 state_ = core::DeviceState::Ready;
+                lastError_ = core::ErrorCode::None;
                 services::Logger::info("Bme690", "Recovered from offline state");
             }
         }
@@ -257,10 +264,17 @@ void Bme690Sensor::readMeasurement() {
 }
 
 bool Bme690Sensor::readData(core::Bme690Data& out) const {
-    if (state_ == core::DeviceState::Ready || state_ == core::DeviceState::Warning) {
+    const bool stateReadable = state_ == core::DeviceState::Ready ||
+                               state_ == core::DeviceState::Warning;
+    if (stateReadable && lastSuccessMs_ != 0 &&
+        millis() - lastSuccessMs_ <= DATA_MAX_AGE_MS &&
+        lastData_.tphValid) {
         out = lastData_;
         return true;
     }
+    out = lastData_;
+    out.tphValid = false;
+    out.gasValid = false;
     return false;
 }
 
