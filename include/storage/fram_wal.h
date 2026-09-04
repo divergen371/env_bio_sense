@@ -56,7 +56,8 @@ public:
             return FramWalStatus::IoError;
         }
         if (legacy.magic == FRAM_MAGIC) {
-            if (legacy.formatVersion != FRAM_FORMAT_VERSION) {
+            if (legacy.formatVersion != FRAM_FORMAT_VERSION &&
+                legacy.formatVersion != LEGACY_FRAM_FORMAT_VERSION) {
                 return FramWalStatus::Incompatible;
             }
             if (!validLegacy(legacy) || !validState(legacy)) {
@@ -124,60 +125,49 @@ public:
         return FramWalStatus::Ready;
     }
 
-    FramWalStatus append(SensorRecordV5 data, FramSuperblock& state,
+    FramWalStatus append(SensorRecordV6 data, FramSuperblock& state,
                          FramWalStats& stats) {
+        data.formatTag = 6;
+        return appendTyped<SensorRecordV6, PersistentRecordV6>(
+            data, state, stats, FRAM_FORMAT_VERSION);
+    }
+
+    FramWalStatus appendLegacy(SensorRecordV5 data, FramSuperblock& state,
+                               FramWalStats& stats) {
+        return appendTyped<SensorRecordV5, PersistentRecordV5>(
+            data, state, stats, LEGACY_FRAM_FORMAT_VERSION);
+    }
+
+    FramWalStatus migrateEmptyToCurrent(FramSuperblock& state,
+                                        const FramWalStats& stats) {
         if (!initialized_) return FramWalStatus::IoError;
-        const uint16_t pending = pendingCount(state);
-        if (pending >= MAX_RECORDS - 1) {
-            if (stats.droppedRecords != UINT32_MAX) ++stats.droppedRecords;
-            FramWalStatus result = persist(state, stats);
-            return result == FramWalStatus::Ready ? FramWalStatus::Full : result;
+        if (pendingCount(state) != 0) return FramWalStatus::Incompatible;
+        if (state.formatVersion == FRAM_FORMAT_VERSION) return FramWalStatus::Ready;
+        if (state.formatVersion != LEGACY_FRAM_FORMAT_VERSION) {
+            return FramWalStatus::Incompatible;
         }
-        if (state.nextSequence == UINT32_MAX) return FramWalStatus::SequenceExhausted;
-
-        PersistentRecordV5 rec {};
-        data.sequence = state.nextSequence;
-        rec.data = data;
-        rec.header.sequence = data.sequence;
-        rec.header.length = sizeof(SensorRecordV5);
-        rec.header.crc = crc16(reinterpret_cast<const uint8_t*>(&rec.data),
-                               sizeof(SensorRecordV5));
-        rec.header.committed = 0;
-
-        const uint16_t addr = ADDR_RING_BUFFER + state.writeIndex * RECORD_SLOT_SIZE;
-        const uint16_t markerAddr = addr + offsetof(PersistentRecordV5, header.committed);
-        if (!device_.writeByte(markerAddr, 0) ||
-            !device_.write(addr, reinterpret_cast<const uint8_t*>(&rec), sizeof(rec)) ||
-            !device_.verify(addr, reinterpret_cast<const uint8_t*>(&rec), sizeof(rec)) ||
-            !device_.writeByte(markerAddr, 1)) {
-            return FramWalStatus::IoError;
-        }
-
-        PersistentRecordV5 verified {};
-        if (readRecord(state.writeIndex, verified) != FramWalStatus::Ready ||
-            verified.header.sequence != state.nextSequence) {
-            return FramWalStatus::IoError;
-        }
-
         FramSuperblock next = state;
-        FramWalStats nextStats = stats;
-        next.writeIndex = (next.writeIndex + 1) % MAX_RECORDS;
-        ++next.nextSequence;
-        const uint16_t nextPending = pendingCount(next);
-        if (nextPending > nextStats.highWaterRecords) {
-            nextStats.highWaterRecords = nextPending;
-        }
-        FramWalStatus result = persist(next, nextStats);
-        if (result == FramWalStatus::Ready) {
-            state = next;
-            stats = nextStats;
-        }
+        next.formatVersion = FRAM_FORMAT_VERSION;
+        const FramWalStatus result = persist(next, stats);
+        if (result == FramWalStatus::Ready) state = next;
         return result;
     }
 
-    FramWalStatus peek(const FramSuperblock& state, PersistentRecordV5& record) {
+    FramWalStatus peek(const FramSuperblock& state, PersistentRecordV6& record) {
         if (pendingCount(state) == 0) return FramWalStatus::Empty;
-        return readRecord(state.readIndex, record);
+        if (state.formatVersion != FRAM_FORMAT_VERSION) {
+            return FramWalStatus::Incompatible;
+        }
+        return readRecordV6(state.readIndex, record);
+    }
+
+    FramWalStatus peekLegacy(const FramSuperblock& state,
+                             PersistentRecordV5& record) {
+        if (pendingCount(state) == 0) return FramWalStatus::Empty;
+        if (state.formatVersion != LEGACY_FRAM_FORMAT_VERSION) {
+            return FramWalStatus::Incompatible;
+        }
+        return readRecordV5(state.readIndex, record);
     }
 
     FramWalStatus readRawSlot(uint16_t index, uint8_t* raw, size_t length) {
@@ -207,10 +197,19 @@ public:
 
     FramWalStatus consume(uint32_t sequence, FramSuperblock& state,
                           const FramWalStats& stats) {
-        PersistentRecordV5 record {};
-        FramWalStatus result = peek(state, record);
+        FramWalStatus result = FramWalStatus::Incompatible;
+        uint32_t storedSequence = 0;
+        if (state.formatVersion == FRAM_FORMAT_VERSION) {
+            PersistentRecordV6 record {};
+            result = peek(state, record);
+            storedSequence = record.header.sequence;
+        } else if (state.formatVersion == LEGACY_FRAM_FORMAT_VERSION) {
+            PersistentRecordV5 record {};
+            result = peekLegacy(state, record);
+            storedSequence = record.header.sequence;
+        }
         if (result != FramWalStatus::Ready) return result;
-        if (record.header.sequence != sequence) return FramWalStatus::Corrupt;
+        if (storedSequence != sequence) return FramWalStatus::Corrupt;
 
         FramSuperblock next = state;
         next.readIndex = (next.readIndex + 1) % MAX_RECORDS;
@@ -227,6 +226,73 @@ public:
     }
 
 private:
+    template <typename Data, typename Persistent>
+    FramWalStatus appendTyped(Data data, FramSuperblock& state,
+                              FramWalStats& stats,
+                              uint16_t expectedFormatVersion) {
+        if (!initialized_) return FramWalStatus::IoError;
+        if (state.formatVersion != expectedFormatVersion) {
+            return FramWalStatus::Incompatible;
+        }
+        const uint16_t pending = pendingCount(state);
+        if (pending >= MAX_RECORDS - 1) {
+            if (stats.droppedRecords != UINT32_MAX) ++stats.droppedRecords;
+            FramWalStatus result = persist(state, stats);
+            return result == FramWalStatus::Ready ? FramWalStatus::Full : result;
+        }
+        if (state.nextSequence == UINT32_MAX) return FramWalStatus::SequenceExhausted;
+
+        Persistent rec {};
+        data.sequence = state.nextSequence;
+        rec.data = data;
+        rec.header.sequence = data.sequence;
+        rec.header.length = sizeof(Data);
+        rec.header.crc = crc16(reinterpret_cast<const uint8_t*>(&rec.data),
+                               sizeof(Data));
+        rec.header.committed = 0;
+
+        const uint16_t addr = ADDR_RING_BUFFER + state.writeIndex * RECORD_SLOT_SIZE;
+        const uint16_t markerAddr = addr + offsetof(FramRecordHeader, committed);
+        if (!device_.writeByte(markerAddr, 0) ||
+            !device_.write(addr, reinterpret_cast<const uint8_t*>(&rec), sizeof(rec)) ||
+            !device_.verify(addr, reinterpret_cast<const uint8_t*>(&rec), sizeof(rec)) ||
+            !device_.writeByte(markerAddr, 1)) {
+            return FramWalStatus::IoError;
+        }
+
+        Persistent verified {};
+        if (!device_.read(addr, reinterpret_cast<uint8_t*>(&verified),
+                          sizeof(verified))) {
+            return FramWalStatus::IoError;
+        }
+        const bool formatTagValid =
+            expectedFormatVersion != FRAM_FORMAT_VERSION ||
+            reinterpret_cast<const uint8_t*>(&verified.data)[sizeof(Data) - 1] == 6;
+        if (verified.header.committed != 1 ||
+            verified.header.length != sizeof(Data) ||
+            verified.header.sequence != state.nextSequence ||
+            verified.header.sequence != verified.data.sequence ||
+            !formatTagValid ||
+            crc16(reinterpret_cast<const uint8_t*>(&verified.data),
+                  sizeof(Data)) != verified.header.crc) {
+            return FramWalStatus::IoError;
+        }
+
+        FramSuperblock next = state;
+        FramWalStats nextStats = stats;
+        next.writeIndex = (next.writeIndex + 1) % MAX_RECORDS;
+        ++next.nextSequence;
+        const uint16_t nextPending = pendingCount(next);
+        if (nextPending > nextStats.highWaterRecords) {
+            nextStats.highWaterRecords = nextPending;
+        }
+        FramWalStatus result = persist(next, nextStats);
+        if (result == FramWalStatus::Ready) {
+            state = next;
+            stats = nextStats;
+        }
+        return result;
+    }
     Device& device_;
     uint32_t generation_ {0};
     bool initialized_ {false};
@@ -258,7 +324,8 @@ private:
 
     static bool validState(const FramSuperblock& state) {
         return state.magic == FRAM_MAGIC &&
-               state.formatVersion == FRAM_FORMAT_VERSION &&
+               (state.formatVersion == FRAM_FORMAT_VERSION ||
+                state.formatVersion == LEGACY_FRAM_FORMAT_VERSION) &&
                state.writeIndex < MAX_RECORDS && state.readIndex < MAX_RECORDS &&
                state.nextSequence != 0;
     }
@@ -297,7 +364,7 @@ private:
         return allZero || allOnes;
     }
 
-    FramWalStatus readRecord(uint16_t index, PersistentRecordV5& record) {
+    FramWalStatus readRecordV5(uint16_t index, PersistentRecordV5& record) {
         if (index >= MAX_RECORDS) return FramWalStatus::Corrupt;
         const uint16_t addr = ADDR_RING_BUFFER + index * RECORD_SLOT_SIZE;
         if (!device_.read(addr, reinterpret_cast<uint8_t*>(&record), sizeof(record))) {
@@ -313,19 +380,42 @@ private:
                record.header.crc ? FramWalStatus::Ready : FramWalStatus::Corrupt;
     }
 
+    FramWalStatus readRecordV6(uint16_t index, PersistentRecordV6& record) {
+        if (index >= MAX_RECORDS) return FramWalStatus::Corrupt;
+        const uint16_t addr = ADDR_RING_BUFFER + index * RECORD_SLOT_SIZE;
+        if (!device_.read(addr, reinterpret_cast<uint8_t*>(&record), sizeof(record))) {
+            return FramWalStatus::IoError;
+        }
+        if (record.header.committed != 1 ||
+            record.header.length != sizeof(SensorRecordV6) ||
+            record.header.sequence == 0 ||
+            record.header.sequence != record.data.sequence ||
+            record.data.formatTag != 6) {
+            return FramWalStatus::Corrupt;
+        }
+        return crc16(reinterpret_cast<const uint8_t*>(&record.data),
+                     record.header.length) == record.header.crc
+            ? FramWalStatus::Ready : FramWalStatus::Corrupt;
+    }
+
     FramWalStatus reconcileOrphan(FramSuperblock& state, FramWalStats& stats) {
         if (pendingCount(state) >= MAX_RECORDS - 1 || state.nextSequence == UINT32_MAX) {
             return FramWalStatus::Ready;
         }
-        PersistentRecordV5 orphan {};
-        const uint16_t addr = ADDR_RING_BUFFER + state.writeIndex * RECORD_SLOT_SIZE;
-        if (!device_.read(addr, reinterpret_cast<uint8_t*>(&orphan), sizeof(orphan))) {
-            return FramWalStatus::IoError;
+        FramWalStatus orphanStatus = FramWalStatus::Incompatible;
+        uint32_t orphanSequence = 0;
+        if (state.formatVersion == FRAM_FORMAT_VERSION) {
+            PersistentRecordV6 orphan {};
+            orphanStatus = readRecordV6(state.writeIndex, orphan);
+            orphanSequence = orphan.header.sequence;
+        } else if (state.formatVersion == LEGACY_FRAM_FORMAT_VERSION) {
+            PersistentRecordV5 orphan {};
+            orphanStatus = readRecordV5(state.writeIndex, orphan);
+            orphanSequence = orphan.header.sequence;
         }
-        const FramWalStatus orphanStatus = readRecord(state.writeIndex, orphan);
         if (orphanStatus == FramWalStatus::IoError) return orphanStatus;
         if (orphanStatus != FramWalStatus::Ready ||
-            orphan.header.sequence != state.nextSequence) {
+            orphanSequence != state.nextSequence) {
             return FramWalStatus::Ready;
         }
 

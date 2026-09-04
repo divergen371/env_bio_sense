@@ -33,6 +33,9 @@ struct I2cDiagnosticCounters {
     uint32_t communicationErrors {};
 };
 
+const char* i2cDeviceName(I2cDevice device);
+const char* i2cOperationName(I2cOperation operation);
+
 class I2cBus {
 public:
     static bool begin();

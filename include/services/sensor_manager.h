@@ -10,6 +10,7 @@
 #include "drivers/sensors/bme690_sensor.h"
 #include "services/gnss_time_sync_service.h"
 #include "storage/storage_manager.h"
+#include "hal/i2c_bus.h"
 #include <cstdint>
 #include <freertos/FreeRTOS.h>
 
@@ -37,6 +38,7 @@ public:
 
 private:
     void trackScd41Health(uint32_t nowMs);
+    void trackI2cHealth(uint32_t nowMs);
     void publishSnapshot();
 
     storage::StorageManager* storage_ = nullptr;
@@ -59,6 +61,16 @@ private:
         drivers::sensors::Scd41Condition::AwaitingFirstSample};
     bool scd41ConditionInitialized_ {false};
     bool scd41FaultActive_ {false};
+
+    hal::I2cDiagnosticCounters persistedI2cCounters_[
+        static_cast<uint8_t>(hal::I2cDevice::Count)][
+        static_cast<uint8_t>(hal::I2cOperation::Count)] {};
+    uint32_t lastI2cLockEventMs_[
+        static_cast<uint8_t>(hal::I2cDevice::Count)][
+        static_cast<uint8_t>(hal::I2cOperation::Count)] {};
+    uint32_t lastI2cCommunicationEventMs_[
+        static_cast<uint8_t>(hal::I2cDevice::Count)][
+        static_cast<uint8_t>(hal::I2cOperation::Count)] {};
     
     drivers::sensors::Sht45Sensor sht45_;
     drivers::sensors::Bmp581Sensor bmp581_;

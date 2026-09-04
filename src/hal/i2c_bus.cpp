@@ -6,6 +6,34 @@
 
 namespace hal {
 
+const char* i2cDeviceName(I2cDevice device) {
+    switch (device) {
+        case I2cDevice::Unknown: return "UNKNOWN";
+        case I2cDevice::Sht45: return "SHT45";
+        case I2cDevice::Bmp581: return "BMP581";
+        case I2cDevice::Scd41: return "SCD41";
+        case I2cDevice::Sgp41: return "SGP41";
+        case I2cDevice::Max30102: return "MAX30102";
+        case I2cDevice::Bme690: return "BME690";
+        case I2cDevice::Fram: return "FRAM";
+        case I2cDevice::Oled: return "OLED";
+        case I2cDevice::Count: break;
+    }
+    return "UNKNOWN";
+}
+
+const char* i2cOperationName(I2cOperation operation) {
+    switch (operation) {
+        case I2cOperation::Init: return "INIT";
+        case I2cOperation::Read: return "READ";
+        case I2cOperation::Write: return "WRITE";
+        case I2cOperation::Measure: return "MEASURE";
+        case I2cOperation::Maintenance: return "MAINTENANCE";
+        case I2cOperation::Count: break;
+    }
+    return "UNKNOWN";
+}
+
 SemaphoreHandle_t I2cBus::mutex_ = nullptr;
 portMUX_TYPE I2cBus::diagnosticsMux_ = portMUX_INITIALIZER_UNLOCKED;
 I2cDiagnosticCounters I2cBus::diagnostics_[

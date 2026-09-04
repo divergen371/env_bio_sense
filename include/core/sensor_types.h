@@ -85,6 +85,8 @@ struct EnvironmentData {
     EnclosureWarning enclosureWarning {EnclosureWarning::Normal};
     uint32_t timestampMs {};
     bool valid {};
+    bool temperatureValid {false};
+    bool humidityValid {false};
     bool pressureValid {false};
     bool pressureStale {false};
     bool sgp41Valid {false};

@@ -219,6 +219,8 @@ bool Sht45Sensor::readEnvironment(core::EnvironmentData& out) const {
 
     out.temperatureC = currentTemperature_;
     out.humidityRh = currentHumidity_;
+    out.temperatureValid = true;
+    out.humidityValid = true;
     
     out.timestampMs = lastSuccessMs_;
     out.valid = true;

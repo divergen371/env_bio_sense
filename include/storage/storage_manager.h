@@ -97,8 +97,9 @@ private:
     bool appendAndVerifyCsvLine(const char* line, size_t lineLength);
     bool quarantineCorruptTail(uint16_t slotIndex, uint32_t uptimeMs);
     bool appendAndVerifyQuarantine(const FramQuarantineRecord& record);
-    void writeCsvHeader(File& file);
-    void formatCsvLine(char* buffer, size_t size, const SensorRecordV5& rec);
+    uint16_t activeCsvSchemaVersion() const;
+    void writeCsvHeader(File& file, uint16_t schemaVersion);
+    void formatCsvLineV5(char* buffer, size_t size, const SensorRecordV5& rec);
 };
 
 } // namespace storage

@@ -6,8 +6,10 @@
 namespace storage {
 
 constexpr uint32_t FRAM_MAGIC = 0x4652414D; // "FRAM"
-constexpr uint16_t FRAM_FORMAT_VERSION = 5;
-constexpr uint16_t CSV_SCHEMA_VERSION = 6;
+constexpr uint16_t LEGACY_FRAM_FORMAT_VERSION = 5;
+constexpr uint16_t FRAM_FORMAT_VERSION = 6;
+constexpr uint16_t LEGACY_CSV_SCHEMA_VERSION = 6;
+constexpr uint16_t CSV_SCHEMA_VERSION = 7;
 constexpr size_t RECORD_SLOT_SIZE = 128;
 
 enum class EventCode : uint16_t {
@@ -17,6 +19,8 @@ enum class EventCode : uint16_t {
     SdRecovered = 0x04,
     RingBufferFull = 0x05,
     SensorError = 0x06,
+    I2cLockTimeout = 0x10,
+    I2cCommunicationError = 0x11,
     Scd41Stale = 0x20,
     Scd41LockTimeout = 0x21,
     Scd41DataReadyError = 0x22,
@@ -38,6 +42,8 @@ inline const char* eventCodeName(EventCode code) {
         case EventCode::SdRecovered: return "SD_RECOVERED";
         case EventCode::RingBufferFull: return "RING_BUFFER_FULL";
         case EventCode::SensorError: return "SENSOR_ERROR";
+        case EventCode::I2cLockTimeout: return "I2C_LOCK_TIMEOUT";
+        case EventCode::I2cCommunicationError: return "I2C_COMMUNICATION_ERROR";
         case EventCode::Scd41Stale: return "SCD41_STALE";
         case EventCode::Scd41LockTimeout: return "SCD41_LOCK_TIMEOUT";
         case EventCode::Scd41DataReadyError: return "SCD41_DATA_READY_ERROR";
@@ -212,6 +218,98 @@ struct PersistentRecordV5 {
     SensorRecordV5 data;
 };
 
+enum SensorValidFlagsV6 : uint16_t {
+    V6_VALID_TEMP = 1u << 0,
+    V6_VALID_HUMIDITY = 1u << 1,
+    V6_VALID_PRESSURE = 1u << 2,
+    V6_VALID_CO2 = 1u << 3,
+    V6_VALID_VOC = 1u << 4,
+    V6_VALID_NOX = 1u << 5,
+    V6_VALID_HR = 1u << 6,
+    V6_VALID_SPO2 = 1u << 7,
+    V6_VALID_DISPLAY_ALTITUDE = 1u << 8,
+    V6_VALID_RAW_ALTITUDE = 1u << 9,
+    V6_VALID_SEA_LEVEL_PRESSURE = 1u << 10,
+    V6_VALID_PRESSURE_OFFSET = 1u << 11,
+    V6_VALID_BME690_TPH = 1u << 12,
+    V6_VALID_BME690_GAS = 1u << 13,
+    V6_VALID_SGP41_RAW = 1u << 14,
+    V6_VALID_PPG_QUALITY = 1u << 15
+};
+
+// v6 uses fixed-point fields and packed state metadata to retain a 128-byte
+// physical slot while adding the evidence needed to explain stale or stepped
+// measurements. UINT16_MAX is the common sentinel for unknown ages.
+struct SensorRecordV6 {
+    uint32_t sequence;
+    uint32_t uptimeMs;
+    int64_t sampleMonotonicUs;
+    int64_t utcEpochMs;
+
+    int16_t temperatureCentiC;
+    uint16_t humidityCentiRh;
+    uint16_t pressureDeciHpa;
+    uint16_t co2Ppm;
+    int16_t vocIndex;
+    int16_t noxIndex;
+    uint16_t heartRateDeciBpm;
+    uint16_t spo2CentiPercent;
+    int16_t displayAltitudeDeciM;
+    int16_t rawAltitudeDeciM;
+    uint16_t seaLevelPressureDeciHpa;
+    int16_t pressureOffsetCentiHpa;
+
+    uint16_t seaLevelPressureAgeSeconds;
+    uint16_t co2AgeSeconds;
+    uint16_t sgp41AgeSeconds;
+    uint16_t srawVoc;
+    uint16_t srawNox;
+    uint16_t sgp41CompensationRhTicks;
+    uint16_t sgp41CompensationTemperatureTicks;
+
+    int32_t gnssLatitudeE7;
+    int32_t gnssLongitudeE7;
+    int16_t gnssAltitudeDeciM;
+    uint16_t gnssSpeedCentiMps;
+    uint16_t gnssCourseDeciDeg;
+    uint16_t gnssHdopCenti;
+    uint16_t gnssAgeSeconds;
+    uint16_t ppsAgeMs;
+    uint8_t gnssSatellites;
+    uint8_t gnssValidFlags;
+
+    // bits 0..2 time source, 3..4 pressure state, 5..7 pressure source
+    uint8_t sourceBits;
+    // bits 0..2 device state, 3..5 error, 6..7 saturated consecutive errors
+    uint8_t scd41Health;
+    uint8_t sgp41Health;
+    uint16_t scd41RawError;
+
+    int16_t bme690TemperatureCentiC;
+    uint16_t bme690HumidityCentiRh;
+    uint16_t bme690PressureDeciHpa;
+    uint32_t bme690GasResistanceOhm;
+    uint8_t bme690GasIndex;
+    uint8_t bme690Status;
+    uint16_t bme690AgeSeconds;
+    uint8_t bme690Health;
+    uint16_t sht45AgeSeconds;
+    uint8_t sht45Health;
+    uint16_t bmp581AgeSeconds;
+    uint8_t bmp581Health;
+
+    uint16_t i2cLockTimeouts;
+    uint16_t i2cCommunicationErrors;
+    uint16_t droppedRecords;
+    uint16_t validFlags;
+    uint8_t formatTag;
+};
+
+struct PersistentRecordV6 {
+    FramRecordHeader header;
+    SensorRecordV6 data;
+};
+
 struct EventRecord {
     FramRecordHeader header;
     uint32_t uptimeMs;
@@ -266,6 +364,9 @@ constexpr uint16_t EVENT_PAYLOAD_SIZE = sizeof(EventRecord) - sizeof(FramRecordH
 constexpr uint16_t LEGACY_SENSOR_RECORD_V5_SIZE = offsetof(SensorRecordV5, co2AgeSeconds);
 
 static_assert(sizeof(PersistentRecordV5) <= RECORD_SLOT_SIZE, "PersistentRecordV5 exceeds RECORD_SLOT_SIZE");
+static_assert(sizeof(SensorRecordV6) == 119, "Unexpected SensorRecordV6 size");
+static_assert(sizeof(PersistentRecordV6) == RECORD_SLOT_SIZE,
+              "PersistentRecordV6 should fully occupy its slot");
 static_assert(sizeof(FramQuarantineRecord) == 150, "Unexpected quarantine record size");
 static_assert(sizeof(PersistentRecordV5) == RECORD_SLOT_SIZE, "PersistentRecordV5 should fully occupy its slot");
 static_assert(sizeof(EventRecord) <= EVENT_SLOT_SIZE, "EventRecord exceeds EVENT_SLOT_SIZE");

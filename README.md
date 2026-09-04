@@ -33,10 +33,11 @@ Seeed Studio XIAO ESP32S3 を用いた、複合環境センサおよび生体光
   - FRAM管理情報は世代番号・CRC付きの二重checkpointで更新し、未知形式や破損時は自動初期化せずread-onlyへ退避します。
   - SD行は書込み、flush、close、再open、内容照合後にだけFRAMから消費します。処理中の対象ファイルと行CRCもFRAMへ残すため、再起動replayで同じ行を二重追記しません。
   - FRAMレコードの構造破損はI²C読出し失敗と区別し、同じ生データを二度確認してからSDの`/fram_quarantine_v1.bin`へ保存・再読照合します。証拠が確定するまでは破損slotも読み飛ばしません。
+  - FRAM v6は従来の128 byte slotを維持したまま解析用の鮮度・状態・補償入力を保持し、71列固定のCSV v7へ欠測を空欄として出力します。旧v5の未flushデータはCSV v6へ流し切ってから非破壊移行します。
 - **一貫した時刻記録**:
   - 記録時点のmonotonic時刻、UTC、時刻源、同期状態、PPS ageを一つのsnapshotで取得します。GNSS喪失時はUTCを継続しながら`HOLDOVER`へ明示的に降格し、NTP epoch秒とGNSS UTCはタイムゾーン・単位を混同しない経路で変換します。
 - **I²C競合診断と鮮度管理**:
-  - 全I²C処理をデバイス・操作別に識別してlock timeout／通信エラーを集計します。SHT45ヒーターはバスを長時間占有しない状態機械で実行し、SHT45・SGP41・BMP581・BME690は失敗またはage超過時に古い値を有効扱いしません。
+  - 全I²C処理をデバイス・操作別に識別してlock timeout／通信エラーを集計します。累積値はCSV v7とWeb API、異常増分はrate-limitしたFRAMイベントへ保存します。SHT45ヒーターはバスを長時間占有しない状態機械で実行し、SHT45・SGP41・BMP581・BME690は失敗またはage超過時に古い値を有効扱いしません。
 - **オンデマンドWi-Fi APモード（ファイルリモートアクセス）**:
   - 稼働中に `BOOT` ボタンを3秒間長押しすることで、ESP32自身がアクセスポイントとなり、スマホやPCからWebサーバーへアクセス可能。
   - SDカード内のCSVファイルの閲覧、ダウンロード、ストレージ空き容量の確認、Chart.jsによるデータのインタラクティブな可視化、手動気圧校正などをWeb UIから実行できます。
@@ -84,7 +85,7 @@ Seeed Studio XIAO ESP32S3 を用いた、複合環境センサおよび生体光
 - `test/test_pulse_analyzer/test_pulse_analyzer.cpp`: 25Hz環境対応ネイティブ単体テスト環境
 
 ### [Step 6] ストレージ管理・Webインフラ (FRAM + SD + Wi-Fi)
-- `storage/fram_storage.cpp` & `storage_manager.cpp`: MB85RC256Vを用いた不揮発リングバッファ、SD一括リカバリ、設定永続化(FRAM Superblock v3)
+- `storage/fram_storage.cpp` & `storage_manager.cpp`: 64 KiB（32 KiB×2）FRAMを用いた不揮発WAL、SD行再検証、FRAM v6／CSV v7、旧v5非破壊移行
 - `services/time_manager.cpp`: NTPサーバー時刻同期
 - `services/weather_service.cpp`: 気象庁AMeDAS APIから海面気圧を自動取得・IDW(逆距離加重法)補間
 - `services/web_server_service.cpp`: SPIFFSホスティング、SDファイルエクスプローラ、Chart.js可視化、手動IDW校正UI

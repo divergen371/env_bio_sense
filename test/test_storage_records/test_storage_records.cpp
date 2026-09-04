@@ -110,13 +110,13 @@ void test_wal_append_readback_and_consume() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Ready),
         static_cast<uint8_t>(wal.begin(state, stats, initialState())));
 
-    SensorRecordV5 sample {};
+    SensorRecordV6 sample {};
     sample.co2Ppm = 777;
     TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Ready),
         static_cast<uint8_t>(wal.append(sample, state, stats)));
     TEST_ASSERT_EQUAL_UINT16(1, FramWal<FakeFram>::pendingCount(state));
 
-    PersistentRecordV5 stored {};
+    PersistentRecordV6 stored {};
     TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Ready),
         static_cast<uint8_t>(wal.peek(state, stored)));
     TEST_ASSERT_EQUAL_UINT32(1, stored.header.sequence);
@@ -138,7 +138,7 @@ void test_wal_recovers_every_append_write_boundary() {
                 static_cast<uint8_t>(wal.begin(state, stats, initialState())));
             fram.writeCalls = 0;
             fram.failWriteCall = failedWrite;
-            SensorRecordV5 sample {};
+            SensorRecordV6 sample {};
             sample.co2Ppm = 500 + failedWrite;
             TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::IoError),
                 static_cast<uint8_t>(wal.append(sample, state, stats)));
@@ -155,7 +155,7 @@ void test_wal_recovers_every_append_write_boundary() {
         const uint16_t pending = FramWal<FakeFram>::pendingCount(recoveredState);
         TEST_ASSERT_TRUE(pending == 0 || pending == 1);
         if (pending == 1) {
-            PersistentRecordV5 record {};
+            PersistentRecordV6 record {};
             TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Ready),
                 static_cast<uint8_t>(recovered.peek(recoveredState, record)));
             TEST_ASSERT_EQUAL_UINT32(1, record.header.sequence);
@@ -199,6 +199,65 @@ void test_wal_refuses_unknown_legacy_format() {
         static_cast<uint8_t>(wal.begin(state, stats, initialState())));
 }
 
+void test_v5_pending_records_are_preserved_until_consumed_then_migrated() {
+    FakeFram fram;
+    FramSuperblock legacy = initialState();
+    legacy.formatVersion = LEGACY_FRAM_FORMAT_VERSION;
+    legacy.crc16 = testCrc16(reinterpret_cast<const uint8_t*>(&legacy),
+                             sizeof(legacy) - sizeof(legacy.crc16));
+    memcpy(fram.bytes.data() + ADDR_SUPERBLOCK, &legacy, sizeof(legacy));
+
+    FramWal<FakeFram> legacyWal(fram);
+    FramSuperblock state {};
+    FramWalStats stats {};
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Ready),
+        static_cast<uint8_t>(legacyWal.begin(state, stats, initialState())));
+    TEST_ASSERT_EQUAL_UINT16(LEGACY_FRAM_FORMAT_VERSION, state.formatVersion);
+
+    SensorRecordV5 oldSample {};
+    oldSample.co2Ppm = 812;
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Ready),
+        static_cast<uint8_t>(legacyWal.appendLegacy(oldSample, state, stats)));
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Incompatible),
+        static_cast<uint8_t>(legacyWal.migrateEmptyToCurrent(state, stats)));
+
+    std::array<uint8_t, RECORD_SLOT_SIZE> oldSlot {};
+    memcpy(oldSlot.data(), fram.bytes.data() + ADDR_RING_BUFFER,
+           oldSlot.size());
+
+    FramWal<FakeFram> recovered(fram);
+    FramSuperblock recoveredState {};
+    FramWalStats recoveredStats {};
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Ready),
+        static_cast<uint8_t>(recovered.begin(
+            recoveredState, recoveredStats, initialState())));
+    PersistentRecordV5 recoveredOld {};
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Ready),
+        static_cast<uint8_t>(recovered.peekLegacy(recoveredState, recoveredOld)));
+    TEST_ASSERT_EQUAL_UINT16(812, recoveredOld.data.co2Ppm);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Ready),
+        static_cast<uint8_t>(recovered.consume(
+            recoveredOld.header.sequence, recoveredState, recoveredStats)));
+
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Ready),
+        static_cast<uint8_t>(recovered.migrateEmptyToCurrent(
+            recoveredState, recoveredStats)));
+    TEST_ASSERT_EQUAL_UINT16(FRAM_FORMAT_VERSION, recoveredState.formatVersion);
+    TEST_ASSERT_EQUAL_MEMORY(oldSlot.data(),
+        fram.bytes.data() + ADDR_RING_BUFFER, oldSlot.size());
+
+    SensorRecordV6 newSample {};
+    newSample.co2Ppm = 913;
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Ready),
+        static_cast<uint8_t>(recovered.append(
+            newSample, recoveredState, recoveredStats)));
+    PersistentRecordV6 recoveredNew {};
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Ready),
+        static_cast<uint8_t>(recovered.peek(recoveredState, recoveredNew)));
+    TEST_ASSERT_EQUAL_UINT16(913, recoveredNew.data.co2Ppm);
+    TEST_ASSERT_EQUAL_UINT8(6, recoveredNew.data.formatTag);
+}
+
 void test_wal_refuses_to_initialize_corrupt_nonblank_fram() {
     FakeFram fram;
     fram.bytes[ADDR_RING_BUFFER + 10] = 0x12;
@@ -222,7 +281,7 @@ void test_wal_full_preserves_tail_and_persists_drop_count() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Ready),
         static_cast<uint8_t>(wal.persist(state, stats)));
 
-    SensorRecordV5 sample {};
+    SensorRecordV6 sample {};
     TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Full),
         static_cast<uint8_t>(wal.append(sample, state, stats)));
     TEST_ASSERT_EQUAL_UINT16(0, state.readIndex);
@@ -247,7 +306,7 @@ void test_wal_quarantine_advances_only_tail_without_claiming_sd_flush() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Ready),
         static_cast<uint8_t>(wal.begin(state, stats, initialState())));
 
-    SensorRecordV5 sample {};
+    SensorRecordV6 sample {};
     sample.co2Ppm = 500;
     TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Ready),
         static_cast<uint8_t>(wal.append(sample, state, stats)));
@@ -255,8 +314,8 @@ void test_wal_quarantine_advances_only_tail_without_claiming_sd_flush() {
     TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Ready),
         static_cast<uint8_t>(wal.append(sample, state, stats)));
 
-    fram.bytes[ADDR_RING_BUFFER + offsetof(PersistentRecordV5, header.crc)] ^= 0x40;
-    PersistentRecordV5 record {};
+    fram.bytes[ADDR_RING_BUFFER + offsetof(PersistentRecordV6, header.crc)] ^= 0x40;
+    PersistentRecordV6 record {};
     TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Corrupt),
         static_cast<uint8_t>(wal.peek(state, record)));
     uint8_t raw[RECORD_SLOT_SIZE] {};
@@ -280,7 +339,7 @@ void test_wal_quarantine_refuses_wrong_or_empty_tail() {
         static_cast<uint8_t>(wal.begin(state, stats, initialState())));
     TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Empty),
         static_cast<uint8_t>(wal.quarantineTail(0, state, stats)));
-    SensorRecordV5 sample {};
+    SensorRecordV6 sample {};
     TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Ready),
         static_cast<uint8_t>(wal.append(sample, state, stats)));
     TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Corrupt),
@@ -295,11 +354,11 @@ void test_wal_peek_distinguishes_io_error_from_corruption() {
     FramWalStats stats {};
     TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Ready),
         static_cast<uint8_t>(wal.begin(state, stats, initialState())));
-    SensorRecordV5 sample {};
+    SensorRecordV6 sample {};
     TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Ready),
         static_cast<uint8_t>(wal.append(sample, state, stats)));
     fram.failRead = true;
-    PersistentRecordV5 record {};
+    PersistentRecordV6 record {};
     TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::IoError),
         static_cast<uint8_t>(wal.peek(state, record)));
 }
@@ -313,10 +372,10 @@ void test_wal_quarantine_checkpoint_failure_never_skips_without_commit() {
             FramWal<FakeFram> wal(fram);
             TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Ready),
                 static_cast<uint8_t>(wal.begin(state, stats, initialState())));
-            SensorRecordV5 sample {};
+            SensorRecordV6 sample {};
             TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::Ready),
                 static_cast<uint8_t>(wal.append(sample, state, stats)));
-            fram.bytes[ADDR_RING_BUFFER + offsetof(PersistentRecordV5, header.crc)] ^= 0x20;
+            fram.bytes[ADDR_RING_BUFFER + offsetof(PersistentRecordV6, header.crc)] ^= 0x20;
             fram.writeCalls = 0;
             fram.failWriteCall = failedWrite;
             TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(FramWalStatus::IoError),
@@ -409,6 +468,7 @@ int main(int argc, char** argv) {
     RUN_TEST(test_wal_recovers_every_append_write_boundary);
     RUN_TEST(test_wal_uses_older_checkpoint_when_newest_is_corrupt);
     RUN_TEST(test_wal_refuses_unknown_legacy_format);
+    RUN_TEST(test_v5_pending_records_are_preserved_until_consumed_then_migrated);
     RUN_TEST(test_wal_refuses_to_initialize_corrupt_nonblank_fram);
     RUN_TEST(test_wal_full_preserves_tail_and_persists_drop_count);
     RUN_TEST(test_wal_quarantine_advances_only_tail_without_claiming_sd_flush);

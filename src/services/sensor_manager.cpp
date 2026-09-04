@@ -224,6 +224,54 @@ void SensorManager::trackScd41Health(uint32_t nowMs) {
     scd41ConditionInitialized_ = true;
 }
 
+void SensorManager::trackI2cHealth(uint32_t nowMs) {
+    if (storage_ == nullptr || !storage_->isFramAvailable()) return;
+
+    constexpr uint32_t EVENT_INTERVAL_MS = 60000u;
+    for (uint8_t deviceIndex = 0;
+         deviceIndex < static_cast<uint8_t>(hal::I2cDevice::Count);
+         ++deviceIndex) {
+        for (uint8_t operationIndex = 0;
+             operationIndex < static_cast<uint8_t>(hal::I2cOperation::Count);
+             ++operationIndex) {
+            const auto device = static_cast<hal::I2cDevice>(deviceIndex);
+            const auto operation = static_cast<hal::I2cOperation>(operationIndex);
+            const hal::I2cDiagnosticCounters current =
+                hal::I2cBus::diagnostics(device, operation);
+            hal::I2cDiagnosticCounters& persisted =
+                persistedI2cCounters_[deviceIndex][operationIndex];
+
+            auto persistDelta = [&](uint32_t currentCount,
+                                    uint32_t& persistedCount,
+                                    uint32_t& lastEventMs,
+                                    storage::EventCode code) {
+                if (currentCount <= persistedCount ||
+                    (lastEventMs != 0 && nowMs - lastEventMs < EVENT_INTERVAL_MS)) {
+                    return;
+                }
+                const uint32_t rawDelta = currentCount - persistedCount;
+                const uint16_t delta = static_cast<uint16_t>(
+                    rawDelta > UINT16_MAX ? UINT16_MAX : rawDelta);
+                // detail: bits 0..7 device, 8..15 operation, 16..31 delta.
+                const uint32_t packed = static_cast<uint32_t>(deviceIndex) |
+                    (static_cast<uint32_t>(operationIndex) << 8u) |
+                    (static_cast<uint32_t>(delta) << 16u);
+                if (storage_->appendEvent(code, static_cast<int32_t>(packed), nowMs)) {
+                    persistedCount = currentCount;
+                    lastEventMs = nowMs;
+                }
+            };
+
+            persistDelta(current.lockTimeouts, persisted.lockTimeouts,
+                         lastI2cLockEventMs_[deviceIndex][operationIndex],
+                         storage::EventCode::I2cLockTimeout);
+            persistDelta(current.communicationErrors, persisted.communicationErrors,
+                         lastI2cCommunicationEventMs_[deviceIndex][operationIndex],
+                         storage::EventCode::I2cCommunicationError);
+        }
+    }
+}
+
 void SensorManager::update(uint32_t nowMs) {
     status_.uptimeMs = nowMs;
     
@@ -329,6 +377,14 @@ void SensorManager::update(uint32_t nowMs) {
     snapshot_.environment.scd41State = scd41_.state();
     snapshot_.environment.scd41TemperatureC = NAN;
     snapshot_.environment.scd41HumidityRh = NAN;
+    snapshot_.environment.temperatureC = NAN;
+    snapshot_.environment.humidityRh = NAN;
+    snapshot_.environment.temperatureValid = false;
+    snapshot_.environment.humidityValid = false;
+    snapshot_.environment.pressureValid = false;
+    snapshot_.environment.pressureStale = false;
+    snapshot_.environment.altitudeValid = false;
+    snapshot_.environment.sgp41Valid = false;
 
     bool envValid = false;
     if (sht45_.readEnvironment(snapshot_.environment)) {
@@ -459,6 +515,7 @@ void SensorManager::update(uint32_t nowMs) {
     const hal::I2cDiagnosticCounters i2c = hal::I2cBus::diagnosticTotals();
     snapshot_.telemetry.i2c.lockTimeouts = i2c.lockTimeouts;
     snapshot_.telemetry.i2c.communicationErrors = i2c.communicationErrors;
+    trackI2cHealth(nowMs);
     publishSnapshot();
 }
 

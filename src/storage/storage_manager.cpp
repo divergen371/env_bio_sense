@@ -2,7 +2,10 @@
 #include "services/logger.h"
 #include "hal/pins.h"
 #include "hal/clock.h"
+#include "storage/csv_v7.h"
+#include "storage/storage_record_codec.h"
 #include <Arduino.h>
+#include <cmath>
 
 namespace storage {
 
@@ -253,6 +256,8 @@ bool StorageManager::readEventSlot(uint16_t index, EventRecord& record) {
     uint16_t code = record.eventCode;
     bool knownCode = (code >= static_cast<uint16_t>(EventCode::Boot) &&
                       code <= static_cast<uint16_t>(EventCode::SensorError)) ||
+                     (code >= static_cast<uint16_t>(EventCode::I2cLockTimeout) &&
+                      code <= static_cast<uint16_t>(EventCode::I2cCommunicationError)) ||
                      (code >= static_cast<uint16_t>(EventCode::Scd41Stale) &&
                       code <= static_cast<uint16_t>(EventCode::Scd41DriverError)) ||
                      (code >= static_cast<uint16_t>(EventCode::FramRecordCorrupt) &&
@@ -361,112 +366,274 @@ bool StorageManager::appendRecord(const core::SensorSnapshot& snapshot, uint32_t
         return false;
     }
 
-    PersistentRecordV5 rec;
-    memset(&rec, 0, sizeof(PersistentRecordV5));
-    
-    rec.data.sequence = superblock_.nextSequence;
-    rec.data.uptimeMs = uptimeMs;
-    
-    rec.data.validFlags = 0;
-    uint8_t scd41State = static_cast<uint8_t>(snapshot.environment.scd41State) & 0x7u;
-    rec.data.validFlags |= static_cast<uint32_t>(scd41State) << SCD41_STATE_SHIFT;
-    if (snapshot.environment.co2AgeMs == UINT32_MAX) {
-        rec.data.co2AgeSeconds = UINT16_MAX;
-    } else {
-        uint32_t ageSeconds = snapshot.environment.co2AgeMs / 1000u;
-        rec.data.co2AgeSeconds = static_cast<uint16_t>(ageSeconds > 65534u ? 65534u : ageSeconds);
-    }
-    
-    if (snapshot.environment.valid) {
-        rec.data.temperatureC = snapshot.environment.temperatureC;
-        rec.data.humidityRh = snapshot.environment.humidityRh;
-        rec.data.validFlags |= VALID_TEMP | VALID_HUMIDITY;
-        
-        if (snapshot.environment.pressureValid) {
-            rec.data.pressureHpa = snapshot.environment.pressureHpa;
-            rec.data.validFlags |= VALID_PRESSURE;
-        }
-        
-        if (snapshot.environment.altitudeValid) {
-            rec.data.altitudeM = snapshot.environment.altitudeM;
-            rec.data.validFlags |= VALID_ALTITUDE;
-        }
-        
-        if (snapshot.environment.co2Valid && snapshot.environment.co2Ppm > 0) {
-            rec.data.co2Ppm = snapshot.environment.co2Ppm;
-            rec.data.validFlags |= VALID_CO2;
-        }
-        
-        if (snapshot.environment.sgp41Valid) {
-            rec.data.vocIndex = snapshot.environment.vocIndex;
-            rec.data.noxIndex = snapshot.environment.noxIndex;
-            rec.data.validFlags |= VALID_VOC | VALID_NOX;
-        }
-    }
-    
-    if (snapshot.ppg.state == core::PpgState::Measuring && snapshot.ppg.calculatedValid) {
-        rec.data.heartRateBpm = snapshot.ppg.heartRateBpm;
-        rec.data.spo2Percent = snapshot.ppg.spo2Percent;
-        rec.data.validFlags |= VALID_HR | VALID_SPO2;
-    }
-    
     // Record time is captured at append, independently of the age of the
     // latest GNSS position fix. UTC/source/discipline/PPS age come from one
     // coherent Clock snapshot.
     const core::TimeSnapshot time = hal::Clock::snapshot();
-    rec.data.sampleMonotonicUs = time.monotonicUs;
-    rec.data.utcEpochMs = time.utcValid ? time.utcEpochUs / 1000LL : 0;
-    rec.data.ppsAgeMs = time.ppsAgeMs;
-    rec.data.timeSource = static_cast<uint8_t>(time.source);
-    if (time.utcValid) rec.data.gnssValidFlags |= GNSS_VALID_UTC;
-    if (time.disciplined) rec.data.gnssValidFlags |= GNSS_TIME_DISCIPLINED;
-    if (time.ppsAgeMs <= 2500u) rec.data.gnssValidFlags |= GNSS_PPS_RECENT;
 
-    if (snapshot.gnss.fixValid) {
-        rec.data.gnssLatitudeE7 = static_cast<int32_t>(snapshot.gnss.latitudeDeg * 1e7);
-        rec.data.gnssLongitudeE7 = static_cast<int32_t>(snapshot.gnss.longitudeDeg * 1e7);
-        rec.data.gnssValidFlags |= GNSS_VALID_FIX;
-    }
-    
-    if (snapshot.gnss.altitudeValid) {
-        rec.data.gnssAltitudeMslM = snapshot.gnss.altitudeMslM;
-        rec.data.gnssValidFlags |= GNSS_VALID_ALTITUDE;
-    }
-    
-    if (snapshot.gnss.speedValid) {
-        rec.data.gnssSpeedMps = snapshot.gnss.speedMps;
-        rec.data.gnssValidFlags |= GNSS_VALID_SPEED;
-    }
-    
-    if (snapshot.gnss.courseValid) {
-        rec.data.gnssCourseDeg = snapshot.gnss.courseDeg;
-        rec.data.gnssValidFlags |= GNSS_VALID_COURSE;
-    }
-    
-    if (snapshot.gnss.hdopValid) {
-        rec.data.gnssHdop = snapshot.gnss.hdop;
-        rec.data.gnssValidFlags |= GNSS_VALID_HDOP;
-    }
-    
-    rec.data.gnssSatellites = snapshot.gnss.satellites;
-    rec.data.gnssAgeMs = snapshot.gnss.ageMs;
-    
-    if (snapshot.bme690.tphValid) {
-        rec.data.bme690TemperatureC = snapshot.bme690.temperatureC;
-        rec.data.bme690HumidityRh = snapshot.bme690.humidityRh;
-        rec.data.bme690PressureHpa = snapshot.bme690.pressureHpa;
-        rec.data.validFlags |= VALID_BME690_TPH;
-    }
-    
-    if (snapshot.bme690.gasValid) {
-        rec.data.bme690GasResistanceOhm = snapshot.bme690.gasResistanceOhm;
-        rec.data.validFlags |= VALID_BME690_GAS;
+    if (superblock_.formatVersion == LEGACY_FRAM_FORMAT_VERSION &&
+        FramWal<FramStorage>::pendingCount(superblock_) == 0) {
+        const FramWalStatus migration =
+            wal_.migrateEmptyToCurrent(superblock_, walStats_);
+        if (migration != FramWalStatus::Ready) {
+            framAvailable_ = false;
+            framReadOnly_ = true;
+            unlock();
+            services::Logger::error("StorageMgr",
+                "Failed to migrate empty v5 WAL to v6; preserving FRAM read-only");
+            return false;
+        }
+        // A v6 record must never be appended to a CSV v6 file. Force the next
+        // flush to create/select a schema-v7 target.
+        currentFilename_ = "";
+        currentDateString_ = "";
+        sdAvailable_ = false;
+        lastSdInitAttempt_ = 0;
+        services::Logger::info("StorageMgr",
+            "Migrated empty FRAM WAL from v5 to v6 without erasing ring slots");
     }
 
-    rec.data.bme690GasIndex = snapshot.bme690.gasIndex;
-    rec.data.bme690Status = snapshot.bme690.status;
+    FramWalStatus status = FramWalStatus::Incompatible;
+    if (superblock_.formatVersion == LEGACY_FRAM_FORMAT_VERSION) {
+        SensorRecordV5 rec {};
+        rec.uptimeMs = uptimeMs;
+        rec.sampleMonotonicUs = time.monotonicUs;
+        rec.utcEpochMs = time.utcValid ? time.utcEpochUs / 1000LL : 0;
+        rec.ppsAgeMs = time.ppsAgeMs;
+        rec.timeSource = static_cast<uint8_t>(time.source);
+        const uint8_t scd41State =
+            static_cast<uint8_t>(snapshot.environment.scd41State) & 0x7u;
+        rec.validFlags |= static_cast<uint32_t>(scd41State) << SCD41_STATE_SHIFT;
+        rec.co2AgeSeconds = codec::ageSeconds(snapshot.environment.co2AgeMs);
 
-    const FramWalStatus status = wal_.append(rec.data, superblock_, walStats_);
+        if (snapshot.environment.temperatureValid) {
+            rec.temperatureC = snapshot.environment.temperatureC;
+            rec.validFlags |= VALID_TEMP;
+        }
+        if (snapshot.environment.humidityValid) {
+            rec.humidityRh = snapshot.environment.humidityRh;
+            rec.validFlags |= VALID_HUMIDITY;
+        }
+        if (snapshot.environment.pressureValid) {
+            rec.pressureHpa = snapshot.environment.pressureHpa;
+            rec.validFlags |= VALID_PRESSURE;
+        }
+        if (snapshot.environment.altitudeValid) {
+            rec.altitudeM = snapshot.environment.altitudeM;
+            rec.validFlags |= VALID_ALTITUDE;
+        }
+        if (snapshot.environment.co2Valid && snapshot.environment.co2Ppm > 0) {
+            rec.co2Ppm = snapshot.environment.co2Ppm;
+            rec.validFlags |= VALID_CO2;
+        }
+        if (snapshot.environment.sgp41Valid) {
+            rec.vocIndex = snapshot.environment.vocIndex;
+            rec.noxIndex = snapshot.environment.noxIndex;
+            rec.validFlags |= VALID_VOC | VALID_NOX;
+        }
+        if (snapshot.ppg.state == core::PpgState::Measuring &&
+            snapshot.ppg.calculatedValid && !snapshot.ppg.signalPoor) {
+            rec.heartRateBpm = snapshot.ppg.heartRateBpm;
+            rec.spo2Percent = snapshot.ppg.spo2Percent;
+            rec.validFlags |= VALID_HR | VALID_SPO2;
+        }
+        if (time.utcValid) rec.gnssValidFlags |= GNSS_VALID_UTC;
+        if (time.disciplined) rec.gnssValidFlags |= GNSS_TIME_DISCIPLINED;
+        if (time.ppsAgeMs <= 2500u) rec.gnssValidFlags |= GNSS_PPS_RECENT;
+        if (snapshot.gnss.fixValid) {
+            rec.gnssLatitudeE7 = static_cast<int32_t>(snapshot.gnss.latitudeDeg * 1e7);
+            rec.gnssLongitudeE7 = static_cast<int32_t>(snapshot.gnss.longitudeDeg * 1e7);
+            rec.gnssValidFlags |= GNSS_VALID_FIX;
+        }
+        if (snapshot.gnss.altitudeValid) {
+            rec.gnssAltitudeMslM = snapshot.gnss.altitudeMslM;
+            rec.gnssValidFlags |= GNSS_VALID_ALTITUDE;
+        }
+        if (snapshot.gnss.speedValid) {
+            rec.gnssSpeedMps = snapshot.gnss.speedMps;
+            rec.gnssValidFlags |= GNSS_VALID_SPEED;
+        }
+        if (snapshot.gnss.courseValid) {
+            rec.gnssCourseDeg = snapshot.gnss.courseDeg;
+            rec.gnssValidFlags |= GNSS_VALID_COURSE;
+        }
+        if (snapshot.gnss.hdopValid) {
+            rec.gnssHdop = snapshot.gnss.hdop;
+            rec.gnssValidFlags |= GNSS_VALID_HDOP;
+        }
+        rec.gnssSatellites = snapshot.gnss.satellites;
+        rec.gnssAgeMs = snapshot.gnss.ageMs;
+        if (snapshot.bme690.tphValid) {
+            rec.bme690TemperatureC = snapshot.bme690.temperatureC;
+            rec.bme690HumidityRh = snapshot.bme690.humidityRh;
+            rec.bme690PressureHpa = snapshot.bme690.pressureHpa;
+            rec.validFlags |= VALID_BME690_TPH;
+        }
+        if (snapshot.bme690.gasValid) {
+            rec.bme690GasResistanceOhm = snapshot.bme690.gasResistanceOhm;
+            rec.validFlags |= VALID_BME690_GAS;
+        }
+        rec.bme690GasIndex = snapshot.bme690.gasIndex;
+        rec.bme690Status = snapshot.bme690.status;
+        status = wal_.appendLegacy(rec, superblock_, walStats_);
+    } else if (superblock_.formatVersion == FRAM_FORMAT_VERSION) {
+        SensorRecordV6 rec {};
+        rec.uptimeMs = uptimeMs;
+        rec.sampleMonotonicUs = time.monotonicUs;
+        rec.utcEpochMs = time.utcValid ? time.utcEpochUs / 1000LL : 0;
+        rec.co2AgeSeconds = codec::ageSeconds(snapshot.environment.co2AgeMs);
+        rec.sgp41AgeSeconds = codec::ageSeconds(snapshot.telemetry.sgp41.ageMs);
+        rec.sht45AgeSeconds = codec::ageSeconds(snapshot.telemetry.sht45.ageMs);
+        rec.bmp581AgeSeconds = codec::ageSeconds(snapshot.telemetry.bmp581.ageMs);
+        rec.bme690AgeSeconds = codec::ageSeconds(snapshot.telemetry.bme690.ageMs);
+        rec.seaLevelPressureAgeSeconds = codec::ageSeconds(
+            snapshot.telemetry.altitude.seaLevelPressureAgeMs);
+        rec.ppsAgeMs = codec::milliseconds16(time.ppsAgeMs);
+        rec.sourceBits = codec::packSources(
+            time.source, snapshot.telemetry.altitude.pressureState,
+            snapshot.telemetry.altitude.pressureSource);
+        rec.scd41Health = codec::packHealth(
+            snapshot.telemetry.scd41.state, snapshot.telemetry.scd41.error,
+            snapshot.telemetry.scd41.consecutiveErrors);
+        rec.sgp41Health = codec::packHealth(
+            snapshot.telemetry.sgp41.state, snapshot.telemetry.sgp41.error,
+            snapshot.telemetry.sgp41.consecutiveErrors);
+        rec.sht45Health = codec::packHealth(
+            snapshot.telemetry.sht45.state, snapshot.telemetry.sht45.error,
+            snapshot.telemetry.sht45.consecutiveErrors);
+        rec.bmp581Health = codec::packHealth(
+            snapshot.telemetry.bmp581.state, snapshot.telemetry.bmp581.error,
+            snapshot.telemetry.bmp581.consecutiveErrors);
+        rec.bme690Health = codec::packHealth(
+            snapshot.telemetry.bme690.state, snapshot.telemetry.bme690.error,
+            snapshot.telemetry.bme690.consecutiveErrors);
+        rec.scd41RawError = snapshot.telemetry.scd41RawError;
+
+        if (snapshot.environment.temperatureValid) {
+            rec.temperatureCentiC = codec::signedFixed(
+                snapshot.environment.temperatureC, 100.0f);
+            rec.validFlags |= V6_VALID_TEMP;
+        }
+        if (snapshot.environment.humidityValid) {
+            rec.humidityCentiRh = codec::unsignedFixed(
+                snapshot.environment.humidityRh, 100.0f);
+            rec.validFlags |= V6_VALID_HUMIDITY;
+        }
+        if (snapshot.environment.pressureValid) {
+            rec.pressureDeciHpa = codec::unsignedFixed(
+                snapshot.environment.pressureHpa, 10.0f);
+            rec.validFlags |= V6_VALID_PRESSURE;
+        }
+        if (snapshot.environment.co2Valid && snapshot.environment.co2Ppm > 0) {
+            rec.co2Ppm = snapshot.environment.co2Ppm;
+            rec.validFlags |= V6_VALID_CO2;
+        }
+        if (snapshot.environment.sgp41Valid) {
+            rec.vocIndex = codec::signedFixed(
+                static_cast<float>(snapshot.environment.vocIndex), 1.0f);
+            rec.noxIndex = codec::signedFixed(
+                static_cast<float>(snapshot.environment.noxIndex), 1.0f);
+            rec.validFlags |= V6_VALID_VOC | V6_VALID_NOX | V6_VALID_SGP41_RAW;
+            rec.srawVoc = snapshot.telemetry.sgp41Raw.srawVoc;
+            rec.srawNox = snapshot.telemetry.sgp41Raw.srawNox;
+            rec.sgp41CompensationRhTicks =
+                snapshot.telemetry.sgp41Raw.compensationRhTicks;
+            rec.sgp41CompensationTemperatureTicks =
+                snapshot.telemetry.sgp41Raw.compensationTemperatureTicks;
+        }
+        if (snapshot.environment.altitudeValid) {
+            rec.displayAltitudeDeciM = codec::signedFixed(
+                snapshot.telemetry.altitude.displayAltitudeM, 10.0f);
+            rec.validFlags |= V6_VALID_DISPLAY_ALTITUDE;
+        }
+        if (snapshot.environment.pressureValid &&
+            std::isfinite(snapshot.telemetry.altitude.rawAltitudeM)) {
+            rec.rawAltitudeDeciM = codec::signedFixed(
+                snapshot.telemetry.altitude.rawAltitudeM, 10.0f);
+            rec.validFlags |= V6_VALID_RAW_ALTITUDE;
+        }
+        const core::PressureFieldState pressureState =
+            snapshot.telemetry.altitude.pressureState;
+        if ((pressureState == core::PressureFieldState::Valid ||
+             pressureState == core::PressureFieldState::LastKnown) &&
+            std::isfinite(snapshot.telemetry.altitude.seaLevelPressureHpa)) {
+            rec.seaLevelPressureDeciHpa = codec::unsignedFixed(
+                snapshot.telemetry.altitude.seaLevelPressureHpa, 10.0f);
+            rec.validFlags |= V6_VALID_SEA_LEVEL_PRESSURE;
+        }
+        if (superblock_.hasValidBmp581Calibration) {
+            rec.pressureOffsetCentiHpa = codec::signedFixed(
+                snapshot.telemetry.altitude.pressureOffsetHpa, 100.0f);
+            rec.validFlags |= V6_VALID_PRESSURE_OFFSET;
+        }
+        if (snapshot.ppg.state == core::PpgState::Measuring &&
+            snapshot.ppg.calculatedValid && !snapshot.ppg.signalPoor) {
+            rec.heartRateDeciBpm = codec::unsignedFixed(
+                snapshot.ppg.heartRateBpm, 10.0f);
+            rec.spo2CentiPercent = codec::unsignedFixed(
+                snapshot.ppg.spo2Percent, 100.0f);
+            rec.validFlags |= V6_VALID_HR | V6_VALID_SPO2 |
+                              V6_VALID_PPG_QUALITY;
+        }
+
+        if (time.utcValid) rec.gnssValidFlags |= GNSS_VALID_UTC;
+        if (time.disciplined) rec.gnssValidFlags |= GNSS_TIME_DISCIPLINED;
+        if (time.ppsAgeMs <= 2500u) rec.gnssValidFlags |= GNSS_PPS_RECENT;
+        if (snapshot.gnss.fixValid) {
+            rec.gnssLatitudeE7 = static_cast<int32_t>(snapshot.gnss.latitudeDeg * 1e7);
+            rec.gnssLongitudeE7 = static_cast<int32_t>(snapshot.gnss.longitudeDeg * 1e7);
+            rec.gnssValidFlags |= GNSS_VALID_FIX;
+        }
+        if (snapshot.gnss.altitudeValid) {
+            rec.gnssAltitudeDeciM = codec::signedFixed(
+                snapshot.gnss.altitudeMslM, 10.0f);
+            rec.gnssValidFlags |= GNSS_VALID_ALTITUDE;
+        }
+        if (snapshot.gnss.speedValid) {
+            rec.gnssSpeedCentiMps = codec::unsignedFixed(
+                snapshot.gnss.speedMps, 100.0f);
+            rec.gnssValidFlags |= GNSS_VALID_SPEED;
+        }
+        if (snapshot.gnss.courseValid) {
+            rec.gnssCourseDeciDeg = codec::unsignedFixed(
+                snapshot.gnss.courseDeg, 10.0f);
+            rec.gnssValidFlags |= GNSS_VALID_COURSE;
+        }
+        if (snapshot.gnss.hdopValid) {
+            rec.gnssHdopCenti = codec::unsignedFixed(
+                snapshot.gnss.hdop, 100.0f);
+            rec.gnssValidFlags |= GNSS_VALID_HDOP;
+        }
+        rec.gnssAgeSeconds = codec::ageSeconds(snapshot.gnss.ageMs);
+        rec.gnssSatellites = static_cast<uint8_t>(
+            snapshot.gnss.satellites > UINT8_MAX
+                ? UINT8_MAX : snapshot.gnss.satellites);
+
+        if (snapshot.bme690.tphValid) {
+            rec.bme690TemperatureCentiC = codec::signedFixed(
+                snapshot.bme690.temperatureC, 100.0f);
+            rec.bme690HumidityCentiRh = codec::unsignedFixed(
+                snapshot.bme690.humidityRh, 100.0f);
+            rec.bme690PressureDeciHpa = codec::unsignedFixed(
+                snapshot.bme690.pressureHpa, 10.0f);
+            rec.validFlags |= V6_VALID_BME690_TPH;
+        }
+        if (snapshot.bme690.gasValid) {
+            rec.bme690GasResistanceOhm = codec::unsignedWhole(
+                snapshot.bme690.gasResistanceOhm);
+            rec.validFlags |= V6_VALID_BME690_GAS;
+        }
+        rec.bme690GasIndex = snapshot.bme690.gasIndex;
+        rec.bme690Status = snapshot.bme690.status;
+        rec.i2cLockTimeouts = codec::count16(
+            snapshot.telemetry.i2c.lockTimeouts);
+        rec.i2cCommunicationErrors = codec::count16(
+            snapshot.telemetry.i2c.communicationErrors);
+        rec.droppedRecords = codec::count16(walStats_.droppedRecords);
+        rec.formatTag = codec::SENSOR_RECORD_V6_TAG;
+        status = wal_.append(rec, superblock_, walStats_);
+    }
+
     const uint32_t droppedRecords = walStats_.droppedRecords;
     const bool reportFull = status == FramWalStatus::Full &&
         (lastRingFullEventMs_ == 0 || uptimeMs - lastRingFullEventMs_ >= 60000u);
@@ -537,14 +704,15 @@ bool StorageManager::initSdCard() {
 }
 
 bool StorageManager::createNewSdFile(const String& targetDate) {
+    const uint16_t schemaVersion = activeCsvSchemaVersion();
     if (hal::Clock::isTimeSet()) {
         currentDateString_ = (targetDate.length() > 0) ? targetDate : hal::Clock::getFormattedDate();
-        currentFilename_ = "/log_" + currentDateString_ + "_v" + String(CSV_SCHEMA_VERSION) + ".csv";
+        currentFilename_ = "/log_" + currentDateString_ + "_v" + String(schemaVersion) + ".csv";
     } else {
         currentDateString_ = "";
         for (int i = 0; i < 1000; i++) {
             char filename[32];
-            snprintf(filename, sizeof(filename), "/log_boot_%03d_v%u.csv", i, CSV_SCHEMA_VERSION);
+            snprintf(filename, sizeof(filename), "/log_boot_%03d_v%u.csv", i, schemaVersion);
             if (!SD.exists(filename)) {
                 currentFilename_ = filename;
                 break;
@@ -560,18 +728,27 @@ bool StorageManager::createNewSdFile(const String& targetDate) {
     }
     
     if (!exists) {
-        writeCsvHeader(file);
+        writeCsvHeader(file, schemaVersion);
     }
     file.close();
     services::Logger::info("StorageMgr", "Target SD log file: %s", currentFilename_.c_str());
     return true;
 }
 
-void StorageManager::writeCsvHeader(File& file) {
+uint16_t StorageManager::activeCsvSchemaVersion() const {
+    return superblock_.formatVersion == LEGACY_FRAM_FORMAT_VERSION
+        ? LEGACY_CSV_SCHEMA_VERSION : CSV_SCHEMA_VERSION;
+}
+
+void StorageManager::writeCsvHeader(File& file, uint16_t schemaVersion) {
+    if (schemaVersion == CSV_SCHEMA_VERSION) {
+        file.println(CSV_V7_HEADER);
+        return;
+    }
     file.println("Sequence,UptimeMs,SampleMonotonicUs,TimestampUtc,TimeSource,CO2_ppm,Temp_C,RH_pct,Pressure_hPa,VOC_Index,NOx_Index,HR_bpm,SpO2_pct,BMP_Altitude_m,GNSS_Lat_deg,GNSS_Lon_deg,GNSS_AltMSL_m,GNSS_Speed_mps,GNSS_Course_deg,GNSS_Satellites,GNSS_HDOP,GNSS_FixValid,GNSS_TimeValid,GNSS_AgeMs,PPS_AgeMs,GNSS_TimeDisciplined,ValidFlags,BME690_Temp_C,BME690_RH_pct,BME690_Pressure_hPa,BME690_GasResistance_Ohm,BME690_GasValid,BME690_HeaterStable,BME690_GasIndex,BME690_StatusHex,CO2_Valid,CO2_AgeMs,SCD41_State");
 }
 
-void StorageManager::formatCsvLine(char* buffer, size_t size, const SensorRecordV5& rec) {
+void StorageManager::formatCsvLineV5(char* buffer, size_t size, const SensorRecordV5& rec) {
     float temp = (rec.validFlags & VALID_TEMP) ? rec.temperatureC : NAN;
     float rh = (rec.validFlags & VALID_HUMIDITY) ? rec.humidityRh : NAN;
     float press = (rec.validFlags & VALID_PRESSURE) ? rec.pressureHpa : NAN;
@@ -659,7 +836,8 @@ void StorageManager::formatCsvLine(char* buffer, size_t size, const SensorRecord
 }
 
 bool StorageManager::appendAndVerifyCsvLine(const char* line, size_t lineLength) {
-    if (line == nullptr || lineLength == 0 || lineLength >= 512) return false;
+    if (line == nullptr || lineLength == 0 ||
+        lineLength >= MAX_CSV_LINE_LENGTH) return false;
 
     uint32_t originalSize = 0;
     uint32_t expectedStart = 0;
@@ -669,8 +847,9 @@ bool StorageManager::appendAndVerifyCsvLine(const char* line, size_t lineLength)
     if (!inspect) return false;
     originalSize = inspect.size();
 
-    char tail[513] {};
-    const uint32_t readStart = originalSize > 512 ? originalSize - 512 : 0;
+    char tail[MAX_CSV_LINE_LENGTH + 1] {};
+    const uint32_t readStart = originalSize > MAX_CSV_LINE_LENGTH
+        ? originalSize - MAX_CSV_LINE_LENGTH : 0;
     const size_t requested = originalSize - readStart;
     if (!inspect.seek(readStart) || inspect.read(
             reinterpret_cast<uint8_t*>(tail), requested) != requested) {
@@ -717,7 +896,7 @@ bool StorageManager::appendAndVerifyCsvLine(const char* line, size_t lineLength)
         if (verify) verify.close();
         return false;
     }
-    char actual[513] {};
+    char actual[MAX_CSV_LINE_LENGTH + 1] {};
     const size_t expectedBytes = lineLength + 1;
     const size_t actualBytes = verify.read(reinterpret_cast<uint8_t*>(actual), expectedBytes);
     verify.close();
@@ -789,8 +968,14 @@ bool StorageManager::quarantineCorruptTail(uint16_t slotIndex, uint32_t uptimeMs
 
     // A transient I2C error may have caused the first failed peek. Never
     // quarantine a slot that has become structurally readable meanwhile.
-    PersistentRecordV5 retry {};
-    const FramWalStatus retryStatus = wal_.peek(superblock_, retry);
+    FramWalStatus retryStatus = FramWalStatus::Incompatible;
+    if (superblock_.formatVersion == LEGACY_FRAM_FORMAT_VERSION) {
+        PersistentRecordV5 retry {};
+        retryStatus = wal_.peekLegacy(superblock_, retry);
+    } else if (superblock_.formatVersion == FRAM_FORMAT_VERSION) {
+        PersistentRecordV6 retry {};
+        retryStatus = wal_.peek(superblock_, retry);
+    }
     if (retryStatus == FramWalStatus::Ready) {
         services::Logger::warn("StorageMgr",
             "FRAM slot %u became readable; deferring to normal flush", slotIndex);
@@ -878,13 +1063,14 @@ void StorageManager::flushPendingToSd() {
             snprintf(buf, sizeof(buf), "%04d%02d%02d", 
                      timeinfoShifted.tm_year + 1900, timeinfoShifted.tm_mon + 1, timeinfoShifted.tm_mday);
             String tomorrow = String(buf);
-            String tomorrowFilename = "/log_" + tomorrow + "_v" + String(CSV_SCHEMA_VERSION) + ".csv";
+            const uint16_t schemaVersion = activeCsvSchemaVersion();
+            String tomorrowFilename = "/log_" + tomorrow + "_v" + String(schemaVersion) + ".csv";
             
             if (!SD.exists(tomorrowFilename)) {
                 services::Logger::info("StorageMgr", "Pre-creating tomorrow's file: %s", tomorrowFilename.c_str());
                 File file = SD.open(tomorrowFilename.c_str(), FILE_WRITE);
                 if (file) {
-                    writeCsvHeader(file);
+                    writeCsvHeader(file, schemaVersion);
                     file.close();
                 } else {
                     services::Logger::error("StorageMgr", "Failed to pre-create: %s", tomorrowFilename.c_str());
@@ -904,23 +1090,49 @@ void StorageManager::flushPendingToSd() {
     uint16_t quarantinedCount = 0;
     while (handledCount < pendingCount) {
         const bool resumedTransaction = sdTransaction_.active();
-        PersistentRecordV5 rec {};
-        FramWalStatus walStatus = wal_.peek(superblock_, rec);
-        if (walStatus != FramWalStatus::Ready) {
+        char line[MAX_CSV_LINE_LENGTH] {};
+        uint32_t sequence = 0;
+        bool lineFormatted = false;
+        FramWalStatus walStatus = FramWalStatus::Incompatible;
+
+        if (superblock_.formatVersion == LEGACY_FRAM_FORMAT_VERSION) {
+            PersistentRecordV5 rec {};
+            walStatus = wal_.peekLegacy(superblock_, rec);
             if (walStatus == FramWalStatus::Corrupt) {
                 // Require repeated structural failure before treating bytes as
                 // corrupt. I/O failures are never converted into data loss.
                 PersistentRecordV5 retry {};
-                walStatus = wal_.peek(superblock_, retry);
-                if (walStatus == FramWalStatus::Ready) {
-                    rec = retry;
-                } else if (walStatus == FramWalStatus::Corrupt &&
-                           quarantineCorruptTail(superblock_.readIndex, millis())) {
-                    ++handledCount;
-                    ++quarantinedCount;
-                    continue;
-                }
+                walStatus = wal_.peekLegacy(superblock_, retry);
+                if (walStatus == FramWalStatus::Ready) rec = retry;
             }
+            if (walStatus == FramWalStatus::Ready) {
+                if (rec.header.length == LEGACY_SENSOR_RECORD_V5_SIZE) {
+                    rec.data.co2AgeSeconds = UINT16_MAX;
+                    rec.data.validFlags &= ~SCD41_STATE_MASK;
+                }
+                sequence = rec.header.sequence;
+                formatCsvLineV5(line, sizeof(line), rec.data);
+                lineFormatted = line[0] != '\0';
+            }
+        } else if (superblock_.formatVersion == FRAM_FORMAT_VERSION) {
+            PersistentRecordV6 rec {};
+            walStatus = wal_.peek(superblock_, rec);
+            if (walStatus == FramWalStatus::Corrupt) {
+                PersistentRecordV6 retry {};
+                walStatus = wal_.peek(superblock_, retry);
+                if (walStatus == FramWalStatus::Ready) rec = retry;
+            }
+            if (walStatus == FramWalStatus::Ready) {
+                sequence = rec.header.sequence;
+                lineFormatted = formatCsvLineV7(line, sizeof(line), rec.data);
+            }
+        }
+
+        if (walStatus == FramWalStatus::Corrupt &&
+            quarantineCorruptTail(superblock_.readIndex, millis())) {
+            ++handledCount;
+            ++quarantinedCount;
+            continue;
         }
         if (walStatus != FramWalStatus::Ready) {
             services::Logger::error("StorageMgr",
@@ -928,16 +1140,15 @@ void StorageManager::flushPendingToSd() {
                 superblock_.readIndex, static_cast<unsigned>(walStatus));
             break;
         }
-
-        if (rec.header.length == LEGACY_SENSOR_RECORD_V5_SIZE) {
-            rec.data.co2AgeSeconds = UINT16_MAX;
-            rec.data.validFlags &= ~SCD41_STATE_MASK;
+        if (!lineFormatted) {
+            services::Logger::error("StorageMgr",
+                "CSV formatting failed at sequence %lu; FRAM record retained",
+                static_cast<unsigned long>(sequence));
+            break;
         }
-        char line[512];
-        formatCsvLine(line, sizeof(line), rec.data);
         const size_t lineLength = strlen(line);
         if (sdTransaction_.active()) {
-            if (sdTransaction_.current().sequence != rec.header.sequence ||
+            if (sdTransaction_.current().sequence != sequence ||
                 sdTransaction_.current().lineLength != lineLength ||
                 sdTransaction_.current().lineCrc16 != calculateCrc16(
                     reinterpret_cast<const uint8_t*>(line), lineLength)) {
@@ -948,12 +1159,12 @@ void StorageManager::flushPendingToSd() {
                 break;
             }
             currentFilename_ = sdTransaction_.current().filename;
-        } else if (sdTransaction_.start(rec.header.sequence, currentFilename_.c_str(),
+        } else if (sdTransaction_.start(sequence, currentFilename_.c_str(),
                        reinterpret_cast<const uint8_t*>(line), lineLength) !=
                    FramWalStatus::Ready) {
             services::Logger::error("StorageMgr",
                 "Failed to persist SD transaction for sequence %lu",
-                static_cast<unsigned long>(rec.header.sequence));
+                static_cast<unsigned long>(sequence));
             framAvailable_ = false;
             framReadOnly_ = true;
             break;
@@ -962,26 +1173,26 @@ void StorageManager::flushPendingToSd() {
         if (lineLength == 0 || !appendAndVerifyCsvLine(line, lineLength)) {
             services::Logger::error("StorageMgr",
                 "SD append verification failed at sequence %lu; FRAM record retained",
-                static_cast<unsigned long>(rec.header.sequence));
+                static_cast<unsigned long>(sequence));
             sdAvailable_ = false;
             appendEvent(EventCode::SdWriteFailed,
-                static_cast<int32_t>(rec.header.sequence), millis());
+                static_cast<int32_t>(sequence), millis());
             break;
         }
 
-        walStatus = wal_.consume(rec.header.sequence, superblock_, walStats_);
+        walStatus = wal_.consume(sequence, superblock_, walStats_);
         if (walStatus != FramWalStatus::Ready) {
             services::Logger::error("StorageMgr",
                 "SD is verified but FRAM consume checkpoint failed at sequence %lu",
-                static_cast<unsigned long>(rec.header.sequence));
+                static_cast<unsigned long>(sequence));
             framAvailable_ = false;
             framReadOnly_ = true;
             break;
         }
-        if (sdTransaction_.finish(rec.header.sequence) != FramWalStatus::Ready) {
+        if (sdTransaction_.finish(sequence) != FramWalStatus::Ready) {
             services::Logger::error("StorageMgr",
                 "FRAM consumed but SD transaction cleanup failed at sequence %lu",
-                static_cast<unsigned long>(rec.header.sequence));
+                static_cast<unsigned long>(sequence));
             framAvailable_ = false;
             framReadOnly_ = true;
             break;

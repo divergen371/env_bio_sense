@@ -3,6 +3,7 @@
 #include <FS.h>
 #include <SPIFFS.h>
 #include "hal/clock.h"
+#include "hal/i2c_bus.h"
 #include <ArduinoJson.h>
 #include <SD.h>
 #include "services/weather_service.h"
@@ -52,6 +53,8 @@ const char* htmlContent = R"rawliteral(
   <div style="margin-bottom: 15px; padding: 10px; background-color: #f1f8ff; border: 1px solid #c8e1ff; border-radius: 4px; font-size: 14px;">
     <strong>SCD41 diagnostics:</strong>
     <a href="/api/events" download="scd41_events.json" style="margin-left: 8px;">Download compact event history</a>
+    <span id="i2cStatus" style="margin-left: 8px;"></span>
+    <a href="/api/i2c" target="_blank" style="margin-left: 8px;">I²C detail</a>
     <br><small>Only state changes and recovery results are retained in FRAM; continuous serial output is not stored.</small>
   </div>
   
@@ -435,6 +438,9 @@ const char* htmlContent = R"rawliteral(
           alertDiv.style.border = '1px solid #2e7d32';
           textSpan.innerText = `${data.pending} / ${data.max} (${pct}%)`;
         }
+
+        const i2cStatus = document.getElementById('i2cStatus');
+        i2cStatus.innerText = `I²C: lock ${data.i2c_lock_timeouts}, communication ${data.i2c_communication_errors}`;
         
         // SCD41 calibration recommendation logic has been removed.
       } catch (e) {
@@ -820,9 +826,45 @@ void WebServerService::setupRoutes() {
         response += "\"dropped_records\":" + String(walStats.droppedRecords) + ",";
         response += "\"high_water_records\":" + String(walStats.highWaterRecords) + ",";
         response += "\"event_count\":" + String(storageManager_.getEventCount()) + ",";
-        response += "\"event_max\":" + String(storageManager_.getMaxEventRecords());
+        response += "\"event_max\":" + String(storageManager_.getMaxEventRecords()) + ",";
+        const hal::I2cDiagnosticCounters i2c = hal::I2cBus::diagnosticTotals();
+        response += "\"i2c_lock_timeouts\":" + String(i2c.lockTimeouts) + ",";
+        response += "\"i2c_communication_errors\":" + String(i2c.communicationErrors);
         response += "}";
         request->send(200, "application/json", response);
+    });
+
+    server_->on("/api/i2c", HTTP_GET, [](AsyncWebServerRequest *request){
+        AsyncResponseStream* response = request->beginResponseStream("application/json");
+        const hal::I2cDiagnosticCounters totals = hal::I2cBus::diagnosticTotals();
+        response->printf("{\"lock_timeouts\":%lu,\"communication_errors\":%lu,\"breakdown\":[",
+            static_cast<unsigned long>(totals.lockTimeouts),
+            static_cast<unsigned long>(totals.communicationErrors));
+        bool first = true;
+        for (uint8_t deviceIndex = 0;
+             deviceIndex < static_cast<uint8_t>(hal::I2cDevice::Count);
+             ++deviceIndex) {
+            for (uint8_t operationIndex = 0;
+                 operationIndex < static_cast<uint8_t>(hal::I2cOperation::Count);
+                 ++operationIndex) {
+                const auto device = static_cast<hal::I2cDevice>(deviceIndex);
+                const auto operation = static_cast<hal::I2cOperation>(operationIndex);
+                const hal::I2cDiagnosticCounters counters =
+                    hal::I2cBus::diagnostics(device, operation);
+                if (counters.lockTimeouts == 0 && counters.communicationErrors == 0) {
+                    continue;
+                }
+                if (!first) response->print(',');
+                first = false;
+                response->printf(
+                    "{\"device\":\"%s\",\"operation\":\"%s\",\"lock_timeouts\":%lu,\"communication_errors\":%lu}",
+                    hal::i2cDeviceName(device), hal::i2cOperationName(operation),
+                    static_cast<unsigned long>(counters.lockTimeouts),
+                    static_cast<unsigned long>(counters.communicationErrors));
+            }
+        }
+        response->print("]}");
+        request->send(response);
     });
 
     server_->on("/api/events", HTTP_GET, [this](AsyncWebServerRequest *request){
@@ -857,6 +899,14 @@ void WebServerService::setupRoutes() {
                 response->printf(",\"raw_error\":%u,\"age_ms\":", rawError);
                 if (ageSeconds == UINT16_MAX) response->print("null");
                 else response->printf("%lu", static_cast<unsigned long>(ageSeconds) * 1000ul);
+            } else if (events[i].eventCode == static_cast<uint16_t>(storage::EventCode::I2cLockTimeout) ||
+                       events[i].eventCode == static_cast<uint16_t>(storage::EventCode::I2cCommunicationError)) {
+                const uint32_t packed = static_cast<uint32_t>(events[i].detail);
+                const auto device = static_cast<hal::I2cDevice>(packed & 0xFFu);
+                const auto operation = static_cast<hal::I2cOperation>((packed >> 8u) & 0xFFu);
+                response->printf(",\"device\":\"%s\",\"operation\":\"%s\",\"delta\":%u",
+                    hal::i2cDeviceName(device), hal::i2cOperationName(operation),
+                    static_cast<unsigned>((packed >> 16u) & 0xFFFFu));
             }
             response->print('}');
         }
