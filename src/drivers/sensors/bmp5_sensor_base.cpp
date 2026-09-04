@@ -13,7 +13,8 @@ Bmp5SensorBase::Bmp5SensorBase() {}
 
 // --- I2C Wrapper Functions ---
 int8_t Bmp5SensorBase::i2c_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t length, void *intf_ptr) {
-    hal::I2cLockGuard lock(100);
+    hal::I2cLockGuard lock(hal::I2cDevice::Bmp581,
+                           hal::I2cOperation::Read, 100);
     if (!lock.acquired()) return BMP5_E_COM_FAIL;
 
     uint8_t dev_addr = *(uint8_t*)intf_ptr;
@@ -21,18 +22,33 @@ int8_t Bmp5SensorBase::i2c_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t le
     Wire.beginTransmission(dev_addr);
     Wire.write(reg_addr);
     if (Wire.endTransmission(false) != 0) { // Repeated Start
+        hal::I2cBus::noteCommunicationError(hal::I2cDevice::Bmp581,
+                                            hal::I2cOperation::Read);
         return BMP5_E_COM_FAIL;
     }
-    
-    Wire.requestFrom((uint8_t)dev_addr, (size_t)length);
+
+    const size_t received = Wire.requestFrom((uint8_t)dev_addr, (size_t)length);
+    if (received != length || static_cast<uint32_t>(Wire.available()) < length) {
+        hal::I2cBus::noteCommunicationError(hal::I2cDevice::Bmp581,
+                                            hal::I2cOperation::Read);
+        while (Wire.available() > 0) Wire.read();
+        return BMP5_E_COM_FAIL;
+    }
     for (uint32_t i = 0; i < length; i++) {
-        reg_data[i] = Wire.read();
+        const int value = Wire.read();
+        if (value < 0) {
+            hal::I2cBus::noteCommunicationError(hal::I2cDevice::Bmp581,
+                                                hal::I2cOperation::Read);
+            return BMP5_E_COM_FAIL;
+        }
+        reg_data[i] = static_cast<uint8_t>(value);
     }
     return BMP5_OK;
 }
 
 int8_t Bmp5SensorBase::i2c_write(uint8_t reg_addr, const uint8_t *reg_data, uint32_t length, void *intf_ptr) {
-    hal::I2cLockGuard lock(100);
+    hal::I2cLockGuard lock(hal::I2cDevice::Bmp581,
+                           hal::I2cOperation::Write, 100);
     if (!lock.acquired()) return BMP5_E_COM_FAIL;
 
     uint8_t dev_addr = *(uint8_t*)intf_ptr;
@@ -43,6 +59,8 @@ int8_t Bmp5SensorBase::i2c_write(uint8_t reg_addr, const uint8_t *reg_data, uint
         Wire.write(reg_data[i]);
     }
     if (Wire.endTransmission() != 0) {
+        hal::I2cBus::noteCommunicationError(hal::I2cDevice::Bmp581,
+                                            hal::I2cOperation::Write);
         return BMP5_E_COM_FAIL;
     }
     return BMP5_OK;

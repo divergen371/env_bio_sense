@@ -19,7 +19,8 @@ FramStorage::FramStorage() : chipCount_(0) {
 bool FramStorage::begin() {
     services::Logger::info("FramStorage", "Scanning for MB85RC256V FRAM...");
     
-    hal::I2cLockGuard lock(500);
+    hal::I2cLockGuard lock(hal::I2cDevice::Fram,
+                           hal::I2cOperation::Init, 500);
     if (!lock.acquired()) {
         services::Logger::error("FramStorage", "Failed to acquire I2C lock for scanning");
         return false;
@@ -51,7 +52,8 @@ bool FramStorage::begin() {
 bool FramStorage::read(uint16_t address, uint8_t* buffer, size_t length) {
     if (chipCount_ == 0 || (uint32_t)address + length > getCapacity()) return false;
 
-    hal::I2cLockGuard lock(100);
+    hal::I2cLockGuard lock(hal::I2cDevice::Fram,
+                           hal::I2cOperation::Read, 100);
     if (!lock.acquired()) return false;
 
     size_t bytesRead = 0;
@@ -77,12 +79,17 @@ bool FramStorage::read(uint16_t address, uint8_t* buffer, size_t length) {
         Wire.write((uint8_t)(physicalAddr >> 8));
         Wire.write((uint8_t)(physicalAddr & 0xFF));
         if (Wire.endTransmission(false) != 0) {
+            hal::I2cBus::noteCommunicationError(hal::I2cDevice::Fram,
+                                                hal::I2cOperation::Read);
             services::Logger::warn("FramStorage", "I2C error during read at logical 0x%05X", currentLogicalAddr);
             return false;
         }
 
         uint8_t bytesReceived = Wire.requestFrom((uint16_t)targetI2cAddr, (uint8_t)chunk, true);
         if (bytesReceived != chunk) {
+            hal::I2cBus::noteCommunicationError(hal::I2cDevice::Fram,
+                                                hal::I2cOperation::Read);
+            while (Wire.available() > 0) Wire.read();
             services::Logger::warn("FramStorage", "I2C read mismatch: requested %u, got %u", chunk, bytesReceived);
             return false;
         }
@@ -91,6 +98,8 @@ bool FramStorage::read(uint16_t address, uint8_t* buffer, size_t length) {
             if (Wire.available()) {
                 buffer[bytesRead + i] = Wire.read();
             } else {
+                hal::I2cBus::noteCommunicationError(hal::I2cDevice::Fram,
+                                                    hal::I2cOperation::Read);
                 return false;
             }
         }
@@ -103,7 +112,8 @@ bool FramStorage::read(uint16_t address, uint8_t* buffer, size_t length) {
 bool FramStorage::write(uint16_t address, const uint8_t* data, size_t length) {
     if (chipCount_ == 0 || (uint32_t)address + length > getCapacity()) return false;
 
-    hal::I2cLockGuard lock(100);
+    hal::I2cLockGuard lock(hal::I2cDevice::Fram,
+                           hal::I2cOperation::Write, 100);
     if (!lock.acquired()) return false;
 
     size_t bytesWritten = 0;
@@ -134,6 +144,8 @@ bool FramStorage::write(uint16_t address, const uint8_t* data, size_t length) {
         }
 
         if (Wire.endTransmission() != 0) {
+            hal::I2cBus::noteCommunicationError(hal::I2cDevice::Fram,
+                                                hal::I2cOperation::Write);
             services::Logger::warn("FramStorage", "I2C error during write at logical 0x%05X", currentLogicalAddr);
             return false;
         }

@@ -11,7 +11,8 @@ namespace sensors {
 static constexpr uint8_t BME690_I2C_ADDR = 0x77;
 
 BME69X_INTF_RET_TYPE bme690_i2c_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t len, void *intf_ptr) {
-    hal::I2cLockGuard lock(50);
+    hal::I2cLockGuard lock(hal::I2cDevice::Bme690,
+                           hal::I2cOperation::Read, 50);
     if (!lock.acquired()) {
         return BME69X_E_COM_FAIL;
     }
@@ -19,11 +20,16 @@ BME69X_INTF_RET_TYPE bme690_i2c_read(uint8_t reg_addr, uint8_t *reg_data, uint32
     Wire.beginTransmission(BME690_I2C_ADDR);
     Wire.write(reg_addr);
     if (Wire.endTransmission() != 0) {
+        hal::I2cBus::noteCommunicationError(hal::I2cDevice::Bme690,
+                                            hal::I2cOperation::Read);
         return BME69X_E_COM_FAIL;
     }
 
     uint8_t bytesReceived = Wire.requestFrom((uint16_t)BME690_I2C_ADDR, (uint8_t)len, true);
     if (bytesReceived != len) {
+        hal::I2cBus::noteCommunicationError(hal::I2cDevice::Bme690,
+                                            hal::I2cOperation::Read);
+        while (Wire.available() > 0) Wire.read();
         return BME69X_E_COM_FAIL;
     }
 
@@ -31,6 +37,8 @@ BME69X_INTF_RET_TYPE bme690_i2c_read(uint8_t reg_addr, uint8_t *reg_data, uint32
         if (Wire.available()) {
             reg_data[i] = Wire.read();
         } else {
+            hal::I2cBus::noteCommunicationError(hal::I2cDevice::Bme690,
+                                                hal::I2cOperation::Read);
             return BME69X_E_COM_FAIL;
         }
     }
@@ -39,7 +47,8 @@ BME69X_INTF_RET_TYPE bme690_i2c_read(uint8_t reg_addr, uint8_t *reg_data, uint32
 }
 
 BME69X_INTF_RET_TYPE bme690_i2c_write(uint8_t reg_addr, const uint8_t *reg_data, uint32_t len, void *intf_ptr) {
-    hal::I2cLockGuard lock(50);
+    hal::I2cLockGuard lock(hal::I2cDevice::Bme690,
+                           hal::I2cOperation::Write, 50);
     if (!lock.acquired()) {
         return BME69X_E_COM_FAIL;
     }
@@ -50,6 +59,8 @@ BME69X_INTF_RET_TYPE bme690_i2c_write(uint8_t reg_addr, const uint8_t *reg_data,
         Wire.write(reg_data[i]);
     }
     if (Wire.endTransmission() != 0) {
+        hal::I2cBus::noteCommunicationError(hal::I2cDevice::Bme690,
+                                            hal::I2cOperation::Write);
         return BME69X_E_COM_FAIL;
     }
 

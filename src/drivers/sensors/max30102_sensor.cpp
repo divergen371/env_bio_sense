@@ -12,7 +12,8 @@ bool Max30102Sensor::begin() {
     services::Logger::info("MAX30102", "Initializing MAX30102...");
     state_ = core::DeviceState::Initializing;
     
-    hal::I2cLockGuard lock(100);
+    hal::I2cLockGuard lock(hal::I2cDevice::Max30102,
+                           hal::I2cOperation::Init, 100);
     if (!lock.acquired()) {
         services::Logger::error("MAX30102", "Failed to acquire I2C lock during begin().");
         state_ = core::DeviceState::Error;
@@ -24,6 +25,8 @@ bool Max30102Sensor::begin() {
     // begin(wirePort, i2cSpeed, i2caddr)
     // 第2引数の I2C_SPEED_STANDARD = 100kHz, I2C_SPEED_FAST = 400kHz
     if (!particleSensor_.begin(Wire, I2C_SPEED_STANDARD, 0x57)) {
+        hal::I2cBus::noteCommunicationError(hal::I2cDevice::Max30102,
+                                            hal::I2cOperation::Init);
         services::Logger::error("MAX30102", "MAX30102 was not found. Please check wiring/power.");
         state_ = core::DeviceState::Error;
         lastError_ = core::ErrorCode::InitFailed;
@@ -54,7 +57,8 @@ void Max30102Sensor::update(uint32_t nowMs) {
         return;
     }
 
-    hal::I2cLockGuard lock(10); // PPGは高速サンプリングなのでタイムアウトは短く設定 (10ms)
+    hal::I2cLockGuard lock(hal::I2cDevice::Max30102,
+                           hal::I2cOperation::Read, 10);
     if (!lock.acquired()) {
         // OLED描画などでI2Cがロック中の場合はスキップして次回に回す
         return;

@@ -29,7 +29,8 @@ bool Scd41Sensor::begin() {
     // SCD41 は Periodic Measurement 実行中は他のコマンドを受け付けない場合があるため、
     // 念のため一度停止してから初期化する
     {
-        hal::I2cLockGuard lock(100);
+        hal::I2cLockGuard lock(hal::I2cDevice::Scd41,
+                               hal::I2cOperation::Init, 100);
         if (lock.acquired()) {
             error = scd4x_.stopPeriodicMeasurement();
         } else {
@@ -50,7 +51,8 @@ bool Scd41Sensor::begin() {
     // センサーのシリアルナンバーを取得して通信確認
     uint16_t serial0, serial1, serial2;
     {
-        hal::I2cLockGuard lock(100);
+        hal::I2cLockGuard lock(hal::I2cDevice::Scd41,
+                               hal::I2cOperation::Init, 100);
         if (lock.acquired()) {
             error = scd4x_.getSerialNumber(serial0, serial1, serial2);
         } else {
@@ -76,7 +78,8 @@ bool Scd41Sensor::begin() {
 
     // ASC (Automatic Self-Calibration) の無効化と、筐体内の自己発熱を考慮した温度オフセット(2.0℃)の設定
     {
-        hal::I2cLockGuard lock(100);
+        hal::I2cLockGuard lock(hal::I2cDevice::Scd41,
+                               hal::I2cOperation::Init, 100);
         if (lock.acquired()) {
             error = scd4x_.setAutomaticSelfCalibration(1);
             if (error) {
@@ -102,7 +105,8 @@ bool Scd41Sensor::begin() {
 
     // Periodic Measurement 開始 (測定間隔は約5秒)
     {
-        hal::I2cLockGuard lock(100);
+        hal::I2cLockGuard lock(hal::I2cDevice::Scd41,
+                               hal::I2cOperation::Init, 100);
         if (lock.acquired()) {
             error = scd4x_.startPeriodicMeasurement();
         } else {
@@ -183,7 +187,8 @@ bool Scd41Sensor::performForcedRecalibration(uint16_t referenceCo2Ppm, Scd41FrcR
 
     // 1. Stop periodic measurement
     {
-        hal::I2cLockGuard lock(100);
+        hal::I2cLockGuard lock(hal::I2cDevice::Scd41,
+                               hal::I2cOperation::Maintenance, 100);
         if (lock.acquired()) {
             error = scd4x_.stopPeriodicMeasurement();
         } else {
@@ -209,7 +214,8 @@ bool Scd41Sensor::performForcedRecalibration(uint16_t referenceCo2Ppm, Scd41FrcR
     uint16_t rawFrc = 0;
     bool frcLockAcquired = false;
     {
-        hal::I2cLockGuard lock(100);
+        hal::I2cLockGuard lock(hal::I2cDevice::Scd41,
+                               hal::I2cOperation::Maintenance, 100);
         if (lock.acquired()) {
             frcLockAcquired = true;
             error = scd4x_.performForcedRecalibration(referenceCo2Ppm, rawFrc);
@@ -254,7 +260,8 @@ bool Scd41Sensor::performForcedRecalibration(uint16_t referenceCo2Ppm, Scd41FrcR
     uint16_t restartError = 0;
     bool restartLockAcquired = false;
     {
-        hal::I2cLockGuard lock(100);
+        hal::I2cLockGuard lock(hal::I2cDevice::Scd41,
+                               hal::I2cOperation::Maintenance, 100);
         if (lock.acquired()) {
             restartLockAcquired = true;
             restartError = scd4x_.startPeriodicMeasurement();
@@ -295,7 +302,8 @@ bool Scd41Sensor::factoryResetAndReconfigure() {
     uint16_t beforeAsc = 0;
     
     {
-        hal::I2cLockGuard lock(100);
+        hal::I2cLockGuard lock(hal::I2cDevice::Scd41,
+                               hal::I2cOperation::Maintenance, 100);
         if (lock.acquired()) {
             scd4x_.getTemperatureOffset(beforeOffset);
             scd4x_.getAutomaticSelfCalibration(beforeAsc);
@@ -311,7 +319,8 @@ bool Scd41Sensor::factoryResetAndReconfigure() {
     delay(500);
 
     {
-        hal::I2cLockGuard lock(100);
+        hal::I2cLockGuard lock(hal::I2cDevice::Scd41,
+                               hal::I2cOperation::Maintenance, 100);
         if (lock.acquired()) {
             error = scd4x_.performFactoryReset();
         } else {
@@ -336,7 +345,8 @@ bool Scd41Sensor::factoryResetAndReconfigure() {
     services::Logger::info("SCD41", "Factory Reset successful, reconfiguring...");
     
     {
-        hal::I2cLockGuard lock(100);
+        hal::I2cLockGuard lock(hal::I2cDevice::Scd41,
+                               hal::I2cOperation::Maintenance, 100);
         if (lock.acquired()) {
             scd4x_.setAutomaticSelfCalibration(1);
             scd4x_.setTemperatureOffset(2.0f);
@@ -395,7 +405,8 @@ bool Scd41Sensor::beginRecovery(uint32_t nowMs) {
 
     uint16_t error = 0;
     {
-        hal::I2cLockGuard lock(100);
+        hal::I2cLockGuard lock(hal::I2cDevice::Scd41,
+                               hal::I2cOperation::Maintenance, 100);
         if (!lock.acquired()) {
             services::Logger::warn("SCD41", "Recovery stop lock timeout");
             markRecoveryFailure(nowMs, Scd41Condition::RecoveryFailed,
@@ -425,7 +436,8 @@ void Scd41Sensor::continueRecovery(uint32_t nowMs) {
 
     uint16_t error = 0;
     {
-        hal::I2cLockGuard lock(100);
+        hal::I2cLockGuard lock(hal::I2cDevice::Scd41,
+                               hal::I2cOperation::Maintenance, 100);
         if (!lock.acquired()) {
             services::Logger::warn("SCD41", "Recovery start lock timeout");
             markRecoveryFailure(nowMs, Scd41Condition::RecoveryFailed,
@@ -490,7 +502,8 @@ void Scd41Sensor::update(uint32_t nowMs) {
     uint16_t error = 0;
 
     {
-        hal::I2cLockGuard lock(100);
+        hal::I2cLockGuard lock(hal::I2cDevice::Scd41,
+                               hal::I2cOperation::Read, 100);
         if (!lock.acquired()) {
             consecutiveErrors_++;
             lastError_ = core::ErrorCode::Timeout;
@@ -503,6 +516,8 @@ void Scd41Sensor::update(uint32_t nowMs) {
     }
 
     if (error) {
+        hal::I2cBus::noteCommunicationError(hal::I2cDevice::Scd41,
+                                            hal::I2cOperation::Read);
         readErrorCount_++;
         consecutiveErrors_++;
         lastError_ = core::ErrorCode::BusError;
@@ -522,7 +537,8 @@ void Scd41Sensor::update(uint32_t nowMs) {
     float humidity = NAN;
 
     {
-        hal::I2cLockGuard lock(100);
+        hal::I2cLockGuard lock(hal::I2cDevice::Scd41,
+                               hal::I2cOperation::Measure, 100);
         if (!lock.acquired()) {
             consecutiveErrors_++;
             lastError_ = core::ErrorCode::Timeout;
@@ -535,6 +551,10 @@ void Scd41Sensor::update(uint32_t nowMs) {
     }
 
     if (error || co2 == 0 || !std::isfinite(temperature) || !std::isfinite(humidity)) {
+        if (error) {
+            hal::I2cBus::noteCommunicationError(hal::I2cDevice::Scd41,
+                                                hal::I2cOperation::Measure);
+        }
         readErrorCount_++;
         consecutiveErrors_++;
         hasValidData_ = false;
@@ -615,10 +635,13 @@ void Scd41Sensor::setAmbientPressure(uint16_t ambientPressureHpa) {
         return;
     }
     
-    hal::I2cLockGuard lock(100);
+    hal::I2cLockGuard lock(hal::I2cDevice::Scd41,
+                           hal::I2cOperation::Write, 100);
     if (lock.acquired()) {
         uint16_t error = scd4x_.setAmbientPressure(ambientPressureHpa);
         if (error) {
+            hal::I2cBus::noteCommunicationError(hal::I2cDevice::Scd41,
+                                                hal::I2cOperation::Write);
             services::Logger::warn("SCD41", "Failed to set ambient pressure: %u hPa", ambientPressureHpa);
         } else {
             lastAmbientPressureHpa_ = ambientPressureHpa;

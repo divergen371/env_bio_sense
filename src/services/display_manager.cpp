@@ -18,7 +18,8 @@ bool DisplayManager::begin() {
     // SSD1306の初期化 (0x3CはOLEDの一般的なI2Cアドレス)
     bool initOk = false;
     {
-        hal::I2cLockGuard lock(100);
+        hal::I2cLockGuard lock(hal::I2cDevice::Oled,
+                               hal::I2cOperation::Init, 100);
         if (lock.acquired()) {
             initOk = display_.begin(SSD1306_SWITCHCAPVCC, 0x3C);
         } else {
@@ -27,6 +28,8 @@ bool DisplayManager::begin() {
     }
 
     if (!initOk) {
+        hal::I2cBus::noteCommunicationError(hal::I2cDevice::Oled,
+                                            hal::I2cOperation::Init);
         Logger::error("DisplayMgr", "SSD1306 allocation failed or not found at 0x3C");
         available_ = false;
         return false;
@@ -41,7 +44,8 @@ bool DisplayManager::begin() {
     display_.println("Initializing...");
     
     {
-        hal::I2cLockGuard lock(100);
+        hal::I2cLockGuard lock(hal::I2cDevice::Oled,
+                               hal::I2cOperation::Write, 100);
         if (lock.acquired()) display_.display();
     }
 
@@ -71,7 +75,8 @@ void DisplayManager::render(const core::SensorSnapshot& snapshot, const core::Sy
             break;
     }
     
-    hal::I2cLockGuard lock(100);
+    hal::I2cLockGuard lock(hal::I2cDevice::Oled,
+                           hal::I2cOperation::Write, 100);
     if (lock.acquired()) {
         display_.display();
     } else {
