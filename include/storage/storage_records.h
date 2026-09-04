@@ -8,6 +8,7 @@ namespace storage {
 constexpr uint32_t FRAM_MAGIC = 0x4652414D; // "FRAM"
 constexpr uint16_t FRAM_FORMAT_VERSION = 5;
 constexpr uint16_t CSV_SCHEMA_VERSION = 6;
+constexpr size_t RECORD_SLOT_SIZE = 128;
 
 enum class EventCode : uint16_t {
     Boot = 0x01,
@@ -24,7 +25,9 @@ enum class EventCode : uint16_t {
     Scd41RecoveryRestarted = 0x25,
     Scd41RecoveryFailed = 0x26,
     Scd41Recovered = 0x27,
-    Scd41DriverError = 0x28
+    Scd41DriverError = 0x28,
+    FramRecordCorrupt = 0x30,
+    FramCheckpointFailed = 0x31
 };
 
 inline const char* eventCodeName(EventCode code) {
@@ -44,6 +47,8 @@ inline const char* eventCodeName(EventCode code) {
         case EventCode::Scd41RecoveryFailed: return "SCD41_RECOVERY_FAILED";
         case EventCode::Scd41Recovered: return "SCD41_RECOVERED";
         case EventCode::Scd41DriverError: return "SCD41_DRIVER_ERROR";
+        case EventCode::FramRecordCorrupt: return "FRAM_RECORD_CORRUPT";
+        case EventCode::FramCheckpointFailed: return "FRAM_CHECKPOINT_FAILED";
     }
     return "UNKNOWN";
 }
@@ -79,6 +84,43 @@ struct FramSuperblock {
     float bmp581CalibSeaLevelHpa;
 
     uint16_t crc16;
+};
+
+// Management data is journaled independently from data slots.  The legacy
+// superblock at 0x0000 remains untouched so a failed first migration never
+// destroys the only usable copy.
+constexpr uint32_t FRAM_CHECKPOINT_MAGIC = 0x43504B54; // "CPKT"
+constexpr uint16_t FRAM_CHECKPOINT_VERSION = 1;
+
+struct FramWalStats {
+    uint32_t droppedRecords;
+    uint16_t highWaterRecords;
+};
+
+struct FramCheckpoint {
+    uint32_t magic;
+    uint16_t checkpointVersion;
+    uint32_t generation;
+    FramSuperblock superblock;
+    FramWalStats stats;
+    uint16_t crc16;
+    uint8_t committed;
+};
+
+constexpr uint32_t FRAM_SD_TRANSACTION_MAGIC = 0x53445458; // "SDTX"
+constexpr uint16_t FRAM_SD_TRANSACTION_VERSION = 1;
+
+struct FramSdTransaction {
+    uint32_t magic;
+    uint16_t transactionVersion;
+    uint32_t generation;
+    uint32_t sequence;
+    uint16_t lineLength;
+    uint16_t lineCrc16;
+    char filename[48];
+    uint8_t active;
+    uint16_t crc16;
+    uint8_t committed;
 };
 
 enum SensorValidFlags : uint32_t {
@@ -177,17 +219,40 @@ struct EventRecord {
     int32_t detail;
 }; // 19 bytes
 
+constexpr uint32_t FRAM_QUARANTINE_MAGIC = 0x51465231; // "QFR1"
+constexpr uint16_t FRAM_QUARANTINE_VERSION = 1;
+
+// Binary recovery evidence written to SD before a corrupt WAL tail is skipped.
+// Parsers may scan for magic to recover later complete entries after a torn SD
+// append. recordCrc16 covers every preceding byte in this structure.
+struct FramQuarantineRecord {
+    uint32_t magic;
+    uint16_t version;
+    uint16_t slotIndex;
+    uint32_t captureBootCount;
+    uint32_t captureUptimeMs;
+    uint16_t rawLength;
+    uint16_t rawCrc16;
+    uint8_t raw[RECORD_SLOT_SIZE];
+    uint16_t recordCrc16;
+};
+
 #pragma pack(pop)
 
 // 定数定義 (アドレスマップ)
 constexpr uint16_t ADDR_SUPERBLOCK    = 0x0000;
+constexpr uint16_t ADDR_CHECKPOINT_A  = 0x0040;
+constexpr uint16_t ADDR_CHECKPOINT_B  = 0x00A0;
+constexpr size_t CHECKPOINT_SLOT_SIZE = 0x0060;
 constexpr uint16_t ADDR_STATE         = 0x0100;
+constexpr uint16_t ADDR_SD_TX_A       = 0x0100;
+constexpr uint16_t ADDR_SD_TX_B       = 0x0180;
+constexpr size_t SD_TX_SLOT_SIZE      = 0x0080;
 constexpr uint16_t ADDR_EVENT_JOURNAL = 0x0200;
 constexpr uint16_t ADDR_RING_BUFFER   = 0x1000;
 
 // 容量とレコードサイズの定義
 constexpr size_t FRAM_CAPACITY        = 65536; // 64KB (32KB x 2)
-constexpr size_t RECORD_SLOT_SIZE     = 128;   // GNSSデータ追加のため128バイトへ拡張
 constexpr size_t RING_BUFFER_SIZE     = FRAM_CAPACITY - ADDR_RING_BUFFER; // 61440 bytes
 constexpr size_t MAX_RECORDS          = RING_BUFFER_SIZE / RECORD_SLOT_SIZE; // 480 records
 
@@ -201,7 +266,15 @@ constexpr uint16_t EVENT_PAYLOAD_SIZE = sizeof(EventRecord) - sizeof(FramRecordH
 constexpr uint16_t LEGACY_SENSOR_RECORD_V5_SIZE = offsetof(SensorRecordV5, co2AgeSeconds);
 
 static_assert(sizeof(PersistentRecordV5) <= RECORD_SLOT_SIZE, "PersistentRecordV5 exceeds RECORD_SLOT_SIZE");
+static_assert(sizeof(FramQuarantineRecord) == 150, "Unexpected quarantine record size");
 static_assert(sizeof(PersistentRecordV5) == RECORD_SLOT_SIZE, "PersistentRecordV5 should fully occupy its slot");
 static_assert(sizeof(EventRecord) <= EVENT_SLOT_SIZE, "EventRecord exceeds EVENT_SLOT_SIZE");
+static_assert(sizeof(FramCheckpoint) <= CHECKPOINT_SLOT_SIZE, "FramCheckpoint exceeds its slot");
+static_assert(ADDR_CHECKPOINT_B + CHECKPOINT_SLOT_SIZE <= ADDR_STATE,
+              "Checkpoint slots overlap persistent state");
+static_assert(sizeof(FramSdTransaction) <= SD_TX_SLOT_SIZE,
+              "FramSdTransaction exceeds its slot");
+static_assert(ADDR_SD_TX_B + SD_TX_SLOT_SIZE <= ADDR_EVENT_JOURNAL,
+              "SD transaction slots overlap event journal");
 
 } // namespace storage

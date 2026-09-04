@@ -815,6 +815,10 @@ void WebServerService::setupRoutes() {
         String response = "{";
         response += "\"pending\":" + String(storageManager_.getPendingCount()) + ",";
         response += "\"max\":" + String(storageManager_.getMaxRecords()) + ",";
+        storage::FramWalStats walStats = storageManager_.getWalStats();
+        response += "\"fram_read_only\":" + String(storageManager_.isFramReadOnly() ? "true" : "false") + ",";
+        response += "\"dropped_records\":" + String(walStats.droppedRecords) + ",";
+        response += "\"high_water_records\":" + String(walStats.highWaterRecords) + ",";
         response += "\"event_count\":" + String(storageManager_.getEventCount()) + ",";
         response += "\"event_max\":" + String(storageManager_.getMaxEventRecords());
         response += "}";

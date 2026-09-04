@@ -7,6 +7,27 @@
 
 namespace services {
 
+core::SensorSnapshot SensorManager::snapshot() const {
+    portENTER_CRITICAL(&publicationMux_);
+    const core::SensorSnapshot copy = publishedSnapshot_;
+    portEXIT_CRITICAL(&publicationMux_);
+    return copy;
+}
+
+core::SystemStatus SensorManager::status() const {
+    portENTER_CRITICAL(&publicationMux_);
+    const core::SystemStatus copy = publishedStatus_;
+    portEXIT_CRITICAL(&publicationMux_);
+    return copy;
+}
+
+void SensorManager::publishSnapshot() {
+    portENTER_CRITICAL(&publicationMux_);
+    publishedSnapshot_ = snapshot_;
+    publishedStatus_ = status_;
+    portEXIT_CRITICAL(&publicationMux_);
+}
+
 bool SensorManager::begin(storage::StorageManager& storageManager) {
     storage_ = &storageManager;
     Logger::info("SensorMgr", "Initializing Sensor Manager...");
@@ -64,6 +85,7 @@ bool SensorManager::begin(storage::StorageManager& storageManager) {
     Logger::info("SensorMgr", "Sensor Manager initialized.");
     
     status_.max30102State = max30102_.state();
+    publishSnapshot();
     
     return true;
 }
@@ -388,6 +410,7 @@ void SensorManager::update(uint32_t nowMs) {
     
     // TimeDisciplinedフラグを反映
     status_.gnss.timeDisciplined = hal::Clock::isDisciplined();
+    publishSnapshot();
 }
 
 } // namespace services

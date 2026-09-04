@@ -36,7 +36,7 @@ bool Max30102Sensor::begin() {
     byte ledBrightness = 10; // 初期値(待機用)
     byte sampleAverage = 4;  // 4サンプル移動平均（ノイズキャンセル強化）
     byte ledMode = 2;        // Red + IR モード
-    byte sampleRate = 400;   // 400Hz設定（sampleAverage=4 により実効 100Hz = 10ms間隔）
+    int sampleRate = 400;    // setup() は実レートを int で受け取る（byte では 400 が 144 に縮退する）
     int pulseWidth = 411;    // 411μs (18-bit 最高分解能)
     int adcRange = 4096;     // 4096 nA フルスケールレンジ
     

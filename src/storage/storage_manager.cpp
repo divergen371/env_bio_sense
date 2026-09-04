@@ -6,8 +6,10 @@
 
 namespace storage {
 
-StorageManager::StorageManager() : sdAvailable_(false), framAvailable_(false), lastSdInitAttempt_(0) {
-    mutex_ = xSemaphoreCreateMutex();
+StorageManager::StorageManager()
+    : wal_(fram_), sdTransaction_(fram_), sdAvailable_(false), framAvailable_(false),
+      lastSdInitAttempt_(0) {
+    mutex_ = xSemaphoreCreateRecursiveMutex();
 }
 
 void StorageManager::forceFlush() {
@@ -26,15 +28,15 @@ void StorageManager::forceFlush() {
     unlock();
 }
 
-void StorageManager::lock() {
+void StorageManager::lock() const {
     if (mutex_) {
-        xSemaphoreTake(mutex_, portMAX_DELAY);
+        xSemaphoreTakeRecursive(mutex_, portMAX_DELAY);
     }
 }
 
-void StorageManager::unlock() {
+void StorageManager::unlock() const {
     if (mutex_) {
-        xSemaphoreGive(mutex_);
+        xSemaphoreGiveRecursive(mutex_);
     }
 }
 
@@ -55,17 +57,44 @@ bool StorageManager::begin() {
 
     framAvailable_ = fram_.begin();
     if (framAvailable_) {
+        initSuperblock();
         if (!loadSuperblock()) {
-            services::Logger::warn("StorageMgr", "Superblock invalid. Initializing FRAM...");
-            initSuperblock();
-            saveSuperblock();
+            framAvailable_ = false;
+            framReadOnly_ = true;
+            services::Logger::error("StorageMgr",
+                "FRAM metadata is not safely writable; preserving all contents read-only");
         } else {
             superblock_.bootCount++;
-            saveSuperblock();
-            services::Logger::info("StorageMgr", "FRAM loaded. Boot count: %u, pending: %u", 
-                superblock_.bootCount, getPendingCount());
+            if (!saveSuperblock()) {
+                framAvailable_ = false;
+                framReadOnly_ = true;
+                services::Logger::error("StorageMgr",
+                    "Failed to commit boot checkpoint; preserving FRAM read-only");
+            } else {
+                const FramWalStatus txStatus =
+                    sdTransaction_.begin(superblock_.lastSdFlushSequence);
+                if (txStatus != FramWalStatus::Ready) {
+                    framAvailable_ = false;
+                    framReadOnly_ = true;
+                    services::Logger::error("StorageMgr",
+                        "SD transaction journal is corrupt; preserving FRAM read-only");
+                } else if (sdTransaction_.active()) {
+                    currentFilename_ = sdTransaction_.current().filename;
+                    services::Logger::warn("StorageMgr",
+                        "Resuming SD transaction seq=%lu path=%s",
+                        static_cast<unsigned long>(sdTransaction_.current().sequence),
+                        currentFilename_.c_str());
+                }
+                services::Logger::info("StorageMgr",
+                    "FRAM WAL loaded. boot=%u pending=%u dropped=%lu high_water=%u",
+                    superblock_.bootCount, getPendingCount(),
+                    static_cast<unsigned long>(walStats_.droppedRecords),
+                    walStats_.highWaterRecords);
+            }
         }
 
+    }
+    if (framAvailable_) {
         loadEventJournal();
         appendEvent(EventCode::Boot, static_cast<int32_t>(superblock_.bootCount), millis());
     }
@@ -81,7 +110,7 @@ void StorageManager::initSuperblock() {
     superblock_.writeIndex = 0;
     superblock_.readIndex = 0;
     superblock_.nextSequence = 1;
-    superblock_.bootCount = 1;
+    superblock_.bootCount = 0;
     superblock_.lastSdFlushSequence = 0;
     
     superblock_.hasValidSgp41State = false;
@@ -99,10 +128,14 @@ void StorageManager::initSuperblock() {
 }
 
 bool StorageManager::getSgp41States(float& voc0, float& voc1) const {
-    if (!framAvailable_ || !superblock_.hasValidSgp41State) return false;
-    voc0 = superblock_.sgp41VocState0;
-    voc1 = superblock_.sgp41VocState1;
-    return true;
+    lock();
+    const bool valid = framAvailable_ && superblock_.hasValidSgp41State;
+    if (valid) {
+        voc0 = superblock_.sgp41VocState0;
+        voc1 = superblock_.sgp41VocState1;
+    }
+    unlock();
+    return valid;
 }
 
 void StorageManager::setSgp41States(float voc0, float voc1) {
@@ -117,8 +150,10 @@ void StorageManager::setSgp41States(float voc0, float voc1) {
 }
 
 uint32_t StorageManager::getScd41LastCalibrationEpoch() const {
-    if (!framAvailable_) return 0;
-    return superblock_.lastScd41CalibrationEpoch;
+    lock();
+    const uint32_t epoch = framAvailable_ ? superblock_.lastScd41CalibrationEpoch : 0;
+    unlock();
+    return epoch;
 }
 
 void StorageManager::setScd41LastCalibrationEpoch(uint32_t epoch) {
@@ -131,12 +166,16 @@ void StorageManager::setScd41LastCalibrationEpoch(uint32_t epoch) {
 }
 
 bool StorageManager::getBmp581Calibration(float& offsetHpa, uint32_t& epoch, float& tempC, float& slpHpa) const {
-    if (!framAvailable_ || !superblock_.hasValidBmp581Calibration) return false;
-    offsetHpa = superblock_.bmp581PressureOffsetHpa;
-    epoch = superblock_.bmp581CalibEpoch;
-    tempC = superblock_.bmp581CalibTempC;
-    slpHpa = superblock_.bmp581CalibSeaLevelHpa;
-    return true;
+    lock();
+    const bool valid = framAvailable_ && superblock_.hasValidBmp581Calibration;
+    if (valid) {
+        offsetHpa = superblock_.bmp581PressureOffsetHpa;
+        epoch = superblock_.bmp581CalibEpoch;
+        tempC = superblock_.bmp581CalibTempC;
+        slpHpa = superblock_.bmp581CalibSeaLevelHpa;
+    }
+    unlock();
+    return valid;
 }
 
 void StorageManager::setBmp581Calibration(float offsetHpa, uint32_t epoch, float tempC, float slpHpa) {
@@ -153,84 +192,49 @@ void StorageManager::setBmp581Calibration(float offsetHpa, uint32_t epoch, float
 }
 
 bool StorageManager::loadSuperblock() {
-    uint8_t buffer[sizeof(FramSuperblock)];
-    if (!fram_.read(ADDR_SUPERBLOCK, buffer, sizeof(buffer))) return false;
-
-    FramSuperblock* sb = reinterpret_cast<FramSuperblock*>(buffer);
-    if (sb->magic != FRAM_MAGIC) {
-        return false;
+    const FramSuperblock initial = superblock_;
+    const FramWalStatus status = wal_.begin(superblock_, walStats_, initial);
+    if (status == FramWalStatus::Incompatible) {
+        services::Logger::error("StorageMgr", "Unsupported FRAM format; automatic initialization refused");
+    } else if (status == FramWalStatus::Corrupt) {
+        services::Logger::error("StorageMgr", "FRAM checkpoint corrupt; automatic initialization refused");
+    } else if (status != FramWalStatus::Ready) {
+        services::Logger::error("StorageMgr", "FRAM checkpoint I/O failed");
     }
-    
-    if (sb->formatVersion == 3) {
-        services::Logger::info("StorageMgr", "Detected v3 FRAM format. Checking for unflushed records...");
-        // V3時代のリングバッファサイズ(28672 bytes) / V3レコードサイズ(64 bytes)
-        uint16_t oldMaxRecords = (32768 - 4096) / 64;
-        uint16_t pending = (sb->writeIndex >= sb->readIndex) ? 
-                           (sb->writeIndex - sb->readIndex) : 
-                           (oldMaxRecords - sb->readIndex + sb->writeIndex);
-        if (pending > 0) {
-            services::Logger::error("StorageMgr", "Found %u unflushed v3 records! Flush them before upgrading to v4.", pending);
-            return false; // Prevent using FRAM until flushed
-        }
-        
-        services::Logger::info("StorageMgr", "No pending v3 records. Migrating to v4 format.");
-        sb->formatVersion = 4;
-        sb->writeIndex = 0;
-        sb->readIndex = 0;
-        
-        // Recompute CRC for the migrated superblock
-        sb->crc16 = calculateCrc16(buffer, sizeof(FramSuperblock) - sizeof(uint16_t));
-        
-        superblock_ = *sb;
-        saveSuperblock();
-        return true;
-    } else if (sb->formatVersion == 4) {
-        services::Logger::info("StorageMgr", "Detected v4 FRAM format. Checking for unflushed records...");
-        uint16_t pending = (sb->writeIndex >= sb->readIndex) ? 
-                           (sb->writeIndex - sb->readIndex) : 
-                           (MAX_RECORDS - sb->readIndex + sb->writeIndex);
-        if (pending > 0) {
-            services::Logger::error("StorageMgr", "Found %u unflushed v4 records! Flush them before upgrading to v5.", pending);
-            return false; // Prevent using FRAM until flushed
-        }
-        
-        services::Logger::info("StorageMgr", "No pending v4 records. Migrating to v5 format.");
-        sb->formatVersion = 5;
-        sb->writeIndex = 0;
-        sb->readIndex = 0;
-        
-        // Recompute CRC for the migrated superblock
-        sb->crc16 = calculateCrc16(buffer, sizeof(FramSuperblock) - sizeof(uint16_t));
-        
-        superblock_ = *sb;
-        saveSuperblock();
-        return true;
-    } else if (sb->formatVersion != FRAM_FORMAT_VERSION) {
-        return false;
-    }
-
-    uint16_t crc = calculateCrc16(buffer, sizeof(FramSuperblock) - sizeof(uint16_t));
-    if (crc != sb->crc16) {
-        services::Logger::warn("StorageMgr", "Superblock CRC mismatch");
-        return false;
-    }
-
-    superblock_ = *sb;
-    return true;
+    return status == FramWalStatus::Ready;
 }
 
 bool StorageManager::saveSuperblock() {
     if (!framAvailable_) return false;
-    superblock_.crc16 = calculateCrc16(reinterpret_cast<uint8_t*>(&superblock_), sizeof(FramSuperblock) - sizeof(uint16_t));
-    return fram_.write(ADDR_SUPERBLOCK, reinterpret_cast<uint8_t*>(&superblock_), sizeof(FramSuperblock));
+    return wal_.persist(superblock_, walStats_) == FramWalStatus::Ready;
 }
 
 uint16_t StorageManager::getPendingCount() const {
-    if (superblock_.writeIndex >= superblock_.readIndex) {
-        return superblock_.writeIndex - superblock_.readIndex;
-    } else {
-        return MAX_RECORDS - superblock_.readIndex + superblock_.writeIndex;
-    }
+    lock();
+    const uint16_t pending = FramWal<FramStorage>::pendingCount(superblock_);
+    unlock();
+    return pending;
+}
+
+FramWalStats StorageManager::getWalStats() const {
+    lock();
+    const FramWalStats stats = walStats_;
+    unlock();
+    return stats;
+}
+
+uint16_t StorageManager::getEventCount() const {
+    lock();
+    const uint16_t count = eventCount_;
+    unlock();
+    return count;
+}
+
+String StorageManager::getCurrentFilename() const {
+    lock();
+    const String filename = currentFilename_;
+    unlock();
+    return filename;
 }
 
 bool StorageManager::readEventSlot(uint16_t index, EventRecord& record) {
@@ -250,7 +254,9 @@ bool StorageManager::readEventSlot(uint16_t index, EventRecord& record) {
     bool knownCode = (code >= static_cast<uint16_t>(EventCode::Boot) &&
                       code <= static_cast<uint16_t>(EventCode::SensorError)) ||
                      (code >= static_cast<uint16_t>(EventCode::Scd41Stale) &&
-                      code <= static_cast<uint16_t>(EventCode::Scd41DriverError));
+                      code <= static_cast<uint16_t>(EventCode::Scd41DriverError)) ||
+                     (code >= static_cast<uint16_t>(EventCode::FramRecordCorrupt) &&
+                      code <= static_cast<uint16_t>(EventCode::FramCheckpointFailed));
     if (!knownCode) return false;
 
     const uint8_t* payload = reinterpret_cast<const uint8_t*>(&record.uptimeMs);
@@ -349,18 +355,16 @@ size_t StorageManager::readRecentEvents(EventRecord* out, size_t maxCount) {
 }
 
 bool StorageManager::appendRecord(const core::SensorSnapshot& snapshot, uint32_t uptimeMs) {
-    if (!framAvailable_) return false;
-
-    if (getPendingCount() >= MAX_RECORDS - 1) {
-        // バッファフル。一番古いデータを上書きしてreadIndexを強制的に進める
-        services::Logger::warn("StorageMgr", "FRAM Ring Buffer FULL. Overwriting oldest record.");
-        superblock_.readIndex = (superblock_.readIndex + 1) % MAX_RECORDS;
+    lock();
+    if (!framAvailable_) {
+        unlock();
+        return false;
     }
 
     PersistentRecordV5 rec;
     memset(&rec, 0, sizeof(PersistentRecordV5));
     
-    rec.data.sequence = superblock_.nextSequence++;
+    rec.data.sequence = superblock_.nextSequence;
     rec.data.uptimeMs = uptimeMs;
     
     rec.data.validFlags = 0;
@@ -474,30 +478,33 @@ bool StorageManager::appendRecord(const core::SensorSnapshot& snapshot, uint32_t
         rec.data.gnssValidFlags |= GNSS_TIME_DISCIPLINED;
     }
     
-    rec.header.sequence = rec.data.sequence;
-    rec.header.length = sizeof(SensorRecordV5);
-    rec.header.committed = 0; // まだコミットしない
-    rec.header.crc = calculateCrc16(reinterpret_cast<uint8_t*>(&rec.data), sizeof(SensorRecordV5));
+    const FramWalStatus status = wal_.append(rec.data, superblock_, walStats_);
+    const uint32_t droppedRecords = walStats_.droppedRecords;
+    const bool reportFull = status == FramWalStatus::Full &&
+        (lastRingFullEventMs_ == 0 || uptimeMs - lastRingFullEventMs_ >= 60000u);
+    if (reportFull) lastRingFullEventMs_ = uptimeMs;
+    if (status != FramWalStatus::Ready && status != FramWalStatus::Full) {
+        // A failed checkpoint may already be durable. Stop all later writes so
+        // this slot cannot be reused until reboot reconciliation chooses the
+        // newest valid checkpoint or adopts the committed orphan.
+        framAvailable_ = false;
+        framReadOnly_ = true;
+    }
+    unlock();
 
-    uint16_t addr = ADDR_RING_BUFFER + (superblock_.writeIndex * RECORD_SLOT_SIZE);
-    
-    // 1. データを書き込む (committed = 0)
-    if (!fram_.write(addr, reinterpret_cast<uint8_t*>(&rec), sizeof(PersistentRecordV5))) {
-        services::Logger::error("StorageMgr", "Failed to write record to FRAM");
+    if (status == FramWalStatus::Full) {
+        services::Logger::warn("StorageMgr",
+            "FRAM ring full; preserving %u pending records (drop count=%lu)",
+            MAX_RECORDS - 1, static_cast<unsigned long>(droppedRecords));
+        if (reportFull) appendEvent(EventCode::RingBufferFull,
+            static_cast<int32_t>(droppedRecords), uptimeMs);
         return false;
     }
-    
-    // 2. コミットマーカーを書く (電源断対策)
-    rec.header.committed = 1;
-    if (!fram_.writeByte(addr + offsetof(PersistentRecordV5, header.committed), 1)) {
-        services::Logger::error("StorageMgr", "Failed to commit record in FRAM");
+    if (status != FramWalStatus::Ready) {
+        services::Logger::error("StorageMgr", "FRAM WAL append/checkpoint failed (%u)",
+            static_cast<unsigned>(status));
         return false;
     }
-    
-    // 3. SuperblockのwriteIndexを進める
-    superblock_.writeIndex = (superblock_.writeIndex + 1) % MAX_RECORDS;
-    saveSuperblock();
-    
     return true;
 }
 
@@ -663,20 +670,205 @@ void StorageManager::formatCsvLine(char* buffer, size_t size, const SensorRecord
     }
 }
 
+bool StorageManager::appendAndVerifyCsvLine(const char* line, size_t lineLength) {
+    if (line == nullptr || lineLength == 0 || lineLength >= 512) return false;
+
+    uint32_t originalSize = 0;
+    uint32_t expectedStart = 0;
+    size_t prefixLength = 0;
+
+    File inspect = SD.open(currentFilename_.c_str(), FILE_READ);
+    if (!inspect) return false;
+    originalSize = inspect.size();
+
+    char tail[513] {};
+    const uint32_t readStart = originalSize > 512 ? originalSize - 512 : 0;
+    const size_t requested = originalSize - readStart;
+    if (!inspect.seek(readStart) || inspect.read(
+            reinterpret_cast<uint8_t*>(tail), requested) != requested) {
+        inspect.close();
+        return false;
+    }
+    inspect.close();
+
+    if (requested > 0 && tail[requested - 1] == '\n') {
+        size_t lastStart = requested - 1;
+        while (lastStart > 0 && tail[lastStart - 1] != '\n') --lastStart;
+        const size_t lastLength = requested - 1 - lastStart;
+        if (lastLength == lineLength && memcmp(tail + lastStart, line, lineLength) == 0) {
+            return true; // SD append completed before a reset; consume only.
+        }
+        expectedStart = originalSize;
+    } else {
+        size_t fragmentStart = requested;
+        while (fragmentStart > 0 && tail[fragmentStart - 1] != '\n') --fragmentStart;
+        prefixLength = requested - fragmentStart;
+        if (prefixLength > lineLength ||
+            memcmp(tail + fragmentStart, line, prefixLength) != 0) {
+            services::Logger::error("StorageMgr",
+                "CSV has an unexpected unterminated tail; preserving FRAM record");
+            return false;
+        }
+        expectedStart = originalSize - prefixLength;
+    }
+
+    File output = SD.open(currentFilename_.c_str(), FILE_APPEND);
+    if (!output) return false;
+    const size_t remainder = lineLength - prefixLength;
+    const size_t wroteData = output.write(
+        reinterpret_cast<const uint8_t*>(line + prefixLength), remainder);
+    const size_t wroteNewline = wroteData == remainder
+        ? output.write(reinterpret_cast<const uint8_t*>("\n"), 1) : 0;
+    output.flush();
+    output.close();
+    if (wroteData != remainder || wroteNewline != 1) return false;
+
+    File verify = SD.open(currentFilename_.c_str(), FILE_READ);
+    if (!verify || verify.size() != expectedStart + lineLength + 1 ||
+        !verify.seek(expectedStart)) {
+        if (verify) verify.close();
+        return false;
+    }
+    char actual[513] {};
+    const size_t expectedBytes = lineLength + 1;
+    const size_t actualBytes = verify.read(reinterpret_cast<uint8_t*>(actual), expectedBytes);
+    verify.close();
+    return actualBytes == expectedBytes && actual[lineLength] == '\n' &&
+           memcmp(actual, line, lineLength) == 0;
+}
+
+bool StorageManager::appendAndVerifyQuarantine(const FramQuarantineRecord& record) {
+    static constexpr const char* path = "/fram_quarantine_v1.bin";
+    uint32_t originalSize = 0;
+
+    File inspect = SD.open(path, FILE_READ);
+    if (inspect) {
+        originalSize = inspect.size();
+        if (originalSize >= sizeof(FramQuarantineRecord) &&
+            inspect.seek(originalSize - sizeof(FramQuarantineRecord))) {
+            FramQuarantineRecord previous {};
+            const size_t readBytes = inspect.read(
+                reinterpret_cast<uint8_t*>(&previous), sizeof(previous));
+            if (readBytes == sizeof(previous) &&
+                previous.magic == FRAM_QUARANTINE_MAGIC &&
+                previous.version == FRAM_QUARANTINE_VERSION &&
+                previous.rawLength == RECORD_SLOT_SIZE &&
+                previous.rawCrc16 == calculateCrc16(previous.raw, sizeof(previous.raw)) &&
+                previous.recordCrc16 == calculateCrc16(
+                    reinterpret_cast<const uint8_t*>(&previous),
+                    offsetof(FramQuarantineRecord, recordCrc16)) &&
+                previous.slotIndex == record.slotIndex &&
+                memcmp(previous.raw, record.raw, sizeof(record.raw)) == 0) {
+                inspect.close();
+                return true; // SD commit survived reset; advance WAL only.
+            }
+        }
+        inspect.close();
+    }
+
+    File output = SD.open(path, FILE_APPEND);
+    if (!output) return false;
+    const size_t written = output.write(
+        reinterpret_cast<const uint8_t*>(&record), sizeof(record));
+    output.flush();
+    output.close();
+    if (written != sizeof(record)) return false;
+
+    File verify = SD.open(path, FILE_READ);
+    if (!verify || verify.size() != originalSize + sizeof(record) ||
+        !verify.seek(originalSize)) {
+        if (verify) verify.close();
+        return false;
+    }
+    FramQuarantineRecord actual {};
+    const size_t readBytes = verify.read(
+        reinterpret_cast<uint8_t*>(&actual), sizeof(actual));
+    verify.close();
+    return readBytes == sizeof(actual) &&
+           memcmp(&actual, &record, sizeof(record)) == 0;
+}
+
+bool StorageManager::quarantineCorruptTail(uint16_t slotIndex, uint32_t uptimeMs) {
+    uint8_t first[RECORD_SLOT_SIZE] {};
+    uint8_t second[RECORD_SLOT_SIZE] {};
+    if (wal_.readRawSlot(slotIndex, first, sizeof(first)) != FramWalStatus::Ready ||
+        wal_.readRawSlot(slotIndex, second, sizeof(second)) != FramWalStatus::Ready ||
+        memcmp(first, second, sizeof(first)) != 0) {
+        services::Logger::error("StorageMgr",
+            "FRAM corrupt-tail reads are unstable; slot %u retained", slotIndex);
+        return false;
+    }
+
+    // A transient I2C error may have caused the first failed peek. Never
+    // quarantine a slot that has become structurally readable meanwhile.
+    PersistentRecordV5 retry {};
+    const FramWalStatus retryStatus = wal_.peek(superblock_, retry);
+    if (retryStatus == FramWalStatus::Ready) {
+        services::Logger::warn("StorageMgr",
+            "FRAM slot %u became readable; deferring to normal flush", slotIndex);
+        return false;
+    }
+    if (retryStatus != FramWalStatus::Corrupt) {
+        services::Logger::error("StorageMgr",
+            "FRAM slot %u could not be classified reliably; retained", slotIndex);
+        return false;
+    }
+
+    FramQuarantineRecord evidence {};
+    evidence.magic = FRAM_QUARANTINE_MAGIC;
+    evidence.version = FRAM_QUARANTINE_VERSION;
+    evidence.slotIndex = slotIndex;
+    evidence.captureBootCount = superblock_.bootCount;
+    evidence.captureUptimeMs = uptimeMs;
+    evidence.rawLength = RECORD_SLOT_SIZE;
+    memcpy(evidence.raw, first, sizeof(evidence.raw));
+    evidence.rawCrc16 = calculateCrc16(evidence.raw, sizeof(evidence.raw));
+    evidence.recordCrc16 = calculateCrc16(
+        reinterpret_cast<const uint8_t*>(&evidence),
+        offsetof(FramQuarantineRecord, recordCrc16));
+
+    if (!appendAndVerifyQuarantine(evidence)) {
+        services::Logger::error("StorageMgr",
+            "Failed to verify SD quarantine evidence; slot %u retained", slotIndex);
+        return false;
+    }
+    if (wal_.quarantineTail(slotIndex, superblock_, walStats_) != FramWalStatus::Ready) {
+        services::Logger::error("StorageMgr",
+            "Quarantine is on SD but WAL checkpoint failed; entering read-only mode");
+        framAvailable_ = false;
+        framReadOnly_ = true;
+        return false;
+    }
+
+    services::Logger::warn("StorageMgr",
+        "Quarantined corrupt FRAM slot %u to %s", slotIndex,
+        "/fram_quarantine_v1.bin");
+    appendEvent(EventCode::FramRecordCorrupt, static_cast<int32_t>(slotIndex), uptimeMs);
+    return true;
+}
+
 void StorageManager::flushPendingToSd() {
-    if (!framAvailable_) return;
-    
+    lock();
+    if (!framAvailable_) {
+        unlock();
+        return;
+    }
+
     // Wi-Fiモード中はSDへの書き出しを停止し、FRAMにためておく
     // これによりWebサーバーからのファイルダウンロード時のSPIバス競合(WDTクラッシュなど)を完全に防ぐ
-    if (wifiActive_) return;
-    
-    uint16_t pendingCount = getPendingCount();
-    if (pendingCount == 0) return;
+    if (wifiActive_) {
+        unlock();
+        return;
+    }
 
-    lock(); // 排他制御開始
+    uint16_t pendingCount = getPendingCount();
+    if (pendingCount == 0) {
+        unlock();
+        return;
+    }
 
     // ローテーションチェック
-    if (hal::Clock::isTimeSet()) {
+    if (hal::Clock::isTimeSet() && !sdTransaction_.active()) {
         // 実際の現在日付で書き込み先切り替え判定 (0時0分0秒に切り替え)
         String today = hal::Clock::getFormattedDate();
         if (today != currentDateString_) {
@@ -719,64 +911,106 @@ void StorageManager::flushPendingToSd() {
         return;
     }
 
-    File file = SD.open(currentFilename_.c_str(), FILE_APPEND);
-    if (!file) {
-        services::Logger::error("StorageMgr", "SD Write failed. Retrying later.");
-        sdAvailable_ = false; // SD障害発生
-        unlock();
-        return;
-    }
-
+    uint16_t handledCount = 0;
     uint16_t flushedCount = 0;
-    uint16_t currentIndex = superblock_.readIndex;
-
-    while (currentIndex != superblock_.writeIndex) {
-        PersistentRecordV5 rec;
-        memset(&rec, 0, sizeof(rec));
-        uint16_t addr = ADDR_RING_BUFFER + (currentIndex * RECORD_SLOT_SIZE);
-        
-        if (fram_.read(addr, reinterpret_cast<uint8_t*>(&rec), sizeof(PersistentRecordV5))) {
-            // Check CRC and committed
-            if (rec.header.committed == 1) {
-                bool supportedLength = rec.header.length == sizeof(SensorRecordV5) ||
-                                       rec.header.length == LEGACY_SENSOR_RECORD_V5_SIZE;
-                uint16_t crc = supportedLength
-                    ? calculateCrc16(reinterpret_cast<uint8_t*>(&rec.data), rec.header.length)
-                    : 0;
-                if (supportedLength && crc == rec.header.crc) {
-                    if (rec.header.length == LEGACY_SENSOR_RECORD_V5_SIZE) {
-                        rec.data.co2AgeSeconds = UINT16_MAX;
-                        rec.data.validFlags &= ~SCD41_STATE_MASK;
-                    }
-                    char line[512];
-                    formatCsvLine(line, sizeof(line), rec.data);
-                    if (line[0] != '\0') {
-                        file.println(line);
-                        flushedCount++;
-                    }
-                } else if (!supportedLength) {
-                    services::Logger::warn("StorageMgr", "Unsupported record length at slot %u: %u",
-                        currentIndex, rec.header.length);
-                } else {
-                    services::Logger::warn("StorageMgr", "CRC mismatch at slot %u (seq %lu)", currentIndex, rec.header.sequence);
+    uint16_t quarantinedCount = 0;
+    while (handledCount < pendingCount) {
+        const bool resumedTransaction = sdTransaction_.active();
+        PersistentRecordV5 rec {};
+        FramWalStatus walStatus = wal_.peek(superblock_, rec);
+        if (walStatus != FramWalStatus::Ready) {
+            if (walStatus == FramWalStatus::Corrupt) {
+                // Require repeated structural failure before treating bytes as
+                // corrupt. I/O failures are never converted into data loss.
+                PersistentRecordV5 retry {};
+                walStatus = wal_.peek(superblock_, retry);
+                if (walStatus == FramWalStatus::Ready) {
+                    rec = retry;
+                } else if (walStatus == FramWalStatus::Corrupt &&
+                           quarantineCorruptTail(superblock_.readIndex, millis())) {
+                    ++handledCount;
+                    ++quarantinedCount;
+                    continue;
                 }
-            } else {
-                services::Logger::warn("StorageMgr", "Uncommitted record at slot %u", currentIndex);
             }
         }
-        
-        currentIndex = (currentIndex + 1) % MAX_RECORDS;
+        if (walStatus != FramWalStatus::Ready) {
+            services::Logger::error("StorageMgr",
+                "FRAM tail is unreadable; no records consumed (slot=%u status=%u)",
+                superblock_.readIndex, static_cast<unsigned>(walStatus));
+            break;
+        }
+
+        if (rec.header.length == LEGACY_SENSOR_RECORD_V5_SIZE) {
+            rec.data.co2AgeSeconds = UINT16_MAX;
+            rec.data.validFlags &= ~SCD41_STATE_MASK;
+        }
+        char line[512];
+        formatCsvLine(line, sizeof(line), rec.data);
+        const size_t lineLength = strlen(line);
+        if (sdTransaction_.active()) {
+            if (sdTransaction_.current().sequence != rec.header.sequence ||
+                sdTransaction_.current().lineLength != lineLength ||
+                sdTransaction_.current().lineCrc16 != calculateCrc16(
+                    reinterpret_cast<const uint8_t*>(line), lineLength)) {
+                services::Logger::error("StorageMgr",
+                    "SD transaction does not match FRAM tail; preserving both");
+                framAvailable_ = false;
+                framReadOnly_ = true;
+                break;
+            }
+            currentFilename_ = sdTransaction_.current().filename;
+        } else if (sdTransaction_.start(rec.header.sequence, currentFilename_.c_str(),
+                       reinterpret_cast<const uint8_t*>(line), lineLength) !=
+                   FramWalStatus::Ready) {
+            services::Logger::error("StorageMgr",
+                "Failed to persist SD transaction for sequence %lu",
+                static_cast<unsigned long>(rec.header.sequence));
+            framAvailable_ = false;
+            framReadOnly_ = true;
+            break;
+        }
+
+        if (lineLength == 0 || !appendAndVerifyCsvLine(line, lineLength)) {
+            services::Logger::error("StorageMgr",
+                "SD append verification failed at sequence %lu; FRAM record retained",
+                static_cast<unsigned long>(rec.header.sequence));
+            sdAvailable_ = false;
+            appendEvent(EventCode::SdWriteFailed,
+                static_cast<int32_t>(rec.header.sequence), millis());
+            break;
+        }
+
+        walStatus = wal_.consume(rec.header.sequence, superblock_, walStats_);
+        if (walStatus != FramWalStatus::Ready) {
+            services::Logger::error("StorageMgr",
+                "SD is verified but FRAM consume checkpoint failed at sequence %lu",
+                static_cast<unsigned long>(rec.header.sequence));
+            framAvailable_ = false;
+            framReadOnly_ = true;
+            break;
+        }
+        if (sdTransaction_.finish(rec.header.sequence) != FramWalStatus::Ready) {
+            services::Logger::error("StorageMgr",
+                "FRAM consumed but SD transaction cleanup failed at sequence %lu",
+                static_cast<unsigned long>(rec.header.sequence));
+            framAvailable_ = false;
+            framReadOnly_ = true;
+            break;
+        }
+        ++handledCount;
+        ++flushedCount;
+        if (resumedTransaction) break; // Rotate/select the normal target on the next flush.
     }
 
-    file.close();
-    
     if (flushedCount > 0) {
-        services::Logger::info("StorageMgr", "Flushed %u records to SD. Updating readIndex.", flushedCount);
-        superblock_.readIndex = currentIndex;
-        saveSuperblock();
+        services::Logger::info("StorageMgr", "Verified and consumed %u FRAM records", flushedCount);
     }
-    
-    unlock(); // 排他制御終了
+    if (quarantinedCount > 0) {
+        services::Logger::warn("StorageMgr",
+            "Preserved and skipped %u corrupt FRAM records", quarantinedCount);
+    }
+    unlock();
 }
 
 } // namespace storage

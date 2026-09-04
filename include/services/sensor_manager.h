@@ -11,6 +11,7 @@
 #include "services/gnss_time_sync_service.h"
 #include "storage/storage_manager.h"
 #include <cstdint>
+#include <freertos/FreeRTOS.h>
 
 namespace services {
 
@@ -19,8 +20,8 @@ public:
     bool begin(storage::StorageManager& storageManager);
     void update(uint32_t nowMs);
 
-    const core::SensorSnapshot& snapshot() const { return snapshot_; }
-    const core::SystemStatus& status() const { return status_; }
+    core::SensorSnapshot snapshot() const;
+    core::SystemStatus status() const;
     
     // Calibration & Maintenance
     void setSeaLevelPressure(float hpa, core::PressureFieldState state = core::PressureFieldState::Valid);
@@ -33,10 +34,14 @@ public:
 
 private:
     void trackScd41Health(uint32_t nowMs);
+    void publishSnapshot();
 
     storage::StorageManager* storage_ = nullptr;
     core::SensorSnapshot snapshot_ {};
     core::SystemStatus status_ {};
+    core::SensorSnapshot publishedSnapshot_ {};
+    core::SystemStatus publishedStatus_ {};
+    mutable portMUX_TYPE publicationMux_ = portMUX_INITIALIZER_UNLOCKED;
     
     uint32_t highHumidityStartMs_ = 0;
     uint32_t lastHeaterRunMs_ = 0;
