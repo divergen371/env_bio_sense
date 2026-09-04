@@ -50,7 +50,8 @@ bool SensorManager::begin(storage::StorageManager& storageManager) {
         if (storage_->getBmp581Calibration(offsetHpa, epoch, tempC, slpHpa)) {
             bmp581_.setCalibrationOffset(offsetHpa);
             if (std::isfinite(slpHpa) && slpHpa > 800.0f && slpHpa < 1200.0f) {
-                bmp581_.setSeaLevelPressure(slpHpa, core::PressureFieldState::LastKnown);
+                setSeaLevelPressure(slpHpa, core::PressureFieldState::LastKnown,
+                                    core::PressureReferenceSource::Stored);
             }
             services::Logger::info("SensorMgr", "BMP581 calibration loaded: %.2f hPa (Saved SLP: %.2f hPa)", offsetHpa, slpHpa);
         }
@@ -90,10 +91,19 @@ bool SensorManager::begin(storage::StorageManager& storageManager) {
     return true;
 }
 
-void SensorManager::setSeaLevelPressure(float hpa, core::PressureFieldState state) {
+void SensorManager::setSeaLevelPressure(float hpa,
+                                        core::PressureFieldState state,
+                                        core::PressureReferenceSource source) {
     if (state == core::PressureFieldState::Valid || state == core::PressureFieldState::LastKnown) {
-        lastAmedasUpdateMs_ = millis();
-        slpEma_ = hpa;
+        pressureReferenceUpdatedMs_ = millis();
+        pressureReferenceSource_ = source;
+        if (source == core::PressureReferenceSource::Amedas ||
+            source == core::PressureReferenceSource::Manual) {
+            lastAmedasUpdateMs_ = pressureReferenceUpdatedMs_;
+            slpEma_ = hpa;
+        }
+    } else {
+        pressureReferenceSource_ = core::PressureReferenceSource::Unset;
     }
     bmp581_.setSeaLevelPressure(hpa, state);
 }
@@ -385,7 +395,8 @@ void SensorManager::update(uint32_t nowMs) {
                             }
                             
                             // Apply to BMP581
-                            bmp581_.setSeaLevelPressure(slpEma_, core::PressureFieldState::Valid);
+                            setSeaLevelPressure(slpEma_, core::PressureFieldState::Valid,
+                                                core::PressureReferenceSource::Gnss);
                         }
                     }
                 }
@@ -410,6 +421,44 @@ void SensorManager::update(uint32_t nowMs) {
     
     // TimeDisciplinedフラグを反映
     status_.gnss.timeDisciplined = hal::Clock::isDisciplined();
+
+    auto health = [nowMs](const drivers::sensors::ISensor& sensor,
+                          uint32_t consecutiveErrors) {
+        core::SensorHealthSnapshot result;
+        result.state = sensor.state();
+        result.error = sensor.lastError();
+        result.consecutiveErrors = consecutiveErrors;
+        result.ageMs = sensor.lastSuccessMs() == 0
+            ? UINT32_MAX : nowMs - sensor.lastSuccessMs();
+        return result;
+    };
+    snapshot_.telemetry.sht45 = health(sht45_, sht45_.consecutiveErrors());
+    snapshot_.telemetry.bmp581 = health(bmp581_, bmp581_.consecutiveErrors());
+    const drivers::sensors::Scd41Health scdHealth = scd41_.health(nowMs);
+    snapshot_.telemetry.scd41.state = scdHealth.state;
+    snapshot_.telemetry.scd41.error = scd41_.lastError();
+    snapshot_.telemetry.scd41.ageMs = scdHealth.ageMs;
+    snapshot_.telemetry.scd41.consecutiveErrors = scdHealth.consecutiveErrors;
+    snapshot_.telemetry.scd41RawError = scdHealth.rawError;
+    snapshot_.telemetry.sgp41 = health(sgp41_, sgp41_.consecutiveErrors());
+    snapshot_.telemetry.bme690 = health(bme690_, bme690_.consecutiveErrors());
+    sgp41_.getRawTelemetry(
+        snapshot_.telemetry.sgp41Raw.srawVoc,
+        snapshot_.telemetry.sgp41Raw.srawNox,
+        snapshot_.telemetry.sgp41Raw.compensationRhTicks,
+        snapshot_.telemetry.sgp41Raw.compensationTemperatureTicks);
+    snapshot_.telemetry.altitude.rawAltitudeM = bmp581_.getRawAltitude();
+    snapshot_.telemetry.altitude.displayAltitudeM = bmp581_.getDisplayAltitude();
+    snapshot_.telemetry.altitude.seaLevelPressureHpa = bmp581_.getSeaLevelPressure();
+    snapshot_.telemetry.altitude.pressureOffsetHpa = bmp581_.getCalibrationOffset();
+    snapshot_.telemetry.altitude.pressureState = bmp581_.getPressureFieldState();
+    snapshot_.telemetry.altitude.pressureSource = pressureReferenceSource_;
+    snapshot_.telemetry.altitude.seaLevelPressureAgeMs =
+        pressureReferenceUpdatedMs_ == 0
+            ? UINT32_MAX : nowMs - pressureReferenceUpdatedMs_;
+    const hal::I2cDiagnosticCounters i2c = hal::I2cBus::diagnosticTotals();
+    snapshot_.telemetry.i2c.lockTimeouts = i2c.lockTimeouts;
+    snapshot_.telemetry.i2c.communicationErrors = i2c.communicationErrors;
     publishSnapshot();
 }
 

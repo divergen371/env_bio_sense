@@ -37,7 +37,9 @@ void WeatherService::update(uint32_t nowMs) {
 
 void WeatherService::forceUpdate(float pressureHpa) {
     Logger::info("Weather", "Forcing Sea Level Pressure update from API: %.1f hPa", pressureHpa);
-    sensorManager_.setSeaLevelPressure(pressureHpa);
+    sensorManager_.setSeaLevelPressure(
+        pressureHpa, core::PressureFieldState::Valid,
+        core::PressureReferenceSource::Manual);
     
     // 自力での取得タイマーもリセット
     lastFetchMs_ = millis();
@@ -369,7 +371,9 @@ request_done:
                     core::PressureFieldState state = (usedCount >= 3) ? core::PressureFieldState::Valid : core::PressureFieldState::LastKnown;
                     Logger::info("Weather", "IDW Success! SLP: %.1f hPa (Used %d/%d stations, MinDist: %.1fkm, MaxDist: %.1fkm), State: %d", 
                         interpolatedSlp, usedCount, numCachedStations_, minDistKm, maxDistKm, (int)state);
-                    sensorManager_.setSeaLevelPressure(interpolatedSlp, state);
+                    sensorManager_.setSeaLevelPressure(
+                        interpolatedSlp, state,
+                        core::PressureReferenceSource::Amedas);
                     success = true;
                 }
             }
