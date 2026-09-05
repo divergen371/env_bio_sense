@@ -1,8 +1,19 @@
 # T09 統合試験・Release Gate実行手順
 
 日付: 2026-09-06  
-対象: 監査中の全25件  
-状態: 実機試験待ち
+対象: 監査中の全27件
+状態: 再修正計画済み・R01/R02開始待ち
+
+詳細な調査、修正方針、実装、実機Gateの順序と完了条件は[`2026-09-06_next_execution_plan.md`](2026-09-06_next_execution_plan.md)を正本とする。P0-03、P0-06、P1-01、P1-02、P1-06の再修正が完了するまで、本書の長時間・破壊Gateには進まない。
+
+## 2026-09-06 再書込みsmoke結果
+
+- P0-05の短時間GateはPASS。約117秒間resetなし、`StorageTask`最小stack残量は起動5.523秒時点と69.870秒時点の双方で3,200 bytesだった。30分通常／PPG／Web負荷Gateは継続する。
+- P0-03は不合格。旧FRAM 75件の一括flushがStorageManager mutexを保持し、14.975秒から44.231秒まで約29.3秒メインloopを停止させた。SCD41はこの停止をstaleと判断して復旧へ入った。StorageTaskへのappend依頼queue化と、flushの時間／件数budget化を再検討する。
+- P1-01／P1-02は不合格。約117秒でPPS周期異常108回、UTC不一致84回を記録し、最短周期は1.777 msだった。ISRが全RISING edgeを採用し、周期検証前にClockへ報告するため、異常edgeでも`PPS_AgeMs`とdiscipline状態へ影響する。入力波形確認に加え、ISR glitch filter、検証済みPPSだけのClock反映、異常継続時のHoldover遷移が必要。
+- P1-06は要継続調査。最初のsmokeでOLED lock timeout 9回、FRAM readの一時的`IoError` 1回を記録し、FRAM recordは消費されず次回flushで回収された。その後のWeb試験画面`evidence/2026-09-06_webui_status_before_failure.png`では、同一起動中のI²C累積値がlock timeout 284、communication error 0まで増加していた。device／operation別内訳を`/api/i2c`で回収し、P0-03の長時間排他とP0-06のWeb再起動を解消後にも増加するか再評価する。
+- SCD41は17回read成功・通信error 0。44秒台の復旧は上記メインloop停止に起因するため、元のSCD41 freeze再発とは判定しない。
+- P0-06を追加し、Web実機Gateを不合格とした。AP接続後のF5で`async_tcp (CPU 1)`がTask Watchdogを約10秒更新できずabortし、`RTC_SW_CPU_RST`で装置全体が再起動した。別起動のF5でもAsyncTCPの`throttling`が2回出た後、同じWatchdog、backtrace、ELF SHAで再現した。さらにファイル画面の「一覧更新」単独でも3回目の同一再起動を確認し、WebUI接続直後の自動一覧要求も`読込中…`から完了しなかった。click handlerと初期`boot()`はいずれも`GET /api/files`を呼ぶため、発火routeは`/api/files`に確定した。`Wi-Fi AP turned OFF`はなく、ActionButton／P2-01ではない。route内ではStorageManagerの無期限lock、SD全件走査、sort、JSON生成を同期実行しており、停止段階の計測とfile indexのworker化、時間／件数budget、cache page応答、files tab初回表示時の遅延loadが必要。
 
 ## 方針
 
@@ -23,7 +34,7 @@
 3. `web/index.html`、`web/app.css`、`web/app.js`から生成したheaderを再生成し、差分が出ないことを確認する。
 4. 試験firmwareを書込み、起動時に64 KiB FRAM、SD、全sensorが期待状態になることを確認する。
 
-現時点の基準はRAM 98,264 / 327,680 bytes、Flash 1,314,441 / 3,342,336 bytes、Web生成header SHA-256 `24d52b3717190578a07a7341fde14510974766f786c7156750e910fb07a5b55e`である。
+現時点の基準はRAM 98,264 / 327,680 bytes、Flash 1,314,465 / 3,342,336 bytes、firmware.bin SHA-256 `7dce3f199c657a62d685a3f2967c4a3c7c215d9493381132777cef83bcb5f68d`、Web生成header SHA-256 `24d52b3717190578a07a7341fde14510974766f786c7156750e910fb07a5b55e`である。
 
 ## Gate 1: 30分smoke test
 
@@ -31,6 +42,7 @@
 2. CSV v7が71列固定で、`Sequence`と`SampleMonotonicUs`が単調増加し、行切れがないことを確認する。
 3. 欠測値が空欄で、そのsensorの`Valid`、`AgeMs`、`State`、`Error`と矛盾しないことを確認する。
 4. `PPS_AgeMs`が全行0ではなく、GNSS/PPSの実状態に応じて変化することを確認する。
+5. 起動時に旧FRAM backlogがあってもメインloop停止を1秒未満に抑え、SCD41の不要なstale復旧とPPG FIFO欠落を発生させない。
 5. `SRAW_VOC`、`SRAW_NOX`、補償温湿度、I²C累積値、FRAM drop値が保存されることを確認する。NOx指数1の下限張り付き自体は不合格にしない。
 
 合格対象: P0-03、P1-02、P1-16、P2-02、P2-07
@@ -62,13 +74,14 @@
 ## Gate 4: FRAM・SD・電源断
 
 1. 予備SDで通常flush、SDなし起動、記録中抜去、再挿入、書込み失敗を試す。FRAM tailはSD行のflush／close／再open／内容照合前に進んではならない。
-2. SD transactionの開始、SD append、SD検証、FRAM consume、checkpoint更新の各境界で各3回以上電源を切る。再起動後に欠落と重複がなく、orphan行は同一sequenceとして回収されることを確認する。
-3. FRAM checkpoint片側破損、最新側破損、未知version、非blank破損を注入し、旧正常copyの採用またはread-only移行を確認する。無条件初期化は禁止する。
-4. Wi-Fi APまたはSD停止を40分超継続し、FRAM満杯時に既存tailを上書きせず、新規drop数とeventが増えることを確認する。復旧後は古い順にflushする。
-5. 構造破損slotが二度読み一致後にquarantineへ保存・再読照合されてからだけskipされることを確認する。
-6. 最終CSVの全`Sequence`を走査し、欠落・重複が0件、または全件が`FRAM_DroppedRecords`と永続eventで説明できることを確認する。
+2. 最初のflush後と以後60秒ごとの`StorageTask`最小stack残量が2,048 bytes以上で、30分の通常記録、PPG記録、Web download、interrupted-session復旧中に再起動しないことを確認する。
+3. SD transactionの開始、SD append、SD検証、FRAM consume、checkpoint更新の各境界で各3回以上電源を切る。再起動後に欠落と重複がなく、orphan行は同一sequenceとして回収されることを確認する。
+4. FRAM checkpoint片側破損、最新側破損、未知version、非blank破損を注入し、旧正常copyの採用またはread-only移行を確認する。無条件初期化は禁止する。
+5. Wi-Fi APまたはSD停止を40分超継続し、FRAM満杯時に既存tailを上書きせず、新規drop数とeventが増えることを確認する。復旧後は古い順にflushする。
+6. 構造破損slotが二度読み一致後にquarantineへ保存・再読照合されてからだけskipされることを確認する。
+7. 最終CSVの全`Sequence`を走査し、欠落・重複が0件、または全件が`FRAM_DroppedRecords`と永続eventで説明できることを確認する。
 
-合格対象: P0-01、P0-03、P1-03、P1-14、P2-02、P2-03
+合格対象: P0-01、P0-03、P0-05、P1-03、P1-14、P2-02、P2-03
 
 ## Gate 5: PPG計測・RAW session
 
@@ -91,8 +104,9 @@
 6. ZIP write、finalize、rename、最終検証中にSD抜去・低速化・電源断を行い、未検証ZIPを公開せず元ファイルを削除しないことを確認する。
 7. 成功／失敗から5秒後にIdleへ戻り、再実行できることを確認する。
 8. Internetなし・cold cacheでUIが表示され、firmware更新後に旧UIが残らないことを確認する。
+9. AP起動後にF5再読込みと「更新」を各10回行い、APが停止／再起動せず全APIが応答することを確認する。serialにはAP停止理由、reset理由、要求別の失敗が判別できる証拠を残す。
 
-合格対象: P1-12、P1-13、P2-04、P2-05、P2-06
+合格対象: P0-06、P1-12、P1-13、P2-04、P2-05、P2-06
 
 ## Gate 7: 48時間連続試験
 
@@ -102,10 +116,10 @@
 4. AMeDAS P0更新と高度の変化を時刻で突合し、説明不能な5秒段差がないことを確認する。
 5. 48時間終了後にcompact event、I²C JSON、CSV v7、AMeDAS履歴、校正履歴、PPG metadataを一式保全する。
 
-合格対象: 全25件。特にP1-15のclose条件。
+合格対象: 全27件。特にP1-15のclose条件。
 
 ## Close判定
 
 - 自動試験PASSだけでは監査項目をcloseしない。対応する実機Gateと証拠が揃った項目だけを「解決済み」へ変更する。
 - 不合格時は症状、開始時刻、直前の正常時刻、関連event、I²C内訳、CSV範囲、再現回数を記録し、コード修正後にそのGateから再開する。
-- 最終的に25件すべてへ、firmware hash、試験日、合否、証拠ファイル、残余リスクを紐付ける。
+- 最終的に27件すべてへ、firmware hash、試験日、合否、証拠ファイル、残余リスクを紐付ける。

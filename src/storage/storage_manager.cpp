@@ -1020,31 +1020,39 @@ bool StorageManager::appendAndVerifyCsvLine(const char* line, size_t lineLength)
     if (!inspect) return false;
     originalSize = inspect.size();
 
-    char tail[MAX_CSV_LINE_LENGTH + 1] {};
+    // The tail inspection and post-write verification are sequential. Reuse
+    // one buffer instead of keeping two 769-byte arrays in the task stack.
+    char verifyBuffer[MAX_CSV_LINE_LENGTH + 1] {};
     const uint32_t readStart = originalSize > MAX_CSV_LINE_LENGTH
         ? originalSize - MAX_CSV_LINE_LENGTH : 0;
     const size_t requested = originalSize - readStart;
     if (!inspect.seek(readStart) || inspect.read(
-            reinterpret_cast<uint8_t*>(tail), requested) != requested) {
+            reinterpret_cast<uint8_t*>(verifyBuffer), requested) != requested) {
         inspect.close();
         return false;
     }
     inspect.close();
 
-    if (requested > 0 && tail[requested - 1] == '\n') {
+    if (requested > 0 && verifyBuffer[requested - 1] == '\n') {
         size_t lastStart = requested - 1;
-        while (lastStart > 0 && tail[lastStart - 1] != '\n') --lastStart;
+        while (lastStart > 0 && verifyBuffer[lastStart - 1] != '\n') {
+            --lastStart;
+        }
         const size_t lastLength = requested - 1 - lastStart;
-        if (lastLength == lineLength && memcmp(tail + lastStart, line, lineLength) == 0) {
+        if (lastLength == lineLength &&
+            memcmp(verifyBuffer + lastStart, line, lineLength) == 0) {
             return true; // SD append completed before a reset; consume only.
         }
         expectedStart = originalSize;
     } else {
         size_t fragmentStart = requested;
-        while (fragmentStart > 0 && tail[fragmentStart - 1] != '\n') --fragmentStart;
+        while (fragmentStart > 0 &&
+               verifyBuffer[fragmentStart - 1] != '\n') {
+            --fragmentStart;
+        }
         prefixLength = requested - fragmentStart;
         if (prefixLength > lineLength ||
-            memcmp(tail + fragmentStart, line, prefixLength) != 0) {
+            memcmp(verifyBuffer + fragmentStart, line, prefixLength) != 0) {
             services::Logger::error("StorageMgr",
                 "CSV has an unexpected unterminated tail; preserving FRAM record");
             return false;
@@ -1069,12 +1077,13 @@ bool StorageManager::appendAndVerifyCsvLine(const char* line, size_t lineLength)
         if (verify) verify.close();
         return false;
     }
-    char actual[MAX_CSV_LINE_LENGTH + 1] {};
+    std::memset(verifyBuffer, 0, sizeof(verifyBuffer));
     const size_t expectedBytes = lineLength + 1;
-    const size_t actualBytes = verify.read(reinterpret_cast<uint8_t*>(actual), expectedBytes);
+    const size_t actualBytes = verify.read(
+        reinterpret_cast<uint8_t*>(verifyBuffer), expectedBytes);
     verify.close();
-    return actualBytes == expectedBytes && actual[lineLength] == '\n' &&
-           memcmp(actual, line, lineLength) == 0;
+    return actualBytes == expectedBytes && verifyBuffer[lineLength] == '\n' &&
+           memcmp(verifyBuffer, line, lineLength) == 0;
 }
 
 bool StorageManager::appendAndVerifyQuarantine(const FramQuarantineRecord& record) {
@@ -1274,9 +1283,7 @@ void StorageManager::flushPendingToSd() {
             if (walStatus == FramWalStatus::Corrupt) {
                 // Require repeated structural failure before treating bytes as
                 // corrupt. I/O failures are never converted into data loss.
-                PersistentRecordV5 retry {};
-                walStatus = wal_.peekLegacy(superblock_, retry);
-                if (walStatus == FramWalStatus::Ready) rec = retry;
+                walStatus = wal_.peekLegacy(superblock_, rec);
             }
             if (walStatus == FramWalStatus::Ready) {
                 if (rec.header.length == LEGACY_SENSOR_RECORD_V5_SIZE) {
@@ -1291,9 +1298,7 @@ void StorageManager::flushPendingToSd() {
             PersistentRecordV6 rec {};
             walStatus = wal_.peek(superblock_, rec);
             if (walStatus == FramWalStatus::Corrupt) {
-                PersistentRecordV6 retry {};
-                walStatus = wal_.peek(superblock_, retry);
-                if (walStatus == FramWalStatus::Ready) rec = retry;
+                walStatus = wal_.peek(superblock_, rec);
             }
             if (walStatus == FramWalStatus::Ready) {
                 sequence = rec.header.sequence;

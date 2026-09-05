@@ -1,11 +1,40 @@
 # T08 Web API・Archive・UX 実装記録
 
 日付: 2026-09-06  
-対象: P1-12、P1-13、P2-04、P2-05、P2-06
+対象: P0-06、P1-12、P1-13、P2-04、P2-05、P2-06
 
 ## 結論
 
-Web操作の認証・CSRF・パス検証、SDアクセスの排他、ZIPの公開前検証と元ファイル保護を実装した。ファイル一覧は再帰検索と複数選択操作へ変更し、日常状態・ファイル・保守操作を分離した。HTML／CSS／JavaScriptはC++から編集元を分離し、事前buildで決定的gzipへ変換して単一firmwareへ埋め込む。コードと自動検証は完了し、実機AP・SD・障害注入によるGateを残す。
+Web操作の認証・CSRF・パス検証、SDアクセスの排他、ZIPの公開前検証と元ファイル保護を実装した。ファイル一覧は再帰検索と複数選択操作へ変更し、日常状態・ファイル・保守操作を分離した。HTML／CSS／JavaScriptはC++から編集元を分離し、事前buildで決定的gzipへ変換して単一firmwareへ埋め込む。コードと自動検証は完了したが、実機でページ再読込み後に`async_tcp`のTask Watchdogが発火し、装置全体が再起動するP0-06を確認したため、Web実機Gateは不合格である。
+
+## P0-06 Web一覧同期処理による再起動（2026-09-06）
+
+APへ接続後、ブラウザのF5再読込みまたはWeb UI操作で通信が失われる症状は、APの強制解除ではなく装置全体の再起動だった。serial logには`Wi-Fi AP turned OFF`がなく、637.025秒にTask Watchdogが`async_tcp (CPU 1)`を名指ししてabortし、直後に`RTC_SW_CPU_RST`で再起動している。APが消えるのは再起動後の通常初期状態であり、ActionButton／P2-01の問題ではない。最後の通常sensor logからWatchdogまで約10.2秒である。
+
+別起動でF5を再試行したところ、56.380秒に端末へIPを割り当てた後、64.771秒と65.276秒にAsyncTCPの`_tcp_poll(): throttling`が出て、70.601秒に同じ`async_tcp` Watchdog、同じbacktrace、同じfirmware ELF SHA-256 `b61230d32fcb1f5b`で再起動した。`throttling`はAsyncTCPのevent queueが一定量を超え、poll eventの追加を抑制した記録である。2回の独立再現により、電源断や偶発的なsensor障害ではなく、F5時のWeb処理が通信taskを長時間占有してqueueを滞留させる故障と判断する。
+
+さらに、ページを再読込みせずファイル画面の「一覧更新」だけを押した試験でも、122.553秒に同じ`async_tcp` Watchdog、backtrace、ELF SHAで3回目の再起動を確認した。UIの`refreshFiles` click handlerは`loadFiles()`だけを呼び、これは`GET /api/files`へ直結する。これにより発火routeは`/api/files`へ確定した。route内の停止段階は計測されていないため、StorageManager mutex待ち、SD再帰走査、filter／sort、JSON応答生成のどれがWatchdog期限を消費したかは修正時の所要時間計測で確定する。
+
+ブラウザ画面[`2026-09-06_webui_status_before_failure.png`](evidence/2026-09-06_webui_status_before_failure.png)では、障害前に状態APIが応答し、GNSS接続済み・記録buffer 10/480を表示している。[`2026-09-06_webui_files_stuck_loading.png`](evidence/2026-09-06_webui_files_stuck_loading.png)では、WebUI接続後にファイルtabを開いただけで一覧が`読込中…`から進まず、初期`boot()`が自動要求した`/api/files`も完了しないことを確認した。その後の[`2026-09-06_webui_files_fetch_failed.png`](evidence/2026-09-06_webui_files_fetch_failed.png)では`一覧取得失敗: Failed to fetch`となった。これは`/api/files`からHTTP error JSONが返ったのではなく、同時刻のserialで確認した装置再起動によりfetch接続自体が失われた表示と整合する。
+
+確定した故障クラスは、AsyncTCPのcallback処理がWatchdog期限内に戻らないことである。現在の`AsyncTCP.cpp`は`_handle_async_event()`から戻った後にだけWatchdogをresetするため、callback内の同期I/Oまたはmutex待ちが長引くと今回の再起動になる。
+
+発火routeは`/api/files`である。
+
+- `web/app.js`の`boot()`は表示中のtabに関係なく、F5ごとに`loadStatus()`と`loadFiles()`を同時実行する。
+- `/api/files`はAsyncTCP callback内で`StorageManager`を無期限lockし、SD全体を深さ5・最大512件まで再帰走査する。その後も検索用vector生成、sort、JSON生成を同じcallbackで同期実行する。
+- ファイル数、directory数、SD応答時間、他のStorage処理とのmutex競合により、1回のrequestがWatchdog期限を超え得る。
+- 状態の「更新」は5本の状態APIだけを呼ぶ。ファイル「一覧更新」単独では`/api/files`を発火routeとして確定した一方、状態「更新」単独の再現はまだ分離されておらず、F5直後なら同時開始された`/api/files`が残っている可能性がある。
+
+修正はWatchdogの無効化・延長ではなく、次の非同期化を行う。
+
+1. SD file indexの作成を低優先度の専用workerへ移し、件数または処理時間budgetごとにyieldしてStorageManager lockを短時間で解放する。
+2. `/api/files`はcache済みindexのpageだけを即時返す。更新中は`202 Accepted`と進捗を返し、UIからpollする。
+3. 初期表示では状態APIだけを読み、ファイルtabを初めて開いた時にだけ一覧を要求する。F5で不要なSD走査を開始しない。
+4. 一覧更新buttonは走査を同期実行せず、workerへの更新要求だけをenqueueする。
+5. route名、開始・終了、所要時間、mutex待ち時間、走査件数、失敗理由をcompact eventまたはrate-limitした診断へ残す。
+
+修正後はF5、状態「更新」、ファイル「一覧更新」を各10回実施し、resetなし、各requestの応答、PPG drop増加なしを実機Gateとする。
 
 ## Web APIの安全性
 

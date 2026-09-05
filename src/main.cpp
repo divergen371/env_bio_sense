@@ -35,12 +35,21 @@ void weatherTask(void* pvParameters) {
 
 void storageTask(void* pvParameters) {
     uint32_t lastEnvironmentFlushMs = 0;
+    uint32_t lastStackReportMs = 0;
     while (true) {
         const uint32_t nowMs = millis();
         ppgSessionManager.update(sensorManager.snapshot(), nowMs);
         if (nowMs - lastEnvironmentFlushMs >= 5000u) {
             lastEnvironmentFlushMs = nowMs;
             storageManager.flushPendingToSd();
+            if (lastStackReportMs == 0 ||
+                nowMs - lastStackReportMs >= 60000u) {
+                lastStackReportMs = nowMs;
+                services::Logger::info(
+                    "StorageTask", "Minimum remaining stack: %u bytes",
+                    static_cast<unsigned>(
+                        uxTaskGetStackHighWaterMark(nullptr)));
+            }
         }
         vTaskDelay(pdMS_TO_TICKS(20));
     }
@@ -105,7 +114,9 @@ void setup() {
     // FreeRTOS タスクの起動
     // 通信系(Weather)は Core 0、ファイル/I2C系は Core 1
     xTaskCreatePinnedToCore(weatherTask, "WeatherTask", 8192, NULL, 1, NULL, 0);
-    xTaskCreatePinnedToCore(storageTask, "StorageTask", 4096, NULL, 1, NULL, 1);
+    // CSV write/read-back verification and PPG recovery use nested filesystem
+    // calls. 4 KiB is insufficient once the v7 line buffers are active.
+    xTaskCreatePinnedToCore(storageTask, "StorageTask", 8192, NULL, 1, NULL, 1);
     xTaskCreatePinnedToCore(displayTask, "DisplayTask", 4096, NULL, 1, NULL, 1);
 }
 
