@@ -36,7 +36,11 @@ enum class EventCode : uint16_t {
     Scd41FactoryResetSucceeded = 0x2C,
     Scd41FactoryResetFailed = 0x2D,
     FramRecordCorrupt = 0x30,
-    FramCheckpointFailed = 0x31
+    FramCheckpointFailed = 0x31,
+    PressureFieldUpdated = 0x40,
+    PressureFieldStateChanged = 0x41,
+    Bmp581CalibrationSucceeded = 0x42,
+    Bmp581CalibrationFailed = 0x43
 };
 
 inline const char* eventCodeName(EventCode code) {
@@ -65,6 +69,10 @@ inline const char* eventCodeName(EventCode code) {
         case EventCode::Scd41FactoryResetFailed: return "SCD41_FACTORY_RESET_FAILED";
         case EventCode::FramRecordCorrupt: return "FRAM_RECORD_CORRUPT";
         case EventCode::FramCheckpointFailed: return "FRAM_CHECKPOINT_FAILED";
+        case EventCode::PressureFieldUpdated: return "PRESSURE_FIELD_UPDATED";
+        case EventCode::PressureFieldStateChanged: return "PRESSURE_FIELD_STATE_CHANGED";
+        case EventCode::Bmp581CalibrationSucceeded: return "BMP581_CALIBRATION_SUCCEEDED";
+        case EventCode::Bmp581CalibrationFailed: return "BMP581_CALIBRATION_FAILED";
     }
     return "UNKNOWN";
 }

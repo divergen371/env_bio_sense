@@ -23,16 +23,21 @@ public:
 
     core::SensorSnapshot snapshot() const;
     core::SystemStatus status() const;
+    bool copyGnss(core::GnssData& out) const;
     
     // Calibration & Maintenance
     void setSeaLevelPressure(
         float hpa,
         core::PressureFieldState state = core::PressureFieldState::Valid,
-        core::PressureReferenceSource source = core::PressureReferenceSource::Manual);
+        core::PressureReferenceSource source = core::PressureReferenceSource::Manual,
+        uint32_t sourceAgeMs = 0,
+        uint8_t usedStationCount = 0);
+    void setSeaLevelPressureState(core::PressureFieldState state);
     bool calibrateScd41(uint16_t referencePpm, drivers::sensors::Scd41FrcResult& result);
     bool factoryResetScd41();
     bool triggerSht45Heater();
     bool startBmp581Calibration(float referenceAltitudeM);
+    bool isBmp581Calibrating() const { return bmp581_.isCalibrating(); }
 
     GnssTimeSyncService* getGnssTimeSyncService() { return &gnssTimeSync_; }
 
@@ -51,11 +56,11 @@ private:
     uint32_t highHumidityStartMs_ = 0;
     uint32_t lastHeaterRunMs_ = 0;
     
-    float slpEma_ = NAN;
-    uint32_t lastAmedasUpdateMs_ = 0;
     uint32_t pressureReferenceUpdatedMs_ = 0;
     core::PressureReferenceSource pressureReferenceSource_ {
         core::PressureReferenceSource::Unset};
+    uint8_t pressureReferenceStationCount_ = 0;
+    uint32_t bmp581CalibrationStartEpoch_ = 0;
 
     drivers::sensors::Scd41Condition lastScd41Condition_ {
         drivers::sensors::Scd41Condition::AwaitingFirstSample};

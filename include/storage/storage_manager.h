@@ -57,9 +57,14 @@ public:
     uint32_t getScd41LastCalibrationEpoch() const;
     void setScd41LastCalibrationEpoch(uint32_t epoch);
 
+    // AMeDAS field provenance log. The caller supplies one RFC4180-safe row;
+    // the fixed header/path and write verification stay inside storage.
+    bool appendAmedasLogLine(const char* line);
+    bool appendBmp581CalibrationLogLine(const char* line);
+
     // BMP581 calibration tracking
     bool getBmp581Calibration(float& offsetHpa, uint32_t& epoch, float& tempC, float& slpHpa) const;
-    void setBmp581Calibration(float offsetHpa, uint32_t epoch, float tempC, float slpHpa);
+    bool setBmp581Calibration(float offsetHpa, uint32_t epoch, float tempC, float slpHpa);
 
     // スレッドセーフなアクセスを提供するため
     void lock() const;
@@ -95,6 +100,8 @@ private:
     bool initSdCard();
     bool createNewSdFile(const String& targetDate = "");
     bool appendAndVerifyCsvLine(const char* line, size_t lineLength);
+    bool appendVerifiedDiagnosticCsv(const char* path, const char* header,
+                                     const char* line);
     bool quarantineCorruptTail(uint16_t slotIndex, uint32_t uptimeMs);
     bool appendAndVerifyQuarantine(const FramQuarantineRecord& record);
     uint16_t activeCsvSchemaVersion() const;

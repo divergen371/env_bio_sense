@@ -2,6 +2,7 @@
 #include "drivers/sensors/bmp5_diagnostic.h"
 #include "services/logger.h"
 #include "hal/i2c_bus.h"
+#include "utils/altitude_math.h"
 #include <Wire.h>
 #include <Arduino.h>
 #include <cmath>
@@ -10,6 +11,86 @@ namespace drivers {
 namespace sensors {
 
 Bmp5SensorBase::Bmp5SensorBase() {}
+
+void Bmp5SensorBase::setSeaLevelPressure(
+        float hpa, core::PressureFieldState state) {
+    portENTER_CRITICAL(&dataMux_);
+    interpolatedSeaLevelPressureHpa_ = hpa;
+    pressureFieldState_ = state;
+    rawAbsoluteAltitudeM_ = NAN;
+    displayAltitudeM_ = NAN;
+    altitudeValid_ = false;
+    portEXIT_CRITICAL(&dataMux_);
+}
+
+void Bmp5SensorBase::setPressureFieldState(core::PressureFieldState state) {
+    portENTER_CRITICAL(&dataMux_);
+    const bool wasUsable = pressureFieldState_ == core::PressureFieldState::Valid ||
+        pressureFieldState_ == core::PressureFieldState::LastKnown;
+    const bool nowUsable = state == core::PressureFieldState::Valid ||
+        state == core::PressureFieldState::LastKnown;
+    pressureFieldState_ = state;
+    if (wasUsable != nowUsable) {
+        rawAbsoluteAltitudeM_ = NAN;
+        displayAltitudeM_ = NAN;
+        altitudeValid_ = false;
+    }
+    portEXIT_CRITICAL(&dataMux_);
+}
+
+float Bmp5SensorBase::getSeaLevelPressure() const {
+    portENTER_CRITICAL(&dataMux_);
+    const float value = interpolatedSeaLevelPressureHpa_;
+    portEXIT_CRITICAL(&dataMux_);
+    return value;
+}
+
+core::PressureFieldState Bmp5SensorBase::getPressureFieldState() const {
+    portENTER_CRITICAL(&dataMux_);
+    const core::PressureFieldState value = pressureFieldState_;
+    portEXIT_CRITICAL(&dataMux_);
+    return value;
+}
+
+void Bmp5SensorBase::setCalibrationOffset(float offsetHpa) {
+    if (!std::isfinite(offsetHpa) || std::fabs(offsetHpa) > 5.0f) return;
+    portENTER_CRITICAL(&dataMux_);
+    pressureOffsetHpa_ = offsetHpa;
+    rawAbsoluteAltitudeM_ = NAN;
+    displayAltitudeM_ = NAN;
+    altitudeValid_ = false;
+    portEXIT_CRITICAL(&dataMux_);
+}
+
+float Bmp5SensorBase::getCalibrationOffset() const {
+    portENTER_CRITICAL(&dataMux_);
+    const float value = pressureOffsetHpa_;
+    portEXIT_CRITICAL(&dataMux_);
+    return value;
+}
+
+float Bmp5SensorBase::getRawAltitude() const {
+    portENTER_CRITICAL(&dataMux_);
+    const float value = rawAbsoluteAltitudeM_;
+    portEXIT_CRITICAL(&dataMux_);
+    return value;
+}
+
+float Bmp5SensorBase::getDisplayAltitude() const {
+    portENTER_CRITICAL(&dataMux_);
+    const float value = displayAltitudeM_;
+    portEXIT_CRITICAL(&dataMux_);
+    return value;
+}
+
+bool Bmp5SensorBase::getAltitudeTemperature(
+        float& temperatureC, bool& externalSource) const {
+    portENTER_CRITICAL(&dataMux_);
+    temperatureC = altitudeTemperatureC_;
+    externalSource = altitudeTemperatureExternal_;
+    portEXIT_CRITICAL(&dataMux_);
+    return std::isfinite(temperatureC);
+}
 
 // --- I2C Wrapper Functions ---
 int8_t Bmp5SensorBase::i2c_read(uint8_t reg_addr, uint8_t *reg_data, uint32_t length, void *intf_ptr) {
@@ -227,6 +308,11 @@ bool Bmp5SensorBase::reinitSensor(uint32_t nowMs) {
     }
     
     nextReinitMs_ = 0;
+    portENTER_CRITICAL(&dataMux_);
+    rawAbsoluteAltitudeM_ = NAN;
+    displayAltitudeM_ = NAN;
+    altitudeValid_ = false;
+    portEXIT_CRITICAL(&dataMux_);
     changeState(core::DeviceState::Ready);
     lastError_ = core::ErrorCode::None;
     return true;
@@ -236,6 +322,13 @@ void Bmp5SensorBase::update(uint32_t nowMs) {
     if (state_ == core::DeviceState::Error ||
         state_ == core::DeviceState::Offline ||
         state_ == core::DeviceState::RetryWait) {
+        portENTER_CRITICAL(&dataMux_);
+        altitudeTemperatureC_ = NAN;
+        altitudeTemperatureExternal_ = false;
+        portEXIT_CRITICAL(&dataMux_);
+        if (isCalibrating()) {
+            processCalibration(nowMs, NAN, NAN);
+        }
         if (static_cast<int32_t>(nowMs - nextReinitMs_) >= 0) {
             if (reinitSensor(nowMs)) {
                 services::Logger::info(getSensorName(), "Sensor recovered successfully after re-init");
@@ -265,7 +358,14 @@ void Bmp5SensorBase::update(uint32_t nowMs) {
     }
 
     if (!validReading) {
+        if (isCalibrating()) {
+            processCalibration(nowMs, NAN, NAN);
+        }
         consecutiveErrors_++;
+        portENTER_CRITICAL(&dataMux_);
+        altitudeTemperatureC_ = NAN;
+        altitudeTemperatureExternal_ = false;
+        portEXIT_CRITICAL(&dataMux_);
         isStale_ = true;
         lastError_ = rslt == BMP5_OK
             ? core::ErrorCode::InvalidData : core::ErrorCode::BusError;
@@ -293,35 +393,48 @@ void Bmp5SensorBase::update(uint32_t nowMs) {
     currentTemperatureC_ = rawTemperatureC;
     
     // 外部基準気温（SHT45等）があればそれを使用し、無ければ内蔵温度を使用
-    float tempForAltitude = std::isnan(referenceTemperatureC_) ? rawTemperatureC : referenceTemperatureC_;
+    const bool usesExternalTemperature =
+        std::isfinite(referenceTemperatureC_);
+    float tempForAltitude = usesExternalTemperature
+        ? referenceTemperatureC_ : rawTemperatureC;
     
-    const float correctedPressureHpa = pressureHpa - pressureOffsetHpa_;
+    float pressureOffsetHpa = 0.0f;
+    float seaLevelPressureHpa = NAN;
+    core::PressureFieldState pressureFieldState;
+    portENTER_CRITICAL(&dataMux_);
+    pressureOffsetHpa = pressureOffsetHpa_;
+    seaLevelPressureHpa = interpolatedSeaLevelPressureHpa_;
+    pressureFieldState = pressureFieldState_;
+    portEXIT_CRITICAL(&dataMux_);
 
     if (isCalibrating_) {
-        processCalibration(nowMs, pressureHpa, tempForAltitude); // Pass uncorrected pressure for expected comparison
+        processCalibration(nowMs, pressureHpa, tempForAltitude,
+                           usesExternalTemperature);
     }
     
     // 気温を考慮した絶対高度計算
-    if ((pressureFieldState_ == core::PressureFieldState::Valid || pressureFieldState_ == core::PressureFieldState::LastKnown) 
-        && interpolatedSeaLevelPressureHpa_ > 0.0f && correctedPressureHpa > 0.0f) {
-        float tempK = tempForAltitude + 273.15f;
-        rawAbsoluteAltitudeM_ = (tempK / 0.0065f) * (1.0f - std::pow(correctedPressureHpa / interpolatedSeaLevelPressureHpa_, 0.190295f));
-        
-        // ソフトウェアデッドバンド（ヒステリシス ±0.5m）
-        if (std::isnan(displayAltitudeM_)) {
-            displayAltitudeM_ = rawAbsoluteAltitudeM_;
-        } else {
-            float diff = rawAbsoluteAltitudeM_ - displayAltitudeM_;
-            if (diff > 0.5f) {
-                displayAltitudeM_ = rawAbsoluteAltitudeM_ - 0.5f;
-            } else if (diff < -0.5f) {
-                displayAltitudeM_ = rawAbsoluteAltitudeM_ + 0.5f;
-            }
-        }
+    float calculatedAltitudeM = NAN;
+    const bool usableField =
+        pressureFieldState == core::PressureFieldState::Valid ||
+        pressureFieldState == core::PressureFieldState::LastKnown;
+    const bool altitudeCalculated = usableField &&
+        utils::altitude_math::absoluteAltitudeM(
+            pressureHpa, pressureOffsetHpa, seaLevelPressureHpa,
+            tempForAltitude, calculatedAltitudeM);
+    portENTER_CRITICAL(&dataMux_);
+    altitudeTemperatureC_ = tempForAltitude;
+    altitudeTemperatureExternal_ = usesExternalTemperature;
+    if (altitudeCalculated) {
+        rawAbsoluteAltitudeM_ = calculatedAltitudeM;
+        displayAltitudeM_ = utils::altitude_math::applyDisplayHysteresis(
+            rawAbsoluteAltitudeM_, displayAltitudeM_, altitudeValid_);
+        altitudeValid_ = true;
     } else {
         rawAbsoluteAltitudeM_ = NAN;
-        // 表示高度は上書きせず保持する
+        altitudeValid_ = false;
     }
+    const float displayAltitudeForLog = displayAltitudeM_;
+    portEXIT_CRITICAL(&dataMux_);
     
     hasValidData_ = true;
     lastSuccessMs_ = nowMs;
@@ -329,7 +442,8 @@ void Bmp5SensorBase::update(uint32_t nowMs) {
     changeState(core::DeviceState::Ready);
     
     services::Logger::info(getSensorName(), "ts=%u read=OK raw_pressure=%.1fPa pressure=%.2fhPa temp=%.2fC alt=%.1fm invalid_count=%u reset_count=%u",
-        nowMs, rawPressurePa, pressureHpa, rawTemperatureC, displayAltitudeM_, consecutiveErrors_, resetCount_);
+        nowMs, rawPressurePa, pressureHpa, rawTemperatureC,
+        displayAltitudeForLog, consecutiveErrors_, resetCount_);
 }
 
 bool Bmp5SensorBase::readEnvironment(core::EnvironmentData& out) const {
@@ -345,8 +459,10 @@ bool Bmp5SensorBase::readEnvironment(core::EnvironmentData& out) const {
     out.pressureValid = true;
     out.pressureStale = false;
     
+    portENTER_CRITICAL(&dataMux_);
     out.altitudeM = displayAltitudeM_; // ヒステリシス適用済みの高度を出力
-    out.altitudeValid = !std::isnan(displayAltitudeM_);
+    out.altitudeValid = altitudeValid_ && std::isfinite(displayAltitudeM_);
+    portEXIT_CRITICAL(&dataMux_);
     
     if (lastSuccessMs_ > out.timestampMs) {
         out.timestampMs = lastSuccessMs_;
@@ -360,84 +476,153 @@ void Bmp5SensorBase::runDiagnostics() {
 }
 
 bool Bmp5SensorBase::startCalibration(float referenceAltitudeM) {
-    if (pressureFieldState_ != core::PressureFieldState::Valid) {
+    if (!utils::bmp581_calibration::validReferenceAltitude(
+            referenceAltitudeM)) {
+        services::Logger::warn(getSensorName(),
+            "Cannot start calibration: reference altitude must be 13.6 m.");
+        return false;
+    }
+    if (getPressureFieldState() != core::PressureFieldState::Valid) {
         services::Logger::warn(getSensorName(), "Cannot start calibration: Pressure field is not Valid.");
         return false;
     }
+    portENTER_CRITICAL(&dataMux_);
+    if (isCalibrating_ || calibResultReady_) {
+        portEXIT_CRITICAL(&dataMux_);
+        services::Logger::warn(getSensorName(),
+            "Cannot start calibration: calibration is busy.");
+        return false;
+    }
     isCalibrating_ = true;
-    calibRefAltitudeM_ = referenceAltitudeM;
     calibPhase_ = 1; // Settle phase
     calibStateStartMs_ = millis();
     calibLastSampleMs_ = 0;
     calibValidSamples_ = 0;
     calibTotalSamples_ = 0;
-    calibResidualSum_ = 0.0f;
+    calibExternalTemperatureSamples_ = 0;
+    calibResult_ = {};
+    portEXIT_CRITICAL(&dataMux_);
     services::Logger::info(getSensorName(), "Calibration started. Waiting for 60s settle time.");
     return true;
 }
 
 void Bmp5SensorBase::cancelCalibration() {
-    isCalibrating_ = false;
-    calibPhase_ = 0;
+    if (!isCalibrating()) return;
+    finishCalibration(utils::bmp581_calibration::Failure::Cancelled);
     services::Logger::info(getSensorName(), "Calibration cancelled.");
 }
 
-void Bmp5SensorBase::processCalibration(uint32_t nowMs, float pressureHpa, float tempC) {
-    if (!isCalibrating_) return;
+bool Bmp5SensorBase::isCalibrating() const {
+    portENTER_CRITICAL(&dataMux_);
+    const bool calibrating = isCalibrating_;
+    portEXIT_CRITICAL(&dataMux_);
+    return calibrating;
+}
+
+bool Bmp5SensorBase::takeCalibrationResult(
+        utils::bmp581_calibration::Result& result) {
+    portENTER_CRITICAL(&dataMux_);
+    if (!calibResultReady_) {
+        portEXIT_CRITICAL(&dataMux_);
+        return false;
+    }
+    result = calibResult_;
+    calibResultReady_ = false;
+    portEXIT_CRITICAL(&dataMux_);
+    return true;
+}
+
+void Bmp5SensorBase::finishCalibration(
+        utils::bmp581_calibration::Failure forcedFailure) {
+    utils::bmp581_calibration::Result result {};
+    if (forcedFailure == utils::bmp581_calibration::Failure::None) {
+        utils::bmp581_calibration::evaluate(
+            calibSamples_, calibValidSamples_,
+            utils::bmp581_calibration::EXPECTED_SAMPLES, result);
+        result.externalTemperatureSamples =
+            calibExternalTemperatureSamples_;
+    } else {
+        result.success = false;
+        result.failure = forcedFailure;
+        result.totalSamples = calibTotalSamples_;
+        result.validSamples = calibValidSamples_;
+    }
+
+    portENTER_CRITICAL(&dataMux_);
+    isCalibrating_ = false;
+    calibPhase_ = 0;
+    calibResult_ = result;
+    calibResultReady_ = true;
+    portEXIT_CRITICAL(&dataMux_);
+
+    if (result.success) {
+        services::Logger::info(getSensorName(),
+            "Calibration candidate accepted: offset=%.3f hPa samples=%lu/%lu post_alt=%.3f+/-%.3f m",
+            result.pressureOffsetHpa,
+            static_cast<unsigned long>(result.validSamples),
+            static_cast<unsigned long>(result.totalSamples),
+            result.postCalibrationMeanAltitudeM,
+            result.postCalibrationStdDevM);
+    } else {
+        services::Logger::error(getSensorName(),
+            "Calibration failed: reason=%u samples=%lu/%lu offset=%.3f hPa post_alt=%.3f+/-%.3f m",
+            static_cast<unsigned>(result.failure),
+            static_cast<unsigned long>(result.validSamples),
+            static_cast<unsigned long>(result.totalSamples),
+            result.pressureOffsetHpa,
+            result.postCalibrationMeanAltitudeM,
+            result.postCalibrationStdDevM);
+    }
+}
+
+void Bmp5SensorBase::processCalibration(
+        uint32_t nowMs, float pressureHpa, float tempC,
+        bool externalTemperatureSource) {
+    if (!isCalibrating()) return;
     
-    // We only collect at 10Hz if we can. Actually we collect as fast as update() is called.
     if (calibPhase_ == 1) {
-        if (nowMs - calibStateStartMs_ >= 60000) {
+        if (nowMs - calibStateStartMs_ >=
+                utils::bmp581_calibration::SETTLE_DURATION_MS) {
             calibPhase_ = 2; // Collect phase
             calibStateStartMs_ = nowMs;
+            calibLastSampleMs_ = nowMs;
             services::Logger::info(getSensorName(), "Calibration settle complete. Starting 5-min data collection.");
         }
     } else if (calibPhase_ == 2) {
-        if (nowMs - calibLastSampleMs_ < 100) return; // Max 10Hz
-        calibLastSampleMs_ = nowMs;
-        
-        calibTotalSamples_++;
-        
-        if (pressureFieldState_ != core::PressureFieldState::Valid) {
-            services::Logger::warn(getSensorName(), "Pressure field invalid during calibration! Cancelling.");
-            cancelCalibration();
+        if (getPressureFieldState() != core::PressureFieldState::Valid) {
+            finishCalibration(
+                utils::bmp581_calibration::Failure::PressureFieldNotValid);
             return;
         }
-        
-        float tempK = tempC + 273.15f;
-        // P_expected = P_0 * (1 - L * h / T)^ (1/k)
-        float expVal = 1.0f - (0.0065f * calibRefAltitudeM_) / tempK;
-        if (expVal > 0.0f) {
-            float expectedPressureHpa = interpolatedSeaLevelPressureHpa_ * std::pow(expVal, 5.254999f);
-            float residual = pressureHpa - expectedPressureHpa;
-            
-            // Simple average for now. (trim or median would require storing all samples)
-            calibResidualSum_ += residual;
-            calibValidSamples_++;
+        if (nowMs - calibLastSampleMs_ <
+                utils::bmp581_calibration::SAMPLE_INTERVAL_MS) return;
+        calibLastSampleMs_ = nowMs;
+        const uint32_t elapsedMs = nowMs - calibStateStartMs_;
+        calibTotalSamples_ = elapsedMs /
+            utils::bmp581_calibration::SAMPLE_INTERVAL_MS;
+        if (calibTotalSamples_ >
+                utils::bmp581_calibration::EXPECTED_SAMPLES) {
+            calibTotalSamples_ =
+                utils::bmp581_calibration::EXPECTED_SAMPLES;
         }
-        
-        if (nowMs - calibStateStartMs_ >= 300000) { // 5 minutes
-            isCalibrating_ = false;
-            calibPhase_ = 0;
-            
-            float validRatio = (float)calibValidSamples_ / calibTotalSamples_;
-            if (validRatio >= 0.8f && calibValidSamples_ > 0) {
-                float avgResidual = calibResidualSum_ / calibValidSamples_;
-                if (std::abs(avgResidual) <= 5.0f) {
-                    services::Logger::info(getSensorName(), "Calibration SUCCESS! Offset: %.2f hPa (Valid samples: %u/%u)", avgResidual, calibValidSamples_, calibTotalSamples_);
-                    // We need to notify SensorManager to save it. For now we just set it.
-                    // The caller must poll and save it, or we trigger a callback.
-                    // Simple approach: we just set pressureOffsetHpa_ and someone checks if it was updated.
-                    // Wait, Bmp5SensorBase does not have access to StorageManager.
-                    // This implies we need a way to bubble up the result.
-                    pressureOffsetHpa_ = avgResidual;
-                    displayAltitudeM_ = NAN; // Reset hysteresis
-                } else {
-                    services::Logger::error(getSensorName(), "Calibration FAILED! Offset absolute value too large: %.2f hPa", avgResidual);
+
+        if (calibValidSamples_ <
+                utils::bmp581_calibration::EXPECTED_SAMPLES) {
+            utils::bmp581_calibration::Sample sample;
+            if (utils::bmp581_calibration::makeSample(
+                    pressureHpa, tempC, getSeaLevelPressure(), sample)) {
+                calibSamples_[calibValidSamples_++] = sample;
+                if (externalTemperatureSource) {
+                    ++calibExternalTemperatureSamples_;
                 }
-            } else {
-                services::Logger::error(getSensorName(), "Calibration FAILED! Not enough valid samples: %u/%u", calibValidSamples_, calibTotalSamples_);
             }
+        }
+
+        if (elapsedMs >=
+                utils::bmp581_calibration::COLLECTION_DURATION_MS) {
+            calibTotalSamples_ =
+                utils::bmp581_calibration::EXPECTED_SAMPLES;
+            finishCalibration();
         }
     }
 }

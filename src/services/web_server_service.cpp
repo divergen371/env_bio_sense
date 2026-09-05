@@ -5,9 +5,11 @@
 #include "hal/clock.h"
 #include "hal/i2c_bus.h"
 #include <ArduinoJson.h>
+#include <AsyncJson.h>
 #include <SD.h>
 #include "services/weather_service.h"
 #include "services/sensor_manager.h"
+#include <cmath>
 
 extern services::WeatherService weatherService;
 extern services::SensorManager sensorManager;
@@ -452,6 +454,43 @@ const char* htmlContent = R"rawliteral(
       }
     }
 
+    async function fetchWeatherStatus() {
+      const statusEl = document.getElementById('sealevelStatus');
+      try {
+        const response = await fetch('/api/weather');
+        if (!response.ok) throw new Error('weather status unavailable');
+        const data = await response.json();
+        if (!data.has_pressure_field) {
+          statusEl.innerText = `No usable pressure field (${data.state}); location: ${data.location.source}`;
+          return;
+        }
+        const ageMin = data.observation_age_ms == null ? '?' :
+          Math.round(data.observation_age_ms / 60000);
+        const stationIds = data.stations.filter(st => st.used).map(st => st.id).join(', ');
+        statusEl.innerText = `${data.pressure_hpa.toFixed(1)} hPa / ${data.state} / ${data.location.source} / observation age ${ageMin} min / stations ${stationIds || '-'}`;
+      } catch (error) {
+        statusEl.innerText = `Status error: ${error.message}`;
+      }
+    }
+
+    async function fetchAltitudeStatus() {
+      const statusEl = document.getElementById('bmp581CalibStatus');
+      try {
+        const response = await fetch('/api/altitude');
+        if (!response.ok) throw new Error('altitude status unavailable');
+        const data = await response.json();
+        const altitude = data.altitude_valid ?
+          `${data.display_altitude_m.toFixed(1)} m` : 'altitude invalid';
+        const offset = data.calibration_offset_hpa == null ? '' :
+          ` / offset ${data.calibration_offset_hpa.toFixed(3)} hPa`;
+        statusEl.innerText = `${data.calibration_state} / ${altitude}${offset}`;
+        statusEl.style.color = data.altitude_valid ? 'green' : '#856404';
+      } catch (error) {
+        statusEl.innerText = `Status error: ${error.message}`;
+        statusEl.style.color = 'red';
+      }
+    }
+
     async function flushAndReload() {
       const btn = document.querySelector('button[onclick="flushAndReload()"]');
       const originalText = btn.innerText;
@@ -633,8 +672,24 @@ const char* htmlContent = R"rawliteral(
       const statusEl = document.getElementById('sealevelStatus');
       statusEl.innerText = 'Fetching current sea level pressure from JMA AMeDAS (IDW)...';
       try {
-        const myLat = 35.503788;
-        const myLon = 139.650497;
+        const locationRes = await fetch('/api/location');
+        if (!locationRes.ok) throw new Error('Failed to get device location');
+        const location = await locationRes.json();
+        if (!location.valid) throw new Error('GNSS and fallback location are unavailable');
+        const myLat = location.latitudeDeg;
+        const myLon = location.longitudeDeg;
+        const sourceLabel = location.source === 'GNSS_LIVE' ? 'GNSS Live' :
+          location.source === 'GNSS_LAST_KNOWN' ? 'Last GNSS fix' :
+          'Configured fallback';
+        statusEl.innerText = `Location: ${sourceLabel}. Fetching JMA AMeDAS...`;
+
+        const distanceKm = (lat1, lon1, lat2, lon2) => {
+          const toRad = Math.PI / 180.0;
+          const meanLat = (lat1 + lat2) * 0.5 * toRad;
+          const x = (lon2 - lon1) * toRad * Math.cos(meanLat);
+          const y = (lat2 - lat1) * toRad;
+          return 6371.0 * Math.sqrt(x * x + y * y);
+        };
         
         // 1. Fetch station list
         const tableRes = await fetch('https://www.jma.go.jp/bosai/amedas/const/amedastable.json');
@@ -648,14 +703,14 @@ const char* htmlContent = R"rawliteral(
             if (station.lat && station.lon && station.lat.length >= 2 && station.lon.length >= 2) {
               const lat = station.lat[0] + station.lat[1] / 60.0;
               const lon = station.lon[0] + station.lon[1] / 60.0;
-              const distSq = Math.pow(lat - myLat, 2) + Math.pow(lon - myLon, 2);
-              stations.push({ id, distSq });
+              const distance = distanceKm(myLat, myLon, lat, lon);
+              stations.push({ id, distanceKm: distance });
             }
           }
         }
         
         // Sort by distance and pick top 5
-        stations.sort((a, b) => a.distSq - b.distSq);
+        stations.sort((a, b) => a.distanceKm - b.distanceKm);
         const topStations = stations.slice(0, 5);
         if (topStations.length === 0) throw new Error('No valid AMeDAS station found');
         
@@ -663,6 +718,12 @@ const char* htmlContent = R"rawliteral(
         const timeRes = await fetch('https://www.jma.go.jp/bosai/amedas/data/latest_time.txt');
         if (!timeRes.ok) throw new Error('Failed to fetch latest_time');
         const timeText = await timeRes.text();
+        const observationTime = new Date(timeText.trim());
+        const observationAgeMs = Date.now() - observationTime.getTime();
+        if (!Number.isFinite(observationTime.getTime()) ||
+            observationAgeMs > 15 * 60 * 1000 || observationAgeMs < -2 * 60 * 1000) {
+          throw new Error('AMeDAS observation time is stale or invalid');
+        }
         const dt = timeText.trim().replace(/[-T:]/g, '').substring(0, 14);
         
         // 4. Fetch pressure data
@@ -673,6 +734,7 @@ const char* htmlContent = R"rawliteral(
         // 5. Calculate IDW (Inverse Distance Weighting)
         let sumWeight = 0.0;
         let sumWeightedPressure = 0.0;
+        let exactPressure = null;
         let validCount = 0;
         let usedStations = [];
         let minP = 9999.0;
@@ -682,42 +744,41 @@ const char* htmlContent = R"rawliteral(
         
         for (const st of topStations) {
           const stationData = mapData[st.id];
-          if (stationData && stationData.normalPressure && stationData.normalPressure[0] != null) {
+          if (stationData && Array.isArray(stationData.normalPressure) &&
+              stationData.normalPressure[0] != null && stationData.normalPressure[1] === 0) {
             const p = stationData.normalPressure[0];
-            if (st.distSq < 1e-6) { // Exactly at station
-              sumWeight = 1.0;
-              sumWeightedPressure = p;
-              validCount = 1;
-              usedStations = [st.id];
-              minP = maxP = p;
-              minDistSq = maxDistSq = 0;
-              break;
+            if (!Number.isFinite(p) || p <= 800 || p >= 1100) continue;
+            if (st.distanceKm < 0.001) { // Within one metre of station
+              exactPressure = p;
+            } else {
+              const distanceSq = st.distanceKm * st.distanceKm;
+              const w = 1.0 / distanceSq;
+              sumWeight += w;
+              sumWeightedPressure += p * w;
             }
-            const w = 1.0 / st.distSq;
-            sumWeight += w;
-            sumWeightedPressure += p * w;
             validCount++;
             usedStations.push(st.id);
             if (p < minP) minP = p;
             if (p > maxP) maxP = p;
-            if (st.distSq < minDistSq) minDistSq = st.distSq;
-            if (st.distSq > maxDistSq) maxDistSq = st.distSq;
+            const distanceSq = st.distanceKm * st.distanceKm;
+            if (distanceSq < minDistSq) minDistSq = distanceSq;
+            if (distanceSq > maxDistSq) maxDistSq = distanceSq;
           }
         }
         
-        if (validCount === 0) {
-          throw new Error('No pressure data available for top stations');
+        if (validCount < 3) {
+          throw new Error('Fewer than 3 fresh quality=0 pressure stations');
         }
         
-        let slpNum = sumWeightedPressure / sumWeight;
+        let slpNum = exactPressure !== null ? exactPressure : sumWeightedPressure / sumWeight;
         // Clamp to min/max range
         if (slpNum < minP) slpNum = minP;
         if (slpNum > maxP) slpNum = maxP;
         
         const slp = slpNum.toFixed(1);
-        const minDistKm = (Math.sqrt(minDistSq) * 111.0).toFixed(1);
-        const maxDistKm = (Math.sqrt(maxDistSq) * 111.0).toFixed(1);
-        statusEl.innerText = `Retrieved IDW: ${slp} hPa (Used ${validCount}/5 stations: ${usedStations.join(',')}, MinDist: ${minDistKm}km, MaxDist: ${maxDistKm}km). Updating ESP32...`;
+        const minDistKm = Math.sqrt(minDistSq).toFixed(1);
+        const maxDistKm = Math.sqrt(maxDistSq).toFixed(1);
+        statusEl.innerText = `Location: ${sourceLabel}. Retrieved IDW: ${slp} hPa (Used ${validCount}/5 quality=0 stations: ${usedStations.join(',')}, observation age ${Math.round(observationAgeMs / 60000)} min, distance ${minDistKm}-${maxDistKm} km). Updating ESP32...`;
         
         const postRes = await fetch('/api/sealevel', {
           method: 'POST',
@@ -739,16 +800,23 @@ const char* htmlContent = R"rawliteral(
       await syncTime();
       await fetchStatus();
       await loadFiles();
-      calibrateSeaLevelPressure();
+      await fetchWeatherStatus();
+      await fetchAltitudeStatus();
       setInterval(fetchStatus, 10000); // 10秒ごとに容量を更新
+      setInterval(fetchAltitudeStatus, 10000);
+      setInterval(fetchWeatherStatus, 60000);
     };
   </script>
 </body>
 </html>
 )rawliteral";
 
-WebServerService::WebServerService(storage::StorageManager& storageManager, ArchiveManager& archiveManager)
-    : storageManager_(storageManager), archiveManager_(archiveManager) {
+WebServerService::WebServerService(storage::StorageManager& storageManager,
+                                   ArchiveManager& archiveManager,
+                                   LocationService& locationService)
+    : storageManager_(storageManager),
+      archiveManager_(archiveManager),
+      locationService_(locationService) {
     server_.reset(new AsyncWebServer(80));
 }
 
@@ -762,6 +830,159 @@ void WebServerService::setupRoutes() {
     server_->on("/", HTTP_GET, [](AsyncWebServerRequest *request){
         request->send(200, "text/html", htmlContent);
     });
+
+    server_->on("/api/location", HTTP_GET,
+        [this](AsyncWebServerRequest *request) {
+            const core::DeviceLocation location =
+                locationService_.current(millis());
+            JsonDocument doc;
+            doc["valid"] = location.valid;
+            doc["source"] = core::locationSourceName(location.source);
+            if (location.valid) {
+                doc["latitudeDeg"] = location.latitudeDeg;
+                doc["longitudeDeg"] = location.longitudeDeg;
+                if (location.ageMs == UINT32_MAX) doc["ageMs"] = nullptr;
+                else doc["ageMs"] = location.ageMs;
+                if (location.source == core::LocationSource::GnssLive ||
+                    location.source == core::LocationSource::GnssLastKnown) {
+                    doc["satellites"] = location.satellites;
+                    if (std::isfinite(location.hdop)) doc["hdop"] = location.hdop;
+                }
+            }
+            String response;
+            serializeJson(doc, response);
+            request->send(200, "application/json", response);
+        });
+
+    server_->on("/api/weather", HTTP_GET,
+        [](AsyncWebServerRequest *request) {
+            const AmedasStatus status = weatherService.status(millis());
+            JsonDocument doc;
+            doc["state"] = core::pressureFieldStateName(status.state);
+            const bool hasPressure =
+                (status.state == core::PressureFieldState::Valid ||
+                 status.state == core::PressureFieldState::LastKnown) &&
+                std::isfinite(status.interpolatedSeaLevelPressureHpa);
+            doc["has_pressure_field"] = hasPressure;
+            if (hasPressure) {
+                doc["pressure_hpa"] =
+                    status.interpolatedSeaLevelPressureHpa;
+            }
+            doc["last_fetch_succeeded"] = status.lastFetchSucceeded;
+            if (status.observationAgeMs == UINT32_MAX) {
+                doc["observation_age_ms"] = nullptr;
+            } else {
+                doc["observation_age_ms"] = status.observationAgeMs;
+            }
+            if (status.observationUtcMs > 0) {
+                doc["observation_utc_ms"] = status.observationUtcMs;
+            }
+            JsonObject location = doc["location"].to<JsonObject>();
+            location["valid"] = status.location.valid;
+            location["source"] =
+                core::locationSourceName(status.location.source);
+            if (status.location.valid) {
+                location["latitude_deg"] = status.location.latitudeDeg;
+                location["longitude_deg"] = status.location.longitudeDeg;
+            }
+            doc["cached_station_count"] = status.cachedStations;
+            doc["used_station_count"] = status.usedStations;
+            if (std::isfinite(status.minDistanceKm)) {
+                doc["min_distance_km"] = status.minDistanceKm;
+            }
+            if (std::isfinite(status.maxDistanceKm)) {
+                doc["max_distance_km"] = status.maxDistanceKm;
+            }
+            JsonArray stations = doc["stations"].to<JsonArray>();
+            for (uint8_t i = 0; i < status.cachedStations && i < 5u; ++i) {
+                JsonObject station = stations.add<JsonObject>();
+                station["id"] = status.stations[i].id;
+                station["distance_km"] = status.stations[i].distanceKm;
+                station["used"] = status.stations[i].used;
+                if (std::isfinite(status.stations[i].seaLevelPressureHpa) &&
+                    status.stations[i].seaLevelPressureHpa > 800.0f &&
+                    status.stations[i].seaLevelPressureHpa < 1100.0f) {
+                    station["pressure_hpa"] =
+                        status.stations[i].seaLevelPressureHpa;
+                }
+                if (status.stations[i].qualityCode == UINT8_MAX) {
+                    station["quality_code"] = nullptr;
+                } else {
+                    station["quality_code"] =
+                        status.stations[i].qualityCode;
+                }
+            }
+            String response;
+            serializeJson(doc, response);
+            request->send(200, "application/json", response);
+        });
+
+    server_->on("/api/altitude", HTTP_GET,
+        [this](AsyncWebServerRequest *request) {
+            const core::SensorSnapshot snapshot = sensorManager.snapshot();
+            const core::AltitudeTelemetry& altitude =
+                snapshot.telemetry.altitude;
+            float storedOffset = NAN;
+            float storedTemperature = NAN;
+            float storedSeaLevelPressure = NAN;
+            uint32_t storedEpoch = 0;
+            const bool calibrated = storageManager_.getBmp581Calibration(
+                storedOffset, storedEpoch, storedTemperature,
+                storedSeaLevelPressure);
+
+            JsonDocument doc;
+            doc["calibration_state"] = sensorManager.isBmp581Calibrating()
+                ? "CALIBRATING" : (calibrated ? "CALIBRATED" : "UNCALIBRATED");
+            doc["altitude_valid"] = snapshot.environment.altitudeValid;
+            if (snapshot.environment.altitudeValid &&
+                std::isfinite(altitude.rawAltitudeM) &&
+                std::isfinite(altitude.displayAltitudeM)) {
+                doc["raw_altitude_m"] = altitude.rawAltitudeM;
+                doc["display_altitude_m"] = altitude.displayAltitudeM;
+            }
+            if (snapshot.environment.pressureValid &&
+                std::isfinite(snapshot.environment.pressureHpa)) {
+                doc["raw_pressure_hpa"] = snapshot.environment.pressureHpa;
+                doc["corrected_pressure_hpa"] =
+                    snapshot.environment.pressureHpa -
+                    altitude.pressureOffsetHpa;
+            }
+            doc["pressure_field_state"] =
+                core::pressureFieldStateName(altitude.pressureState);
+            doc["pressure_field_source"] =
+                core::pressureReferenceSourceName(altitude.pressureSource);
+            if (altitude.pressureState !=
+                    core::PressureFieldState::Invalid &&
+                std::isfinite(altitude.seaLevelPressureHpa)) {
+                doc["sea_level_pressure_hpa"] =
+                    altitude.seaLevelPressureHpa;
+            }
+            if (altitude.seaLevelPressureAgeMs == UINT32_MAX) {
+                doc["sea_level_pressure_age_ms"] = nullptr;
+            } else {
+                doc["sea_level_pressure_age_ms"] =
+                    altitude.seaLevelPressureAgeMs;
+            }
+            doc["used_station_count"] = altitude.usedStationCount;
+            if (std::isfinite(altitude.calculationTemperatureC)) {
+                doc["calculation_temperature_c"] =
+                    altitude.calculationTemperatureC;
+                doc["calculation_temperature_source"] =
+                    altitude.externalTemperatureSource ? "SHT45" : "BMP581";
+            }
+            if (calibrated) {
+                doc["calibration_offset_hpa"] = storedOffset;
+                doc["calibration_epoch"] = storedEpoch;
+                doc["calibration_temperature_c"] = storedTemperature;
+                doc["calibration_sea_level_pressure_hpa"] =
+                    storedSeaLevelPressure;
+            } else {
+                doc["calibration_offset_hpa"] = nullptr;
+            }
+            String response;
+            serializeJson(doc, response);
+            request->send(200, "application/json", response);
+        });
 
     server_->on("/api/files", HTTP_GET, [this](AsyncWebServerRequest *request){
         JsonDocument doc;
@@ -909,7 +1130,9 @@ void WebServerService::setupRoutes() {
                 const uint16_t rawWord = static_cast<uint16_t>(packed >> 16u);
                 response->printf(",\"reference_ppm\":%u,\"raw_word\":%u",
                     static_cast<unsigned>(packed & 0xFFFFu), rawWord);
-                if (rawWord != 0xFFFFu) {
+                if (events[i].eventCode ==
+                        static_cast<uint16_t>(storage::EventCode::Scd41FrcSucceeded) &&
+                    rawWord != 0xFFFFu) {
                     response->printf(",\"correction_ppm\":%ld",
                         static_cast<long>(static_cast<int32_t>(rawWord) - 0x8000L));
                 }
@@ -921,6 +1144,41 @@ void WebServerService::setupRoutes() {
                 response->printf(",\"device\":\"%s\",\"operation\":\"%s\",\"delta\":%u",
                     hal::i2cDeviceName(device), hal::i2cOperationName(operation),
                     static_cast<unsigned>((packed >> 16u) & 0xFFFFu));
+            } else if (events[i].eventCode == static_cast<uint16_t>(
+                           storage::EventCode::PressureFieldUpdated)) {
+                const uint32_t packed = static_cast<uint32_t>(events[i].detail);
+                const uint16_t previous = static_cast<uint16_t>(packed >> 16u);
+                const uint16_t current = static_cast<uint16_t>(packed & 0xFFFFu);
+                response->print(",\"previous_pressure_hpa\":");
+                if (previous == UINT16_MAX) response->print("null");
+                else response->printf("%.1f", previous / 10.0f);
+                response->printf(",\"current_pressure_hpa\":%.1f", current / 10.0f);
+            } else if (events[i].eventCode == static_cast<uint16_t>(
+                           storage::EventCode::PressureFieldStateChanged)) {
+                const uint32_t packed = static_cast<uint32_t>(events[i].detail);
+                const auto previous = static_cast<core::PressureFieldState>(
+                    packed & 0xFFu);
+                const auto current = static_cast<core::PressureFieldState>(
+                    (packed >> 8u) & 0xFFu);
+                const auto source = static_cast<core::PressureReferenceSource>(
+                    (packed >> 16u) & 0xFFu);
+                response->printf(",\"previous_state\":\"%s\",\"current_state\":\"%s\",\"source\":\"%s\"",
+                    core::pressureFieldStateName(previous),
+                    core::pressureFieldStateName(current),
+                    core::pressureReferenceSourceName(source));
+            } else if (events[i].eventCode == static_cast<uint16_t>(
+                           storage::EventCode::Bmp581CalibrationSucceeded)) {
+                response->printf(",\"offset_hpa\":%.3f",
+                    static_cast<float>(events[i].detail) / 1000.0f);
+            } else if (events[i].eventCode == static_cast<uint16_t>(
+                           storage::EventCode::Bmp581CalibrationFailed)) {
+                const uint32_t packed = static_cast<uint32_t>(events[i].detail);
+                const auto failure =
+                    static_cast<utils::bmp581_calibration::Failure>(
+                        (packed >> 24u) & 0xFFu);
+                response->printf(",\"failure\":\"%s\",\"valid_samples\":%lu",
+                    utils::bmp581_calibration::failureName(failure),
+                    static_cast<unsigned long>(packed & 0x00FFFFFFu));
             }
             response->print('}');
         }
@@ -928,57 +1186,96 @@ void WebServerService::setupRoutes() {
         request->send(response);
     });
 
-    server_->on("/api/scd41/calibrate", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
-        [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
-            JsonDocument doc;
-            DeserializationError error = deserializeJson(doc, data, len);
-            if (error) {
-                request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
-                return;
-            }
-            if (doc.containsKey("reference_ppm") && doc.containsKey("confirm_external_reference")) {
-                bool confirmed = doc["confirm_external_reference"].as<bool>();
-                if (!confirmed) {
-                    request->send(400, "application/json", "{\"status\":\"rejected\",\"error_code\":\"EXTERNAL_REFERENCE_NOT_CONFIRMED\",\"message\":\"FRC requires an externally obtained CO2 reference value.\"}");
-                    return;
-                }
-                
-                uint16_t referencePpm = doc["reference_ppm"].as<uint16_t>();
-                drivers::sensors::Scd41FrcResult frcResult;
-                
-                // 注意: この呼び出しは約500msブロックします
-                if (sensorManager.calibrateScd41(referencePpm, frcResult)) {
-                    String resp = "{\"status\":\"ok\",";
-                    resp += "\"reference_ppm\":" + String(frcResult.referencePpm) + ",";
-                    resp += "\"pre_co2_ppm\":" + String(frcResult.preCalibrationCo2Ppm) + ",";
-                    resp += "\"correction_ppm\":" + String(frcResult.correctionPpm) + ",";
-                    resp += "\"raw_word\":" + String(frcResult.rawWord) + ",";
-                    resp += "\"ambient_pressure_hpa\":" + String(frcResult.ambientPressureHpa) + ",";
-                    resp += "\"measurement_uptime_ms\":" + String(frcResult.measurementUptimeMs) + "}";
-                    request->send(200, "application/json", resp);
-                } else {
-                    String resp = "{\"error\":\"Calibration failed or preconditions not met\",\"message\":\"";
-                    resp += (frcResult.errorMessage != nullptr) ? frcResult.errorMessage : "Unknown";
-                    resp += "\"}";
-                    request->send(500, "application/json", resp);
-                }
-            } else {
-                request->send(400, "application/json", "{\"error\":\"Missing reference_ppm or confirm_external_reference\"}");
-            }
-    });
-
-    server_->on("/api/scd41/factory_reset", HTTP_POST,
-        [](AsyncWebServerRequest *request){}, NULL,
-        [](AsyncWebServerRequest *request, uint8_t *data, size_t len,
-           size_t index, size_t total){
-            if (index != 0 || len != total) {
+    auto* scd41CalibrateHandler = new AsyncCallbackJsonWebHandler(
+        "/api/scd41/calibrate",
+        [](AsyncWebServerRequest *request, JsonVariant& json) {
+            if (!json.is<JsonObject>()) {
                 request->send(400, "application/json",
-                    "{\"status\":\"rejected\",\"error_code\":\"INVALID_BODY\"}");
+                    "{\"status\":\"rejected\",\"error_code\":\"INVALID_JSON_OBJECT\"}");
                 return;
             }
-            JsonDocument doc;
-            if (deserializeJson(doc, data, len) ||
-                !doc["confirmation"].is<const char*>() ||
+            JsonObject doc = json.as<JsonObject>();
+            if (!doc["reference_ppm"].is<int32_t>() ||
+                !doc["confirm_external_reference"].is<bool>()) {
+                request->send(400, "application/json",
+                    "{\"status\":\"rejected\",\"error_code\":\"INVALID_REQUEST_FIELDS\"}");
+                return;
+            }
+            if (!doc["confirm_external_reference"].as<bool>()) {
+                request->send(400, "application/json",
+                    "{\"status\":\"rejected\",\"error_code\":\"EXTERNAL_REFERENCE_NOT_CONFIRMED\",\"message\":\"FRC requires an externally obtained CO2 reference value.\"}");
+                return;
+            }
+
+            const int32_t referenceValue = doc["reference_ppm"].as<int32_t>();
+            if (referenceValue < 400 || referenceValue > 5000) {
+                request->send(400, "application/json",
+                    "{\"status\":\"rejected\",\"error_code\":\"REFERENCE_OUT_OF_RANGE\"}");
+                return;
+            }
+
+            drivers::sensors::Scd41FrcResult frcResult;
+            const bool success = sensorManager.calibrateScd41(
+                static_cast<uint16_t>(referenceValue), frcResult);
+            const char* errorCode = frcResult.errorMessage != nullptr
+                ? frcResult.errorMessage : "UNKNOWN_ERROR";
+
+            if (success) {
+                String resp = "{\"status\":\"ok\",";
+                resp += "\"reference_ppm\":" + String(frcResult.referencePpm) + ",";
+                resp += "\"pre_co2_ppm\":" + String(frcResult.preCalibrationCo2Ppm) + ",";
+                resp += "\"correction_ppm\":" + String(frcResult.correctionPpm) + ",";
+                resp += "\"raw_word\":" + String(frcResult.rawWord) + ",";
+                resp += "\"ambient_pressure_hpa\":" + String(frcResult.ambientPressureHpa) + ",";
+                resp += "\"pressure_age_ms\":" + String(frcResult.pressureAgeMs) + ",";
+                resp += "\"measurement_uptime_ms\":" + String(frcResult.measurementUptimeMs) + ",";
+                resp += "\"restart_success\":";
+                resp += frcResult.restartSuccess ? "true}" : "false}";
+                request->send(200, "application/json", resp);
+                return;
+            }
+
+            const bool rejected =
+                strcmp(errorCode, "SENSOR_NOT_READY") == 0 ||
+                strcmp(errorCode, "CALIBRATION_ALREADY_IN_PROGRESS") == 0 ||
+                strcmp(errorCode, "MEASUREMENT_UPTIME_TOO_SHORT") == 0 ||
+                strcmp(errorCode, "NO_VALID_DATA") == 0 ||
+                strcmp(errorCode, "PRESSURE_UNAVAILABLE") == 0 ||
+                strcmp(errorCode, "PRESSURE_STALE") == 0;
+            const bool unavailable = strncmp(errorCode, "LOCK_FAILED_", 12) == 0;
+            const int httpStatus = rejected ? 409 : (unavailable ? 503 : 500);
+
+            String resp = rejected
+                ? "{\"status\":\"rejected\",\"error\":\""
+                : "{\"status\":\"failed\",\"error\":\"";
+            resp += errorCode;
+            resp += "\",\"error_code\":\"";
+            resp += errorCode;
+            resp += "\",\"reference_ppm\":" + String(frcResult.referencePpm) + ",";
+            resp += "\"pre_co2_ppm\":" + String(frcResult.preCalibrationCo2Ppm) + ",";
+            resp += "\"ambient_pressure_hpa\":" + String(frcResult.ambientPressureHpa) + ",";
+            resp += "\"pressure_age_ms\":";
+            if (frcResult.pressureAgeMs == UINT32_MAX) resp += "null,";
+            else resp += String(frcResult.pressureAgeMs) + ",";
+            resp += "\"measurement_uptime_ms\":" + String(frcResult.measurementUptimeMs) + ",";
+            resp += "\"restart_success\":";
+            resp += frcResult.restartSuccess ? "true}" : "false}";
+            request->send(httpStatus, "application/json", resp);
+        });
+    scd41CalibrateHandler->setMethod(HTTP_POST);
+    scd41CalibrateHandler->setMaxContentLength(256);
+    server_->addHandler(scd41CalibrateHandler);
+
+    auto* scd41FactoryResetHandler = new AsyncCallbackJsonWebHandler(
+        "/api/scd41/factory_reset",
+        [](AsyncWebServerRequest *request, JsonVariant& json) {
+            if (!json.is<JsonObject>()) {
+                request->send(400, "application/json",
+                    "{\"status\":\"rejected\",\"error_code\":\"INVALID_JSON_OBJECT\"}");
+                return;
+            }
+            JsonObject doc = json.as<JsonObject>();
+            if (!doc["confirmation"].is<const char*>() ||
                 strcmp(doc["confirmation"].as<const char*>(), "RESET_SCD41") != 0) {
                 request->send(400, "application/json",
                     "{\"status\":\"rejected\",\"error_code\":\"CONFIRMATION_REQUIRED\"}");
@@ -987,9 +1284,13 @@ void WebServerService::setupRoutes() {
             if (sensorManager.factoryResetScd41()) {
                 request->send(200, "application/json", "{\"status\":\"ok\"}");
             } else {
-                request->send(500, "application/json", "{\"error\":\"Factory reset failed\"}");
+                request->send(500, "application/json",
+                    "{\"status\":\"failed\",\"error_code\":\"FACTORY_RESET_FAILED\"}");
             }
         });
+    scd41FactoryResetHandler->setMethod(HTTP_POST);
+    scd41FactoryResetHandler->setMaxContentLength(128);
+    server_->addHandler(scd41FactoryResetHandler);
 
     server_->on("/api/sealevel", HTTP_POST, [](AsyncWebServerRequest *request){
         if (request->hasParam("pressure", true)) {
@@ -1004,25 +1305,39 @@ void WebServerService::setupRoutes() {
         request->send(400, "text/plain", "Invalid pressure parameter");
     });
 
-    server_->on("/api/bmp581/calibrate", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
-        [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
-            JsonDocument doc;
-            DeserializationError error = deserializeJson(doc, data, len);
-            if (error) {
-                request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+    auto* bmp581CalibrationHandler = new AsyncCallbackJsonWebHandler(
+        "/api/bmp581/calibrate",
+        [](AsyncWebServerRequest *request, JsonVariant& json) {
+            if (!json.is<JsonObject>()) {
+                request->send(400, "application/json",
+                    "{\"status\":\"rejected\",\"error_code\":\"INVALID_JSON_OBJECT\"}");
                 return;
             }
-            if (doc.containsKey("reference_altitude_m")) {
-                float refAlt = doc["reference_altitude_m"].as<float>();
-                if (sensorManager.startBmp581Calibration(refAlt)) {
-                    request->send(200, "application/json", "{\"status\":\"ok\",\"message\":\"Calibration started (takes 6 minutes)\"}");
-                } else {
-                    request->send(400, "application/json", "{\"error\":\"Cannot start calibration. Pressure field might not be Valid.\"}");
-                }
-            } else {
-                request->send(400, "application/json", "{\"error\":\"Missing reference_altitude_m\"}");
+            JsonObject doc = json.as<JsonObject>();
+            if (!doc["reference_altitude_m"].is<float>()) {
+                request->send(400, "application/json",
+                    "{\"status\":\"rejected\",\"error_code\":\"INVALID_REFERENCE_ALTITUDE\"}");
+                return;
             }
-    });
+            const float referenceAltitudeM =
+                doc["reference_altitude_m"].as<float>();
+            if (!utils::bmp581_calibration::validReferenceAltitude(
+                    referenceAltitudeM)) {
+                request->send(400, "application/json",
+                    "{\"status\":\"rejected\",\"error_code\":\"REFERENCE_MUST_BE_13_6_M\"}");
+                return;
+            }
+            if (!sensorManager.startBmp581Calibration(referenceAltitudeM)) {
+                request->send(409, "application/json",
+                    "{\"status\":\"rejected\",\"error_code\":\"CALIBRATION_BUSY_OR_PRESSURE_FIELD_NOT_VALID\"}");
+                return;
+            }
+            request->send(202, "application/json",
+                "{\"status\":\"started\",\"reference_altitude_m\":13.6,\"settle_seconds\":60,\"collection_seconds\":300}");
+        });
+    bmp581CalibrationHandler->setMethod(HTTP_POST);
+    bmp581CalibrationHandler->setMaxContentLength(128);
+    server_->addHandler(bmp581CalibrationHandler);
 
     server_->on("/download", HTTP_GET, [this](AsyncWebServerRequest *request){
         if (!request->hasParam("file")) {

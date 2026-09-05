@@ -1,5 +1,6 @@
 #include <unity.h>
 #include <cstdint>
+#include "utils/scd41_maintenance.h"
 #include "utils/scd41_policy.h"
 
 using namespace utils::scd41_policy;
@@ -76,6 +77,53 @@ void test_recovery_quarantine_requires_three_good_samples(void) {
     TEST_ASSERT_TRUE(recoveryQuarantineComplete(3));
 }
 
+void test_frc_command_order_and_restart_after_frc_failure(void) {
+    char order[6] {};
+    uint8_t position = 0;
+    auto result = utils::scd41_maintenance::runFrcSequence(
+        450,
+        [&]() { order[position++] = 'P'; return static_cast<uint16_t>(0); },
+        [&]() { order[position++] = 'S'; return static_cast<uint16_t>(0); },
+        [&]() { order[position++] = 'W'; },
+        [&](uint16_t reference, uint16_t& rawWord) {
+            order[position++] = 'F';
+            TEST_ASSERT_EQUAL_UINT16(450, reference);
+            rawWord = 0xFFFF;
+            return static_cast<uint16_t>(7);
+        },
+        [&]() { order[position++] = 'R'; return static_cast<uint16_t>(0); });
+
+    TEST_ASSERT_EQUAL_STRING("PSWFR", order);
+    TEST_ASSERT_TRUE(result.frcAttempted);
+    TEST_ASSERT_TRUE(result.restartAttempted);
+    TEST_ASSERT_EQUAL_UINT16(7, result.frcError);
+    TEST_ASSERT_EQUAL_UINT16(0, result.restartError);
+}
+
+void test_frc_stop_failure_never_runs_frc_or_restart(void) {
+    uint8_t frcCalls = 0;
+    uint8_t restartCalls = 0;
+    auto result = utils::scd41_maintenance::runFrcSequence(
+        450,
+        []() { return static_cast<uint16_t>(0); },
+        []() { return static_cast<uint16_t>(9); },
+        []() {},
+        [&](uint16_t, uint16_t&) {
+            ++frcCalls;
+            return static_cast<uint16_t>(0);
+        },
+        [&]() {
+            ++restartCalls;
+            return static_cast<uint16_t>(0);
+        });
+
+    TEST_ASSERT_EQUAL_UINT16(9, result.stopError);
+    TEST_ASSERT_FALSE(result.frcAttempted);
+    TEST_ASSERT_FALSE(result.restartAttempted);
+    TEST_ASSERT_EQUAL_UINT8(0, frcCalls);
+    TEST_ASSERT_EQUAL_UINT8(0, restartCalls);
+}
+
 int main(int argc, char **argv) {
     UNITY_BEGIN();
     RUN_TEST(test_frc_decode_zero);
@@ -91,6 +139,8 @@ int main(int argc, char **argv) {
     RUN_TEST(test_frc_preconditions_fail_out_of_range);
     RUN_TEST(test_recovery_policy_escalates_and_caps_backoff);
     RUN_TEST(test_recovery_quarantine_requires_three_good_samples);
+    RUN_TEST(test_frc_command_order_and_restart_after_frc_failure);
+    RUN_TEST(test_frc_stop_failure_never_runs_frc_or_restart);
     
     return UNITY_END();
 }

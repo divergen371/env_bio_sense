@@ -6,6 +6,7 @@
 #include "storage/storage_record_codec.h"
 #include <Arduino.h>
 #include <cmath>
+#include <cstring>
 
 namespace storage {
 
@@ -168,9 +169,132 @@ void StorageManager::setScd41LastCalibrationEpoch(uint32_t epoch) {
     unlock();
 }
 
+bool StorageManager::appendAmedasLogLine(const char* line) {
+    static constexpr const char* PATH = "/amedas_pressure_v1.csv";
+    static constexpr const char* HEADER =
+        "UpdateUtcEpochMs,ObservationUtcEpochMs,LocationSource,LatitudeDeg,LongitudeDeg,PreviousP0Hpa,InterpolatedP0Hpa,PressureFieldState,Result,CachedStations,UsedStations,"
+        "Station1Id,Station1DistanceKm,Station1PressureHpa,Station1Quality,Station1Used,"
+        "Station2Id,Station2DistanceKm,Station2PressureHpa,Station2Quality,Station2Used,"
+        "Station3Id,Station3DistanceKm,Station3PressureHpa,Station3Quality,Station3Used,"
+        "Station4Id,Station4DistanceKm,Station4PressureHpa,Station4Quality,Station4Used,"
+        "Station5Id,Station5DistanceKm,Station5PressureHpa,Station5Quality,Station5Used";
+    return appendVerifiedDiagnosticCsv(PATH, HEADER, line);
+}
+
+bool StorageManager::appendBmp581CalibrationLogLine(const char* line) {
+    static constexpr const char* PATH = "/bmp581_calibration_v1.csv";
+    static constexpr const char* HEADER =
+        "FormatVersion,FirmwareSchema,StartUtcEpoch,EndUtcEpoch,Sensor,ReferenceAltitudeM,SettleSeconds,CollectionSeconds,TotalSamples,ValidSamples,UsedSamples,ExcludedSamples,TemperatureSource,MeanTemperatureC,MeanSeaLevelPressureHpa,MeanRawPressureHpa,MeanExpectedPressureHpa,CandidateOffsetHpa,PreMeanAltitudeM,PreStdDevM,PostMeanAltitudeM,PostStdDevM,Accepted,PersistenceVerified,Failure";
+    return appendVerifiedDiagnosticCsv(PATH, HEADER, line);
+}
+
+bool StorageManager::appendVerifiedDiagnosticCsv(
+        const char* path, const char* header, const char* line) {
+    constexpr size_t MAX_LINE = 768;
+    if (!sdAvailable_ || path == nullptr || header == nullptr ||
+        line == nullptr) return false;
+    const size_t lineLength = std::strlen(line);
+    const size_t headerLength = std::strlen(header);
+    if (lineLength == 0 || lineLength >= MAX_LINE ||
+        headerLength == 0 || headerLength >= MAX_LINE ||
+        std::strchr(line, '\n') != nullptr ||
+        std::strchr(line, '\r') != nullptr ||
+        std::strchr(header, '\n') != nullptr ||
+        std::strchr(header, '\r') != nullptr) {
+        return false;
+    }
+
+    lock();
+    bool ok = true;
+    if (!SD.exists(path)) {
+        File create = SD.open(path, FILE_WRITE);
+        const size_t wroteHeader = create
+            ? create.write(reinterpret_cast<const uint8_t*>(header),
+                           headerLength) : 0;
+        const size_t wroteNewline = wroteHeader == headerLength
+            ? create.write(reinterpret_cast<const uint8_t*>("\n"), 1) : 0;
+        if (create) {
+            create.flush();
+            create.close();
+        }
+        ok = wroteHeader == headerLength && wroteNewline == 1;
+    }
+
+    uint32_t originalSize = 0;
+    if (ok) {
+        File inspect = SD.open(path, FILE_READ);
+        ok = static_cast<bool>(inspect);
+        if (ok) {
+            originalSize = inspect.size();
+            char headerActual[MAX_LINE] {};
+            ok = originalSize >= headerLength + 1 && inspect.seek(0) &&
+                inspect.read(reinterpret_cast<uint8_t*>(headerActual),
+                             headerLength + 1) == headerLength + 1 &&
+                std::memcmp(headerActual, header, headerLength) == 0 &&
+                headerActual[headerLength] == '\n';
+            if (originalSize > 0) {
+                ok = ok && inspect.seek(originalSize - 1);
+                const int lastByte = ok ? inspect.read() : -1;
+                if (ok && lastByte != '\n') {
+                    inspect.close();
+                    File repair = SD.open(path, FILE_APPEND);
+                    ok = static_cast<bool>(repair) &&
+                        repair.write(reinterpret_cast<const uint8_t*>("\n"), 1) == 1;
+                    if (repair) {
+                        repair.flush();
+                        repair.close();
+                    }
+                    if (ok) ++originalSize;
+                }
+            }
+            if (inspect) inspect.close();
+        }
+    }
+
+    if (ok) {
+        File output = SD.open(path, FILE_APPEND);
+        const size_t wroteLine = output
+            ? output.write(reinterpret_cast<const uint8_t*>(line), lineLength)
+            : 0;
+        const size_t wroteNewline = wroteLine == lineLength
+            ? output.write(reinterpret_cast<const uint8_t*>("\n"), 1) : 0;
+        if (output) {
+            output.flush();
+            output.close();
+        }
+        ok = wroteLine == lineLength && wroteNewline == 1;
+    }
+
+    if (ok) {
+        File verify = SD.open(path, FILE_READ);
+        ok = static_cast<bool>(verify) &&
+            verify.size() == originalSize + lineLength + 1 &&
+            verify.seek(originalSize);
+        char actual[MAX_LINE] {};
+        const size_t expected = lineLength + 1;
+        const size_t readBytes = ok
+            ? verify.read(reinterpret_cast<uint8_t*>(actual), expected) : 0;
+        if (verify) verify.close();
+        ok = ok && readBytes == expected && actual[lineLength] == '\n' &&
+            std::memcmp(actual, line, lineLength) == 0;
+    }
+    unlock();
+    return ok;
+}
+
 bool StorageManager::getBmp581Calibration(float& offsetHpa, uint32_t& epoch, float& tempC, float& slpHpa) const {
     lock();
-    const bool valid = framAvailable_ && superblock_.hasValidBmp581Calibration;
+    const bool valid = framAvailable_ &&
+        superblock_.hasValidBmp581Calibration &&
+        std::isfinite(superblock_.bmp581PressureOffsetHpa) &&
+        std::fabs(superblock_.bmp581PressureOffsetHpa) <= 5.0f &&
+        superblock_.bmp581CalibEpoch != 0 &&
+        std::isfinite(superblock_.bmp581CalibTempC) &&
+        superblock_.bmp581CalibTempC >= -40.0f &&
+        superblock_.bmp581CalibTempC <= 85.0f &&
+        std::isfinite(superblock_.bmp581CalibSeaLevelHpa) &&
+        superblock_.bmp581CalibSeaLevelHpa > 800.0f &&
+        superblock_.bmp581CalibSeaLevelHpa < 1200.0f;
     if (valid) {
         offsetHpa = superblock_.bmp581PressureOffsetHpa;
         epoch = superblock_.bmp581CalibEpoch;
@@ -181,17 +305,25 @@ bool StorageManager::getBmp581Calibration(float& offsetHpa, uint32_t& epoch, flo
     return valid;
 }
 
-void StorageManager::setBmp581Calibration(float offsetHpa, uint32_t epoch, float tempC, float slpHpa) {
-    if (!framAvailable_) return;
+bool StorageManager::setBmp581Calibration(float offsetHpa, uint32_t epoch, float tempC, float slpHpa) {
+    if (!framAvailable_ || !std::isfinite(offsetHpa) ||
+        std::fabs(offsetHpa) > 5.0f || epoch == 0 ||
+        !std::isfinite(tempC) || tempC < -40.0f || tempC > 85.0f ||
+        !std::isfinite(slpHpa) || slpHpa <= 800.0f || slpHpa >= 1200.0f) {
+        return false;
+    }
     
     lock();
+    const FramSuperblock previous = superblock_;
     superblock_.hasValidBmp581Calibration = true;
     superblock_.bmp581PressureOffsetHpa = offsetHpa;
     superblock_.bmp581CalibEpoch = epoch;
     superblock_.bmp581CalibTempC = tempC;
     superblock_.bmp581CalibSeaLevelHpa = slpHpa;
-    saveSuperblock();
+    const bool saved = saveSuperblock();
+    if (!saved) superblock_ = previous;
     unlock();
+    return saved;
 }
 
 bool StorageManager::loadSuperblock() {
@@ -259,9 +391,11 @@ bool StorageManager::readEventSlot(uint16_t index, EventRecord& record) {
                      (code >= static_cast<uint16_t>(EventCode::I2cLockTimeout) &&
                       code <= static_cast<uint16_t>(EventCode::I2cCommunicationError)) ||
                      (code >= static_cast<uint16_t>(EventCode::Scd41Stale) &&
-                      code <= static_cast<uint16_t>(EventCode::Scd41FactoryResetFailed)) ||
+                     code <= static_cast<uint16_t>(EventCode::Scd41FactoryResetFailed)) ||
                      (code >= static_cast<uint16_t>(EventCode::FramRecordCorrupt) &&
-                      code <= static_cast<uint16_t>(EventCode::FramCheckpointFailed));
+                      code <= static_cast<uint16_t>(EventCode::FramCheckpointFailed)) ||
+                     (code >= static_cast<uint16_t>(EventCode::PressureFieldUpdated) &&
+                      code <= static_cast<uint16_t>(EventCode::Bmp581CalibrationFailed));
     if (!knownCode) return false;
 
     const uint8_t* payload = reinterpret_cast<const uint8_t*>(&record.uptimeMs);
@@ -555,7 +689,8 @@ bool StorageManager::appendRecord(const core::SensorSnapshot& snapshot, uint32_t
         const core::PressureFieldState pressureState =
             snapshot.telemetry.altitude.pressureState;
         if ((pressureState == core::PressureFieldState::Valid ||
-             pressureState == core::PressureFieldState::LastKnown) &&
+             pressureState == core::PressureFieldState::LastKnown ||
+             pressureState == core::PressureFieldState::StaticFallback) &&
             std::isfinite(snapshot.telemetry.altitude.seaLevelPressureHpa)) {
             rec.seaLevelPressureDeciHpa = codec::unsignedFixed(
                 snapshot.telemetry.altitude.seaLevelPressureHpa, 10.0f);

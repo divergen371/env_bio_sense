@@ -3,9 +3,43 @@
 #include "hal/i2c_bus.h"
 #include "hal/clock.h"
 #include <Arduino.h>
+#include <cstdarg>
+#include <cstdio>
 #include <cmath>
 
 namespace services {
+namespace {
+
+bool appendCalibrationLogValue(char* buffer, size_t capacity,
+                               size_t& length, const char* format, ...) {
+    if (buffer == nullptr || format == nullptr || length >= capacity) {
+        return false;
+    }
+    va_list args;
+    va_start(args, format);
+    const int written = std::vsnprintf(
+        buffer + length, capacity - length, format, args);
+    va_end(args);
+    if (written < 0 || static_cast<size_t>(written) >= capacity - length) {
+        return false;
+    }
+    length += static_cast<size_t>(written);
+    return true;
+}
+
+bool appendOptionalCalibrationFloat(char* buffer, size_t capacity,
+                                    size_t& length, float value,
+                                    unsigned decimals) {
+    if (!std::isfinite(value)) {
+        return appendCalibrationLogValue(buffer, capacity, length, ",");
+    }
+    char format[12] {};
+    std::snprintf(format, sizeof(format), "%%.%uf,", decimals);
+    return appendCalibrationLogValue(
+        buffer, capacity, length, format, value);
+}
+
+} // namespace
 
 core::SensorSnapshot SensorManager::snapshot() const {
     portENTER_CRITICAL(&publicationMux_);
@@ -19,6 +53,13 @@ core::SystemStatus SensorManager::status() const {
     const core::SystemStatus copy = publishedStatus_;
     portEXIT_CRITICAL(&publicationMux_);
     return copy;
+}
+
+bool SensorManager::copyGnss(core::GnssData& out) const {
+    portENTER_CRITICAL(&publicationMux_);
+    out = publishedSnapshot_.gnss;
+    portEXIT_CRITICAL(&publicationMux_);
+    return true;
 }
 
 void SensorManager::publishSnapshot() {
@@ -50,8 +91,10 @@ bool SensorManager::begin(storage::StorageManager& storageManager) {
         if (storage_->getBmp581Calibration(offsetHpa, epoch, tempC, slpHpa)) {
             bmp581_.setCalibrationOffset(offsetHpa);
             if (std::isfinite(slpHpa) && slpHpa > 800.0f && slpHpa < 1200.0f) {
-                setSeaLevelPressure(slpHpa, core::PressureFieldState::LastKnown,
-                                    core::PressureReferenceSource::Stored);
+                setSeaLevelPressure(slpHpa,
+                                    core::PressureFieldState::StaticFallback,
+                                    core::PressureReferenceSource::Stored,
+                                    UINT32_MAX);
             }
             services::Logger::info("SensorMgr", "BMP581 calibration loaded: %.2f hPa (Saved SLP: %.2f hPa)", offsetHpa, slpHpa);
         }
@@ -93,19 +136,55 @@ bool SensorManager::begin(storage::StorageManager& storageManager) {
 
 void SensorManager::setSeaLevelPressure(float hpa,
                                         core::PressureFieldState state,
-                                        core::PressureReferenceSource source) {
-    if (state == core::PressureFieldState::Valid || state == core::PressureFieldState::LastKnown) {
-        pressureReferenceUpdatedMs_ = millis();
-        pressureReferenceSource_ = source;
-        if (source == core::PressureReferenceSource::Amedas ||
-            source == core::PressureReferenceSource::Manual) {
-            lastAmedasUpdateMs_ = pressureReferenceUpdatedMs_;
-            slpEma_ = hpa;
-        }
-    } else {
-        pressureReferenceSource_ = core::PressureReferenceSource::Unset;
+                                        core::PressureReferenceSource source,
+                                        uint32_t sourceAgeMs,
+                                        uint8_t usedStationCount) {
+    if (!std::isfinite(hpa) || hpa <= 800.0f || hpa >= 1200.0f) {
+        Logger::error("SensorMgr", "Rejected invalid sea-level pressure: %.2f", hpa);
+        return;
     }
+    const float previousHpa = bmp581_.getSeaLevelPressure();
+    const core::PressureFieldState previousState =
+        bmp581_.getPressureFieldState();
+    pressureReferenceUpdatedMs_ = sourceAgeMs == UINT32_MAX
+        ? 0 : millis() - sourceAgeMs;
+    pressureReferenceSource_ = source;
+    pressureReferenceStationCount_ = usedStationCount;
     bmp581_.setSeaLevelPressure(hpa, state);
+
+    if (storage_ != nullptr &&
+        (!std::isfinite(previousHpa) || std::fabs(previousHpa - hpa) >= 0.01f)) {
+        const uint16_t previousDeci = std::isfinite(previousHpa)
+            ? static_cast<uint16_t>(std::lround(previousHpa * 10.0f))
+            : UINT16_MAX;
+        const uint16_t currentDeci =
+            static_cast<uint16_t>(std::lround(hpa * 10.0f));
+        const uint32_t detail = (static_cast<uint32_t>(previousDeci) << 16u) |
+            currentDeci;
+        storage_->appendEvent(storage::EventCode::PressureFieldUpdated,
+                              static_cast<int32_t>(detail), millis());
+    }
+    if (previousState != state && storage_ != nullptr) {
+        const uint32_t detail = static_cast<uint8_t>(previousState) |
+            (static_cast<uint32_t>(static_cast<uint8_t>(state)) << 8u) |
+            (static_cast<uint32_t>(static_cast<uint8_t>(source)) << 16u);
+        storage_->appendEvent(storage::EventCode::PressureFieldStateChanged,
+                              static_cast<int32_t>(detail), millis());
+    }
+}
+
+void SensorManager::setSeaLevelPressureState(core::PressureFieldState state) {
+    const core::PressureFieldState previous = bmp581_.getPressureFieldState();
+    if (previous == state) return;
+    bmp581_.setPressureFieldState(state);
+    if (storage_ != nullptr) {
+        const uint32_t detail = static_cast<uint8_t>(previous) |
+            (static_cast<uint32_t>(static_cast<uint8_t>(state)) << 8u) |
+            (static_cast<uint32_t>(
+                static_cast<uint8_t>(pressureReferenceSource_)) << 16u);
+        storage_->appendEvent(storage::EventCode::PressureFieldStateChanged,
+                              static_cast<int32_t>(detail), millis());
+    }
 }
 
 bool SensorManager::calibrateScd41(uint16_t referencePpm, drivers::sensors::Scd41FrcResult& result) {
@@ -156,6 +235,8 @@ bool SensorManager::triggerSht45Heater() {
 
 bool SensorManager::startBmp581Calibration(float referenceAltitudeM) {
     if (bmp581_.startCalibration(referenceAltitudeM)) {
+        bmp581CalibrationStartEpoch_ = hal::Clock::isTimeSet()
+            ? hal::Clock::getEpoch() : 0;
         services::Logger::info("SensorMgr", "BMP581 calibration triggered for target %.1f m", referenceAltitudeM);
         return true;
     }
@@ -359,13 +440,149 @@ void SensorManager::update(uint32_t nowMs) {
         bmp581_.update(nowMs);
         status_.bmp581State = bmp581_.state();
         
-        // 校正完了のチェックと永続化
-        if (!bmp581_.isCalibrating() && bmpInterval == 100) {
-            float offset = bmp581_.getCalibrationOffset();
-            if (offset != 0.0f) { // If offset changed, we can assume success for now, or just force save
-                float slp = bmp581_.getSeaLevelPressure();
-                storage_->setBmp581Calibration(offset, hal::Clock::getEpoch(), NAN, slp); 
+        // 校正候補は受入試験とFRAM書込み・読戻しに成功した場合だけ適用する。
+        utils::bmp581_calibration::Result calibration;
+        if (bmp581_.takeCalibrationResult(calibration)) {
+            const bool candidateAccepted = calibration.success;
+            const uint32_t calibrationEndEpoch = hal::Clock::isTimeSet()
+                ? hal::Clock::getEpoch() : 0;
+            bool persisted = false;
+            if (calibration.success && storage_ != nullptr &&
+                hal::Clock::isTimeSet()) {
+                const uint32_t epoch = hal::Clock::getEpoch();
+                persisted = storage_->setBmp581Calibration(
+                    calibration.pressureOffsetHpa, epoch,
+                    calibration.meanTemperatureC,
+                    calibration.meanSeaLevelPressureHpa);
+                float storedOffset = NAN;
+                float storedTemperature = NAN;
+                float storedSeaLevelPressure = NAN;
+                uint32_t storedEpoch = 0;
+                persisted = persisted && storage_->getBmp581Calibration(
+                    storedOffset, storedEpoch, storedTemperature,
+                    storedSeaLevelPressure) &&
+                    std::fabs(storedOffset -
+                              calibration.pressureOffsetHpa) < 0.0005f &&
+                    storedEpoch == epoch;
             }
+            if (calibration.success && persisted) {
+                bmp581_.setCalibrationOffset(
+                    calibration.pressureOffsetHpa);
+                storage_->appendEvent(
+                    storage::EventCode::Bmp581CalibrationSucceeded,
+                    static_cast<int32_t>(std::lround(
+                        calibration.pressureOffsetHpa * 1000.0f)), nowMs);
+                Logger::info("SensorMgr",
+                    "BMP581 calibration persisted and applied: offset=%.3f hPa temp=%.2f C P0=%.2f hPa",
+                    calibration.pressureOffsetHpa,
+                    calibration.meanTemperatureC,
+                    calibration.meanSeaLevelPressureHpa);
+            } else {
+                if (calibration.success) {
+                    calibration.success = false;
+                    calibration.failure =
+                        utils::bmp581_calibration::Failure::PersistenceFailed;
+                }
+                if (storage_ != nullptr) {
+                    const int32_t detail =
+                        (static_cast<int32_t>(calibration.failure) << 24) |
+                        static_cast<int32_t>(
+                            calibration.validSamples & 0x00FFFFFFu);
+                    storage_->appendEvent(
+                        storage::EventCode::Bmp581CalibrationFailed,
+                        detail, nowMs);
+                }
+                Logger::error("SensorMgr",
+                    "BMP581 calibration not applied: reason=%u",
+                    static_cast<unsigned>(calibration.failure));
+            }
+
+            if (storage_ != nullptr) {
+                const char* temperatureSource = "MIXED";
+                if (calibration.externalTemperatureSamples == 0) {
+                    temperatureSource = "BMP581";
+                } else if (calibration.externalTemperatureSamples ==
+                           calibration.validSamples) {
+                    temperatureSource = "SHT45";
+                }
+                char line[512] {};
+                size_t length = 0;
+                bool logReady = appendCalibrationLogValue(
+                    line, sizeof(line), length,
+                    "1,FRAM6_CSV7,");
+                if (bmp581CalibrationStartEpoch_ != 0) {
+                    logReady = logReady && appendCalibrationLogValue(
+                        line, sizeof(line), length, "%lu,",
+                        static_cast<unsigned long>(
+                            bmp581CalibrationStartEpoch_));
+                } else {
+                    logReady = logReady && appendCalibrationLogValue(
+                        line, sizeof(line), length, ",");
+                }
+                if (calibrationEndEpoch != 0) {
+                    logReady = logReady && appendCalibrationLogValue(
+                        line, sizeof(line), length, "%lu,",
+                        static_cast<unsigned long>(calibrationEndEpoch));
+                } else {
+                    logReady = logReady && appendCalibrationLogValue(
+                        line, sizeof(line), length, ",");
+                }
+                logReady = logReady && appendCalibrationLogValue(
+                    line, sizeof(line), length,
+                    "BMP581,13.6,60,300,%lu,%lu,%lu,%lu,%s,",
+                    static_cast<unsigned long>(calibration.totalSamples),
+                    static_cast<unsigned long>(calibration.validSamples),
+                    static_cast<unsigned long>(calibration.usedSamples),
+                    static_cast<unsigned long>(
+                        calibration.totalSamples > calibration.usedSamples
+                            ? calibration.totalSamples - calibration.usedSamples
+                            : 0),
+                    temperatureSource);
+                logReady = logReady && appendOptionalCalibrationFloat(
+                    line, sizeof(line), length,
+                    calibration.meanTemperatureC, 2);
+                logReady = logReady && appendOptionalCalibrationFloat(
+                    line, sizeof(line), length,
+                    calibration.meanSeaLevelPressureHpa, 2);
+                logReady = logReady && appendOptionalCalibrationFloat(
+                    line, sizeof(line), length,
+                    calibration.meanRawPressureHpa, 3);
+                logReady = logReady && appendOptionalCalibrationFloat(
+                    line, sizeof(line), length,
+                    calibration.meanExpectedPressureHpa, 3);
+                logReady = logReady && appendOptionalCalibrationFloat(
+                    line, sizeof(line), length,
+                    calibration.pressureOffsetHpa, 3);
+                logReady = logReady && appendOptionalCalibrationFloat(
+                    line, sizeof(line), length,
+                    calibration.preCalibrationMeanAltitudeM, 3);
+                logReady = logReady && appendOptionalCalibrationFloat(
+                    line, sizeof(line), length,
+                    calibration.preCalibrationStdDevM, 3);
+                logReady = logReady && appendOptionalCalibrationFloat(
+                    line, sizeof(line), length,
+                    calibration.postCalibrationMeanAltitudeM, 3);
+                if (std::isfinite(calibration.postCalibrationStdDevM)) {
+                    logReady = logReady && appendCalibrationLogValue(
+                        line, sizeof(line), length, "%.3f,",
+                        calibration.postCalibrationStdDevM);
+                } else {
+                    logReady = logReady && appendCalibrationLogValue(
+                        line, sizeof(line), length, ",");
+                }
+                logReady = logReady && appendCalibrationLogValue(
+                    line, sizeof(line), length, "%u,%u,%s",
+                    candidateAccepted ? 1u : 0u,
+                    persisted ? 1u : 0u,
+                    utils::bmp581_calibration::failureName(
+                        calibration.failure));
+                if (!logReady ||
+                    !storage_->appendBmp581CalibrationLogLine(line)) {
+                    Logger::error("SensorMgr",
+                        "Failed to persist BMP581 calibration detail log");
+                }
+            }
+            bmp581CalibrationStartEpoch_ = 0;
         }
         
         // BMP581の気圧データをSCD41の補償に渡す
@@ -447,40 +664,6 @@ void SensorManager::update(uint32_t nowMs) {
     lc76g_.readGnss(snapshot_.gnss, nowMs);
     status_.gnss = lc76g_.status(nowMs);
 
-    // --- GNSS based SLP calibration ---
-    static uint32_t lastGnssSlpUpdateMs = 0;
-    if (nowMs - lastGnssSlpUpdateMs >= 1000) { // Update EMA once per second
-        lastGnssSlpUpdateMs = nowMs;
-        
-        // 2 hours without AMeDAS, or AMeDAS never fetched
-        if (nowMs - lastAmedasUpdateMs_ >= 7200000 || lastAmedasUpdateMs_ == 0) {
-            if (snapshot_.gnss.fixValid && snapshot_.gnss.hdop < 2.0f && snapshot_.gnss.speedMps < 0.5f) {
-                if (snapshot_.environment.pressureValid && !std::isnan(snapshot_.environment.pressureHpa)) {
-                    float currentP = snapshot_.environment.pressureHpa;
-                    float currentT = std::isnan(snapshot_.environment.temperatureC) ? 20.0f : snapshot_.environment.temperatureC;
-                    if (!std::isnan(snapshot_.gnss.altitudeMslM)) {
-                        float tempK = currentT + 273.15f;
-                        float expVal = 1.0f - (0.0065f * snapshot_.gnss.altitudeMslM) / tempK;
-                        if (expVal > 0.0f) {
-                            float impliedSlp = currentP / std::pow(expVal, 5.254999f);
-                            
-                            if (std::isnan(slpEma_)) {
-                                slpEma_ = impliedSlp;
-                            } else {
-                                // alpha = 1 / 3600 (approx 1 hour time constant at 1Hz)
-                                slpEma_ = slpEma_ + (impliedSlp - slpEma_) / 3600.0f;
-                            }
-                            
-                            // Apply to BMP581
-                            setSeaLevelPressure(slpEma_, core::PressureFieldState::Valid,
-                                                core::PressureReferenceSource::Gnss);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     // NMEAから得られた最新のUTCと、それに紐づくPPSタイムスタンプで時刻同期を試みる
     gnssTimeSync_.update(snapshot_.gnss, nowMs);
 
@@ -528,6 +711,14 @@ void SensorManager::update(uint32_t nowMs) {
     snapshot_.telemetry.altitude.displayAltitudeM = bmp581_.getDisplayAltitude();
     snapshot_.telemetry.altitude.seaLevelPressureHpa = bmp581_.getSeaLevelPressure();
     snapshot_.telemetry.altitude.pressureOffsetHpa = bmp581_.getCalibrationOffset();
+    bool externalAltitudeTemperature = false;
+    bmp581_.getAltitudeTemperature(
+        snapshot_.telemetry.altitude.calculationTemperatureC,
+        externalAltitudeTemperature);
+    snapshot_.telemetry.altitude.externalTemperatureSource =
+        externalAltitudeTemperature;
+    snapshot_.telemetry.altitude.usedStationCount =
+        pressureReferenceStationCount_;
     snapshot_.telemetry.altitude.pressureState = bmp581_.getPressureFieldState();
     snapshot_.telemetry.altitude.pressureSource = pressureReferenceSource_;
     snapshot_.telemetry.altitude.seaLevelPressureAgeMs =

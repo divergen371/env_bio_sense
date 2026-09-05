@@ -10,14 +10,18 @@
 #include "services/web_server_service.h"
 #include "services/weather_service.h"
 #include "services/archive_manager.h"
+#include "services/location_service.h"
 
 services::SensorManager sensorManager;
 services::DisplayManager displayManager;
 storage::StorageManager storageManager;
 services::ArchiveManager archiveManager(storageManager);
+services::LocationService locationService;
 services::WifiManager wifiManager;
-services::WebServerService webServer(storageManager, archiveManager);
-services::WeatherService weatherService(sensorManager, wifiManager);
+services::WebServerService webServer(
+    storageManager, archiveManager, locationService);
+services::WeatherService weatherService(
+    sensorManager, wifiManager, locationService, storageManager);
 
 // --- FreeRTOS Tasks ---
 void weatherTask(void* pvParameters) {
@@ -76,6 +80,7 @@ void setup() {
     storageManager.begin();
     archiveManager.begin();
     sensorManager.begin(storageManager);
+    locationService.begin();
     displayManager.begin();
     
     wifiManager.begin();
@@ -133,6 +138,10 @@ void loop() {
     // センサ更新 (内部で環境系は1000ms間隔、PPG系は常時更新に制御)
     // PPG (MAX30102) の高速サンプリングのため、このメインループは極力ブロックしないこと
     sensorManager.update(nowMs);
+    core::GnssData gnssForLocation;
+    if (sensorManager.copyGnss(gnssForLocation)) {
+        locationService.update(gnssForLocation, nowMs);
+    }
 
     // 時刻同期サービス(NTPフォールバック)の更新
     // ※SensorManagerの内部実装に立ち入らずグローバルに更新できるようにする

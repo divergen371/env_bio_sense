@@ -1,6 +1,7 @@
 #include "drivers/sensors/scd41_sensor.h"
 #include "services/logger.h"
 #include "hal/i2c_bus.h"
+#include "utils/scd41_maintenance.h"
 #include "utils/scd41_policy.h"
 #include <Wire.h>
 #include <cmath>
@@ -84,32 +85,54 @@ bool Scd41Sensor::begin() {
     services::Logger::info("SCD41", "SCD41 initialized. Serial: 0x%04X%04X%04X", serial0, serial1, serial2);
 
     // ASCを通常運用の既定として有効化し、筐体内の自己発熱を
-    // 考慮した温度オフセット(2.0℃)を設定する。
+    // 考慮した温度オフセット(2.0℃)を設定する。設定commandと
+    // read-backのどれか一つでも失敗した場合は測定を開始しない。
+    float tOffset = 0.0f;
+    uint16_t ascEnabled = 0;
+    uint16_t sensorAlt = 0;
     {
         hal::I2cLockGuard lock(hal::I2cDevice::Scd41,
                                hal::I2cOperation::Init, 100);
-        if (lock.acquired()) {
-            error = scd4x_.setAutomaticSelfCalibration(1);
-            if (error) {
-                services::Logger::warn("SCD41", "Failed to enable ASC, error: %u", error);
-            }
-            error = scd4x_.setTemperatureOffset(2.0f);
-            if (error) {
-                services::Logger::warn("SCD41", "Failed to set temperature offset, error: %u", error);
-            }
-            
-            // ユーザー確認用のレジスタ読み出し
-            float tOffset = 0.0f;
-            uint16_t ascEnabled = 0;
-            uint16_t sensorAlt = 0;
-            scd4x_.getTemperatureOffset(tOffset);
-            scd4x_.getAutomaticSelfCalibration(ascEnabled);
-            scd4x_.getSensorAltitude(sensorAlt);
-            services::Logger::info("SCD41", "Stored Settings - TempOffset: %.2f C, ASC: %u, Altitude: %u m", tOffset, ascEnabled, sensorAlt);
-        } else {
+        if (!lock.acquired()) {
             services::Logger::error("SCD41", "Failed to acquire lock for SCD41 settings");
+            state_ = core::DeviceState::Error;
+            lastError_ = core::ErrorCode::Timeout;
+            condition_ = Scd41Condition::LockTimeout;
+            return false;
         }
+        error = scd4x_.setAutomaticSelfCalibration(1);
+        if (!error) error = scd4x_.setTemperatureOffset(2.0f);
+        if (!error) error = scd4x_.getTemperatureOffset(tOffset);
+        if (!error) error = scd4x_.getAutomaticSelfCalibration(ascEnabled);
+        if (!error) error = scd4x_.getSensorAltitude(sensorAlt);
     }
+
+    if (error) {
+        hal::I2cBus::noteCommunicationError(hal::I2cDevice::Scd41,
+                                            hal::I2cOperation::Init);
+        errorToString(error, errorMessage, sizeof(errorMessage));
+        services::Logger::error("SCD41",
+            "Failed to configure/read back ASC and temperature offset: %s",
+            errorMessage);
+        state_ = core::DeviceState::Error;
+        lastError_ = core::ErrorCode::InitFailed;
+        condition_ = Scd41Condition::DriverError;
+        lastRawError_ = error;
+        return false;
+    }
+    if (ascEnabled != 1 || std::fabs(tOffset - 2.0f) > 0.1f) {
+        services::Logger::error("SCD41",
+            "Settings read-back mismatch: TempOffset=%.2f C ASC=%u",
+            tOffset, ascEnabled);
+        state_ = core::DeviceState::Error;
+        lastError_ = core::ErrorCode::InitFailed;
+        condition_ = Scd41Condition::DriverError;
+        lastRawError_ = 0xFFFDu;
+        return false;
+    }
+    services::Logger::info("SCD41",
+        "Stored Settings - TempOffset: %.2f C, ASC: %u, Altitude: %u m",
+        tOffset, ascEnabled, sensorAlt);
 
     // Periodic Measurement 開始 (測定間隔は約5秒)
     {
@@ -155,6 +178,15 @@ bool Scd41Sensor::performForcedRecalibration(uint16_t referenceCo2Ppm, Scd41FrcR
     const uint32_t pressureAgeMs = hasAmbientPressure_
         ? nowMs - lastAmbientPressureInputMs_ : UINT32_MAX;
 
+    // Preserve request/precondition context even when FRC is rejected before
+    // issuing a sensor command so the API and compact event remain diagnostic.
+    result.referencePpm = referenceCo2Ppm;
+    result.preCalibrationCo2Ppm = currentCo2Ppm_;
+    result.ambientPressureHpa = hasAmbientPressure_
+        ? lastAmbientPressureHpa_ : 0u;
+    result.pressureAgeMs = pressureAgeMs;
+    result.measurementUptimeMs = uptimeMs;
+
     if (state_ != core::DeviceState::Ready || condition_ != Scd41Condition::Healthy) {
         services::Logger::error("SCD41", "Cannot perform FRC in current state");
         result.errorMessage = "SENSOR_NOT_READY";
@@ -197,137 +229,110 @@ bool Scd41Sensor::performForcedRecalibration(uint16_t referenceCo2Ppm, Scd41FrcR
         return false;
     }
 
-    result.referencePpm = referenceCo2Ppm;
-    result.preCalibrationCo2Ppm = currentCo2Ppm_;
-    result.ambientPressureHpa = lastAmbientPressureHpa_;
-    result.pressureAgeMs = pressureAgeMs;
-    result.measurementUptimeMs = uptimeMs;
-
     services::Logger::info("SCD41", "event=SCD41_FRC_BEGIN reference_ppm=%u pre_co2_ppm=%u ambient_pressure_hpa=%u pressure_age_ms=%u measurement_uptime_ms=%u",
         referenceCo2Ppm, currentCo2Ppm_, lastAmbientPressureHpa_,
         pressureAgeMs, uptimeMs);
 
-    uint16_t error = 0;
     char errorMessage[256];
+    constexpr uint16_t LOCK_ERROR = 0xFFFEu;
 
-    // Re-apply the latest station pressure immediately before entering idle
-    // mode. This confirms the exact compensation value used for the FRC.
-    {
-        hal::I2cLockGuard lock(hal::I2cDevice::Scd41,
-                               hal::I2cOperation::Maintenance, 100);
-        if (!lock.acquired()) {
-            maintenanceInProgress_.store(false);
-            result.errorMessage = "LOCK_FAILED_FOR_PRESSURE";
-            return false;
+    const utils::scd41_maintenance::FrcSequenceResult sequence =
+        utils::scd41_maintenance::runFrcSequence(
+            referenceCo2Ppm,
+            [&]() {
+                hal::I2cLockGuard lock(hal::I2cDevice::Scd41,
+                                       hal::I2cOperation::Maintenance, 100);
+                return lock.acquired()
+                    ? scd4x_.setAmbientPressure(lastAmbientPressureHpa_)
+                    : LOCK_ERROR;
+            },
+            [&]() {
+                hal::I2cLockGuard lock(hal::I2cDevice::Scd41,
+                                       hal::I2cOperation::Maintenance, 100);
+                return lock.acquired()
+                    ? scd4x_.stopPeriodicMeasurement() : LOCK_ERROR;
+            },
+            [&]() { delay(STOP_TO_START_DELAY_MS); },
+            [&](uint16_t reference, uint16_t& rawWord) {
+                hal::I2cLockGuard lock(hal::I2cDevice::Scd41,
+                                       hal::I2cOperation::Maintenance, 100);
+                return lock.acquired()
+                    ? scd4x_.performForcedRecalibration(reference, rawWord)
+                    : LOCK_ERROR;
+            },
+            [&]() {
+                hal::I2cLockGuard lock(hal::I2cDevice::Scd41,
+                                       hal::I2cOperation::Maintenance, 100);
+                return lock.acquired()
+                    ? scd4x_.startPeriodicMeasurement() : LOCK_ERROR;
+            });
+
+    result.rawWord = sequence.rawWord;
+    if (sequence.pressureError != 0) {
+        if (sequence.pressureError != LOCK_ERROR) {
+            hal::I2cBus::noteCommunicationError(hal::I2cDevice::Scd41,
+                                                hal::I2cOperation::Maintenance);
         }
-        error = scd4x_.setAmbientPressure(lastAmbientPressureHpa_);
-    }
-    if (error) {
-        hal::I2cBus::noteCommunicationError(hal::I2cDevice::Scd41,
-                                            hal::I2cOperation::Maintenance);
+        result.errorMessage = sequence.pressureError == LOCK_ERROR
+            ? "LOCK_FAILED_FOR_PRESSURE" : "PRESSURE_APPLY_FAILED";
         maintenanceInProgress_.store(false);
-        result.errorMessage = "PRESSURE_APPLY_FAILED";
         return false;
     }
     lastAmbientPressureCommandMs_ = millis();
 
-    // 1. Stop periodic measurement
-    {
-        hal::I2cLockGuard lock(hal::I2cDevice::Scd41,
-                               hal::I2cOperation::Maintenance, 100);
-        if (lock.acquired()) {
-            error = scd4x_.stopPeriodicMeasurement();
-        } else {
-            services::Logger::error("SCD41", "FRC: Failed to lock for stopPeriodicMeasurement");
-            maintenanceInProgress_.store(false);
-            result.errorMessage = "LOCK_FAILED_FOR_STOP";
-            return false;
+    if (sequence.stopError != 0) {
+        if (sequence.stopError != LOCK_ERROR) {
+            hal::I2cBus::noteCommunicationError(hal::I2cDevice::Scd41,
+                                                hal::I2cOperation::Maintenance);
+            errorToString(sequence.stopError, errorMessage, sizeof(errorMessage));
+            services::Logger::error("SCD41",
+                "FRC: stopPeriodicMeasurement failed: %s", errorMessage);
         }
-    }
-
-    if (error) {
-        errorToString(error, errorMessage, 256);
-        services::Logger::error("SCD41", "FRC: stopPeriodicMeasurement failed: %s. Aborting FRC.", errorMessage);
-        hal::I2cBus::noteCommunicationError(hal::I2cDevice::Scd41,
-                                            hal::I2cOperation::Maintenance);
         markRecoveryFailure(millis(), Scd41Condition::RecoveryFailed,
-                            core::ErrorCode::BusError, error);
+            sequence.stopError == LOCK_ERROR ? core::ErrorCode::Timeout
+                                             : core::ErrorCode::BusError,
+            sequence.stopError);
+        result.errorMessage = sequence.stopError == LOCK_ERROR
+            ? "LOCK_FAILED_FOR_STOP" : "STOP_MEASUREMENT_FAILED";
         maintenanceInProgress_.store(false);
-        result.errorMessage = "STOP_MEASUREMENT_FAILED";
         return false;
     }
 
-    // 2. Wait 500ms
-    delay(500);
-
-    // 3. Perform FRC
-    uint16_t rawFrc = 0;
-    bool frcLockAcquired = false;
-    {
-        hal::I2cLockGuard lock(hal::I2cDevice::Scd41,
-                               hal::I2cOperation::Maintenance, 100);
-        if (lock.acquired()) {
-            frcLockAcquired = true;
-            error = scd4x_.performForcedRecalibration(referenceCo2Ppm, rawFrc);
-        } else {
-            services::Logger::error("SCD41", "FRC: Failed to lock for performForcedRecalibration");
-            // The sensor is already stopped. Continue to the common restart
-            // path so a transient lock timeout cannot leave it stopped.
-            error = 0xFFFE;
-        }
-    }
-
-    result.rawWord = rawFrc;
-
-    if (!frcLockAcquired) {
+    if (sequence.frcError == LOCK_ERROR) {
         services::Logger::error("SCD41", "FRC failed: I2C lock timeout");
         result.errorMessage = "LOCK_FAILED_FOR_FRC";
-    } else if (error) {
+    } else if (sequence.frcError != 0) {
         hal::I2cBus::noteCommunicationError(hal::I2cDevice::Scd41,
                                             hal::I2cOperation::Maintenance);
-        errorToString(error, errorMessage, 256);
+        errorToString(sequence.frcError, errorMessage, sizeof(errorMessage));
         services::Logger::error("SCD41", "FRC failed: %s", errorMessage);
         result.errorMessage = "FRC_FAILED_COMM_ERROR";
     } else if (!utils::scd41_policy::decodeFrcCorrection(
-                   rawFrc, result.correctionPpm)) {
+                   sequence.rawWord, result.correctionPpm)) {
         services::Logger::error("SCD41", "FRC failed: 0xFFFF returned (sensor rejected FRC)");
         result.errorMessage = "FRC_FAILED_SENSOR_REJECTED";
     } else {
         result.success = true;
         result.errorMessage = "";
-        services::Logger::info("SCD41", "event=SCD41_FRC_RESULT success=true raw_word=0x%04X correction_ppm=%d", rawFrc, result.correctionPpm);
+        services::Logger::info("SCD41", "event=SCD41_FRC_RESULT success=true raw_word=0x%04X correction_ppm=%d", sequence.rawWord, result.correctionPpm);
         postFrcLogCount_ = 5; // Log the next 5 measurements
     }
 
     if (!result.success) {
-        services::Logger::warn("SCD41", "event=SCD41_FRC_RESULT success=false raw_word=0x%04X", rawFrc);
+        services::Logger::warn("SCD41", "event=SCD41_FRC_RESULT success=false raw_word=0x%04X", sequence.rawWord);
     }
 
-    // 4. Restart periodic measurement
-    uint16_t restartError = 0;
-    bool restartLockAcquired = false;
-    {
-        hal::I2cLockGuard lock(hal::I2cDevice::Scd41,
-                               hal::I2cOperation::Maintenance, 100);
-        if (lock.acquired()) {
-            restartLockAcquired = true;
-            restartError = scd4x_.startPeriodicMeasurement();
-        } else {
-            services::Logger::error("SCD41", "FRC: Failed to lock for startPeriodicMeasurement");
-            restartError = 0xFFFE;
-        }
-    }
-    
-    if (restartError) {
-        if (restartLockAcquired) {
+    if (sequence.restartError != 0) {
+        if (sequence.restartError != LOCK_ERROR) {
             hal::I2cBus::noteCommunicationError(hal::I2cDevice::Scd41,
                                                 hal::I2cOperation::Maintenance);
         }
         services::Logger::error("SCD41", "FRC: startPeriodicMeasurement failed");
         state_ = core::DeviceState::RetryWait;
-        lastError_ = restartLockAcquired ? core::ErrorCode::ReadFailed : core::ErrorCode::Timeout;
+        lastError_ = sequence.restartError == LOCK_ERROR
+            ? core::ErrorCode::Timeout : core::ErrorCode::ReadFailed;
         condition_ = Scd41Condition::RecoveryFailed;
-        lastRawError_ = restartError;
+        lastRawError_ = sequence.restartError;
         hasValidData_ = false;
         nextRecoveryAttemptMs_ = millis() + 1000u;
         result.success = false;

@@ -56,6 +56,53 @@ enum class PressureReferenceSource : uint8_t {
     Stored
 };
 
+inline const char* pressureFieldStateName(PressureFieldState state) {
+    switch (state) {
+        case PressureFieldState::Valid: return "VALID";
+        case PressureFieldState::LastKnown: return "LAST_KNOWN";
+        case PressureFieldState::StaticFallback: return "STATIC_FALLBACK";
+        default: return "INVALID";
+    }
+}
+
+inline const char* pressureReferenceSourceName(
+        PressureReferenceSource source) {
+    switch (source) {
+        case PressureReferenceSource::Amedas: return "AMEDAS";
+        case PressureReferenceSource::Gnss: return "GNSS";
+        case PressureReferenceSource::Manual: return "MANUAL";
+        case PressureReferenceSource::Stored: return "STORED";
+        default: return "UNSET";
+    }
+}
+
+enum class LocationSource : uint8_t {
+    Unavailable,
+    ConfiguredFallback,
+    GnssLastKnown,
+    GnssLive
+};
+
+inline const char* locationSourceName(LocationSource source) {
+    switch (source) {
+        case LocationSource::ConfiguredFallback: return "CONFIGURED_FALLBACK";
+        case LocationSource::GnssLastKnown: return "GNSS_LAST_KNOWN";
+        case LocationSource::GnssLive: return "GNSS_LIVE";
+        default: return "UNAVAILABLE";
+    }
+}
+
+struct DeviceLocation {
+    double latitudeDeg {};
+    double longitudeDeg {};
+    LocationSource source {LocationSource::Unavailable};
+    uint32_t ageMs {UINT32_MAX};
+    int64_t capturedMonotonicUs {};
+    uint16_t satellites {};
+    float hdop {};
+    bool valid {false};
+};
+
 struct Bme690Data {
     float temperatureC {};
     float humidityRh {};

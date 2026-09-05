@@ -23,7 +23,10 @@ struct AltitudeTelemetry {
     float displayAltitudeM {};
     float seaLevelPressureHpa {};
     float pressureOffsetHpa {};
+    float calculationTemperatureC {};
     uint32_t seaLevelPressureAgeMs {UINT32_MAX};
+    uint8_t usedStationCount {};
+    bool externalTemperatureSource {false};
     PressureFieldState pressureState {PressureFieldState::Invalid};
     PressureReferenceSource pressureSource {PressureReferenceSource::Unset};
 };
