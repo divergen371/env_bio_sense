@@ -121,6 +121,9 @@ void DisplayManager::renderOverview(const core::SensorSnapshot& snapshot, const 
     if (status.max30102State == core::DeviceState::Error || status.max30102State == core::DeviceState::Offline) {
         display_.printf("HR   : Error\n");
         display_.printf("SpO2 : Error\n");
+    } else if (snapshot.ppg.state == core::PpgState::Unavailable) {
+        display_.println("PPG  : OFFLINE");
+        display_.printf("SpO2 : -- %%\n");
     } else if (snapshot.ppg.state == core::PpgState::NoFinger) {
         display_.printf("HR   : No Finger\n");
         display_.printf("SpO2 : -- %%\n");

@@ -3,6 +3,7 @@
 #include "storage/fram_storage.h"
 #include "storage/fram_wal.h"
 #include "storage/sd_transaction.h"
+#include "storage/ppg_session_journal.h"
 #include "storage/storage_records.h"
 #include "core/sensor_snapshot.h"
 #include <SD.h>
@@ -62,6 +63,13 @@ public:
     bool appendAmedasLogLine(const char* line);
     bool appendBmp581CalibrationLogLine(const char* line);
 
+    bool getPpgCheckpoint(FramPpgCheckpoint& checkpoint) const;
+    bool savePpgCheckpoint(const FramPpgCheckpoint& checkpoint);
+    bool clearPpgCheckpoint();
+    bool isPpgJournalAvailable() const {
+        return ppgJournalAvailable_.load();
+    }
+
     // BMP581 calibration tracking
     bool getBmp581Calibration(float& offsetHpa, uint32_t& epoch, float& tempC, float& slpHpa) const;
     bool setBmp581Calibration(float offsetHpa, uint32_t epoch, float tempC, float slpHpa);
@@ -74,11 +82,13 @@ private:
     FramStorage fram_;
     FramWal<FramStorage> wal_;
     SdTransactionJournal<FramStorage> sdTransaction_;
+    PpgSessionJournal<FramStorage> ppgJournal_;
     FramSuperblock superblock_;
     FramWalStats walStats_ {};
     std::atomic<bool> sdAvailable_;
     std::atomic<bool> framAvailable_;
     std::atomic<bool> framReadOnly_ {false};
+    std::atomic<bool> ppgJournalAvailable_ {false};
     std::atomic<bool> wifiActive_ {false};
     String currentFilename_;
     String currentDateString_;

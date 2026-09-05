@@ -3,6 +3,7 @@
 #include "drivers/sensors/sensor_interface.h"
 #include <MAX30105.h>
 #include "utils/pulse_analyzer.h"
+#include "core/ppg_sample_sink.h"
 
 namespace drivers {
 namespace sensors {
@@ -21,6 +22,9 @@ public:
 
     // 生データおよびHR/SpO2データの取得 (Step 6では生データのみ格納)
     bool readPpg(core::PpgData& out) const;
+    void setSampleSink(core::IPpgSampleSink* sink) { sampleSink_ = sink; }
+    uint32_t droppedSamples() const { return droppedSamples_; }
+    uint32_t fifoOverflows() const { return fifoOverflows_; }
 
 private:
     MAX30105 particleSensor_;
@@ -31,6 +35,12 @@ private:
     
     core::PpgData currentData_;
     bool hasValidData_ {false};
+    core::IPpgSampleSink* sampleSink_ {nullptr};
+    uint32_t logicalSampleIndex_ {0};
+    uint32_t droppedSamples_ {0};
+    uint32_t fifoOverflows_ {0};
+    uint32_t lastOverflowPollMs_ {0};
+    uint32_t lastReinitAttemptMs_ {0};
 
     // --- Step 9: Custom DSP Analyzer ---
     utils::PulseAnalyzer analyzer_;

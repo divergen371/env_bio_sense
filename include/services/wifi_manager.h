@@ -18,7 +18,7 @@ public:
 
 private:
     bool isOn_;
-    void startAP();
+    bool startAP();
     void stopAP();
 };
 

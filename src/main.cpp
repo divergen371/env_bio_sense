@@ -11,15 +11,17 @@
 #include "services/weather_service.h"
 #include "services/archive_manager.h"
 #include "services/location_service.h"
+#include "services/ppg_session_manager.h"
 
 services::SensorManager sensorManager;
 services::DisplayManager displayManager;
 storage::StorageManager storageManager;
 services::ArchiveManager archiveManager(storageManager);
 services::LocationService locationService;
+services::PpgSessionManager ppgSessionManager(storageManager);
 services::WifiManager wifiManager;
 services::WebServerService webServer(
-    storageManager, archiveManager, locationService);
+    storageManager, archiveManager, locationService, ppgSessionManager);
 services::WeatherService weatherService(
     sensorManager, wifiManager, locationService, storageManager);
 
@@ -32,9 +34,15 @@ void weatherTask(void* pvParameters) {
 }
 
 void storageTask(void* pvParameters) {
+    uint32_t lastEnvironmentFlushMs = 0;
     while (true) {
-        vTaskDelay(pdMS_TO_TICKS(5000)); // 5秒ごとにSDへフラッシュ
-        storageManager.flushPendingToSd();
+        const uint32_t nowMs = millis();
+        ppgSessionManager.update(sensorManager.snapshot(), nowMs);
+        if (nowMs - lastEnvironmentFlushMs >= 5000u) {
+            lastEnvironmentFlushMs = nowMs;
+            storageManager.flushPendingToSd();
+        }
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
 }
 
@@ -80,6 +88,8 @@ void setup() {
     storageManager.begin();
     archiveManager.begin();
     sensorManager.begin(storageManager);
+    ppgSessionManager.begin();
+    sensorManager.setPpgSampleSink(&ppgSessionManager);
     locationService.begin();
     displayManager.begin();
     
@@ -138,6 +148,9 @@ void loop() {
     // センサ更新 (内部で環境系は1000ms間隔、PPG系は常時更新に制御)
     // PPG (MAX30102) の高速サンプリングのため、このメインループは極力ブロックしないこと
     sensorManager.update(nowMs);
+    const core::SensorSnapshot loopSnapshot = sensorManager.snapshot();
+    ppgSessionManager.setDesiredRecording(
+        loopSnapshot.ppg.state == core::PpgState::Measuring);
     core::GnssData gnssForLocation;
     if (sensorManager.copyGnss(gnssForLocation)) {
         locationService.update(gnssForLocation, nowMs);
@@ -162,6 +175,8 @@ void loop() {
 
         if (snap.ppg.state == core::PpgState::NoFinger) {
             services::Logger::info("MAIN", "PPG: No Finger");
+        } else if (snap.ppg.state == core::PpgState::Unavailable) {
+            services::Logger::warn("MAIN", "PPG: Unavailable");
         } else if (snap.ppg.state == core::PpgState::Calibrating) {
             services::Logger::info("MAIN", "PPG: Calibrating (IR: %u)", snap.ppg.ir);
         } else if (snap.ppg.state == core::PpgState::Measuring) {

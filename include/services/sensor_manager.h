@@ -24,6 +24,9 @@ public:
     core::SensorSnapshot snapshot() const;
     core::SystemStatus status() const;
     bool copyGnss(core::GnssData& out) const;
+    void setPpgSampleSink(core::IPpgSampleSink* sink) {
+        max30102_.setSampleSink(sink);
+    }
     
     // Calibration & Maintenance
     void setSeaLevelPressure(

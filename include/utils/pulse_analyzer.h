@@ -33,6 +33,12 @@ public:
     float getDptHeartRateBpm() const { return dptHeartRate_; }
     // DPTによるSpO2推定値（周波数領域解析）
     float getDptSpo2Percent() const { return dptSpo2_; }
+    bool hasFreshResult(uint32_t timestampMs,
+                        uint32_t maxAgeMs = 3000) const {
+        return lastValidResultTimeMs_ != 0 && heartRate_ > 0.0f &&
+               spo2_ > 0.0f &&
+               timestampMs - lastValidResultTimeMs_ <= maxAgeMs;
+    }
     
     // アルゴリズムの状態をリセット（指が離れた時などに呼ぶ）
     void reset();
@@ -64,7 +70,10 @@ private:
     
     uint32_t lastPeakTimeMs_{0};
     uint32_t lastBeatTimeMs_{0};
+    uint32_t lastValidResultTimeMs_{0};
     uint32_t lastInterval_{1000};
+    float averageBeatAmplitude_{0.0f};
+    float lastAcceptedPeakAmplitude_{0.0f};
     
     // DC高速初期化用のサンプルカウンタ
     uint32_t sampleCount_{0};

@@ -40,7 +40,16 @@ enum class EventCode : uint16_t {
     PressureFieldUpdated = 0x40,
     PressureFieldStateChanged = 0x41,
     Bmp581CalibrationSucceeded = 0x42,
-    Bmp581CalibrationFailed = 0x43
+    Bmp581CalibrationFailed = 0x43,
+    PpgSessionStarted = 0x50,
+    PpgSessionCheckpoint = 0x51,
+    PpgSessionCompleted = 0x52,
+    PpgSessionAborted = 0x53,
+    PpgSessionRecoveredPartial = 0x54,
+    PpgSessionRecoveryFailed = 0x55,
+    PpgRingDrop = 0x56,
+    PpgStartRejected = 0x57,
+    PpgStorageFailed = 0x58
 };
 
 inline const char* eventCodeName(EventCode code) {
@@ -73,6 +82,15 @@ inline const char* eventCodeName(EventCode code) {
         case EventCode::PressureFieldStateChanged: return "PRESSURE_FIELD_STATE_CHANGED";
         case EventCode::Bmp581CalibrationSucceeded: return "BMP581_CALIBRATION_SUCCEEDED";
         case EventCode::Bmp581CalibrationFailed: return "BMP581_CALIBRATION_FAILED";
+        case EventCode::PpgSessionStarted: return "PPG_SESSION_STARTED";
+        case EventCode::PpgSessionCheckpoint: return "PPG_SESSION_CHECKPOINT";
+        case EventCode::PpgSessionCompleted: return "PPG_SESSION_COMPLETED";
+        case EventCode::PpgSessionAborted: return "PPG_SESSION_ABORTED";
+        case EventCode::PpgSessionRecoveredPartial: return "PPG_SESSION_RECOVERED_PARTIAL";
+        case EventCode::PpgSessionRecoveryFailed: return "PPG_SESSION_RECOVERY_FAILED";
+        case EventCode::PpgRingDrop: return "PPG_RING_DROP";
+        case EventCode::PpgStartRejected: return "PPG_START_REJECTED";
+        case EventCode::PpgStorageFailed: return "PPG_STORAGE_FAILED";
     }
     return "UNKNOWN";
 }
@@ -143,6 +161,38 @@ struct FramSdTransaction {
     uint16_t lineCrc16;
     char filename[48];
     uint8_t active;
+    uint16_t crc16;
+    uint8_t committed;
+};
+
+enum class PpgJournalState : uint8_t {
+    Empty = 0,
+    Preparing = 1,
+    Recording = 2,
+    Finalizing = 3,
+    Committed = 4,
+    RecoveryPending = 5,
+    CommittedPartial = 6,
+    RecoveryFailed = 7,
+    Aborted = 8,
+    Failed = 9
+};
+
+constexpr uint32_t FRAM_PPG_CHECKPOINT_MAGIC = 0x50504743; // "PPGC"
+constexpr uint16_t FRAM_PPG_CHECKPOINT_VERSION = 1;
+
+struct FramPpgCheckpoint {
+    uint32_t magic;
+    uint16_t checkpointVersion;
+    uint32_t generation;
+    uint64_t startUnixUs;
+    uint32_t blockCount;
+    uint32_t sampleCount;
+    uint32_t fileSize;
+    uint32_t streamCrc32;
+    uint32_t droppedSamples;
+    uint32_t fifoOverflows;
+    uint8_t state;
     uint16_t crc16;
     uint8_t committed;
 };
@@ -366,6 +416,16 @@ constexpr uint16_t ADDR_SD_TX_B       = 0x0180;
 constexpr size_t SD_TX_SLOT_SIZE      = 0x0080;
 constexpr uint16_t ADDR_EVENT_JOURNAL = 0x0200;
 constexpr uint16_t ADDR_RING_BUFFER   = 0x1000;
+constexpr uint16_t ADDR_PPG_CHECKPOINT_A =
+    ADDR_SD_TX_A + sizeof(FramSdTransaction);
+constexpr uint16_t ADDR_PPG_CHECKPOINT_B =
+    ADDR_SD_TX_B + sizeof(FramSdTransaction);
+static_assert(ADDR_PPG_CHECKPOINT_A + sizeof(FramPpgCheckpoint) <=
+                  ADDR_SD_TX_A + SD_TX_SLOT_SIZE,
+              "PPG checkpoint A must fit the unused SD transaction tail");
+static_assert(ADDR_PPG_CHECKPOINT_B + sizeof(FramPpgCheckpoint) <=
+                  ADDR_SD_TX_B + SD_TX_SLOT_SIZE,
+              "PPG checkpoint B must fit the unused SD transaction tail");
 
 // 容量とレコードサイズの定義
 constexpr size_t FRAM_CAPACITY        = 65536; // 64KB (32KB x 2)

@@ -23,7 +23,10 @@ void PulseAnalyzer::reset() {
     displayAmplitude_ = 0.0f;
     lastPeakTimeMs_ = 0;
     lastBeatTimeMs_ = 0;
+    lastValidResultTimeMs_ = 0;
     lastInterval_ = 1000;
+    averageBeatAmplitude_ = 0.0f;
+    lastAcceptedPeakAmplitude_ = 0.0f;
     sampleCount_ = 0;
     heartRate_ = 0.0f;
     spo2_ = 0.0f;
@@ -62,24 +65,23 @@ bool PulseAnalyzer::processSample(uint32_t irRaw, uint32_t redRaw, uint32_t time
     
     if (irAc_ > displayAmpMax_) displayAmpMax_ = irAc_;
     if (irAc_ < displayAmpMin_) displayAmpMin_ = irAc_;
-    // 0.995の減衰により約1.4秒かけて半減する。これにより画面上のAmp値のブレを完全に防ぐ。
-    displayAmpMax_ *= 0.995f;
-    displayAmpMin_ *= 0.995f;
+    // 約0.46秒で半減させ、指外し・平坦化後の古い振幅を残さない。
+    displayAmpMax_ *= 0.985f;
+    displayAmpMin_ *= 0.985f;
     displayAmplitude_ = displayAmpMax_ - displayAmpMin_;
+    perfusionIndex_ = irDc_ > 0.0f
+        ? (displayAmplitude_ / irDc_) * 100.0f : 0.0f;
     
     bool beatDetected = false;
-    
-    static float avgAmp = 0.0f;
-    if (sampleCount_ < 10) avgAmp = 0.0f; // リセット時
     
     // もし1.5秒間波が見つからない場合は、ノイズで閾値が大きすぎてスタックしているとみなし、
     // 閾値を急激に下げる（毎サンプル5%減衰）ことで、0.5秒以内に確実に波を再キャッチする。
     if (lastPeakTimeMs_ != 0 && timestampMs - lastPeakTimeMs_ > 1500) {
-        avgAmp *= 0.95f; 
+        averageBeatAmplitude_ *= 0.95f;
     }
     
     // ヒステリシス閾値: 直近の平均振幅の30%、ただし最低5.0
-    float threshold = std::max(5.0f, avgAmp * 0.3f);
+    float threshold = std::max(5.0f, averageBeatAmplitude_ * 0.3f);
     
     if (waitingForPeak_) {
         if (irAc_ > irMax_) {
@@ -88,54 +90,60 @@ bool PulseAnalyzer::processSample(uint32_t irRaw, uint32_t redRaw, uint32_t time
         } else if (irAc_ < irMax_ - threshold) {
             // ピーク（頂上から閾値分下がった）確定
             if (timestampMs - lastPeakTimeMs_ > 300) { // 不応期300ms(最大200BPM)
-                beatDetected = true;
-                
-                if (lastBeatTimeMs_ != 0) {
-                    uint32_t interval = timestampMs - lastBeatTimeMs_;
+                const float irAmplitude = irMax_ - irMin_;
+                const float redAmplitude = redMax_ - redMin_;
+                const uint32_t interval = lastBeatTimeMs_ == 0
+                    ? 0 : timestampMs - lastBeatTimeMs_;
+                const bool likelyDicroticNotch = lastBeatTimeMs_ != 0 &&
+                    interval < static_cast<uint32_t>(lastInterval_ * 0.65f) &&
+                    lastAcceptedPeakAmplitude_ > 0.0f &&
+                    irAmplitude < lastAcceptedPeakAmplitude_ * 0.80f;
+
+                if (!likelyDicroticNotch) {
+                    beatDetected = true;
+                    if (averageBeatAmplitude_ == 0.0f) {
+                        averageBeatAmplitude_ = irAmplitude;
+                    } else {
+                        averageBeatAmplitude_ =
+                            averageBeatAmplitude_ * 0.8f + irAmplitude * 0.2f;
+                    }
+                    lastAcceptedPeakAmplitude_ = irAmplitude;
+
                     if (interval >= 300 && interval <= 2000) {
-                        lastInterval_ = interval;
-                        float instantBpm = 60000.0f / (float)interval;
-                        
-                        if (heartRate_ == 0.0f) {
-                            heartRate_ = instantBpm;
-                        } else {
-                            heartRate_ = heartRate_ * 0.8f + instantBpm * 0.2f;
-                        }
-                        
-                        float irAmplitude = irMax_ - irMin_;
-                        float redAmplitude = redMax_ - redMin_;
-                        
-                        if (avgAmp == 0.0f) avgAmp = irAmplitude;
-                        else avgAmp = avgAmp * 0.8f + irAmplitude * 0.2f;
-                        
-                        perfusionIndex_ = (irDc_ > 0) ? (irAmplitude / irDc_) * 100.0f : 0.0f;
-                        
-                        if (sampleCount_ > 200 &&
+                        const float beatPi = irDc_ > 0.0f
+                            ? (irAmplitude / irDc_) * 100.0f : 0.0f;
+                        const bool qualityAcceptable = sampleCount_ > 200 &&
                             irAmplitude > 20.0f && redAmplitude > 20.0f &&
-                            irDc_ > 0 && redDc_ > 0 && 
-                            perfusionIndex_ >= 0.2f && perfusionIndex_ <= 20.0f) {
-                            
-                            float r = (redAmplitude / redDc_) / (irAmplitude / irDc_);
+                            irDc_ > 0.0f && redDc_ > 0.0f &&
+                            beatPi >= 0.2f && beatPi <= 20.0f;
+                        if (qualityAcceptable) {
+                            const float instantBpm =
+                                60000.0f / static_cast<float>(interval);
+                            heartRate_ = heartRate_ == 0.0f
+                                ? instantBpm
+                                : heartRate_ * 0.8f + instantBpm * 0.2f;
+
+                            const float r = (redAmplitude / redDc_) /
+                                            (irAmplitude / irDc_);
                             if (r >= 0.02f && r <= 1.84f) {
-                                float instantSpo2;
-                                if (r < 0.4f) {
-                                    instantSpo2 = 100.0f;
-                                } else {
-                                    instantSpo2 = -45.060f * r * r + 30.354f * r + 94.845f;
-                                    instantSpo2 = std::max(0.0f, std::min(100.0f, instantSpo2));
+                                float instantSpo2 = 100.0f;
+                                if (r >= 0.4f) {
+                                    instantSpo2 = -45.060f * r * r +
+                                        30.354f * r + 94.845f;
+                                    instantSpo2 = std::max(
+                                        0.0f, std::min(100.0f, instantSpo2));
                                 }
-                                
-                                if (spo2_ == 0.0f) {
-                                    spo2_ = instantSpo2;
-                                } else {
-                                    spo2_ = spo2_ * 0.95f + instantSpo2 * 0.05f;
-                                }
+                                spo2_ = spo2_ == 0.0f
+                                    ? instantSpo2
+                                    : spo2_ * 0.95f + instantSpo2 * 0.05f;
+                                lastValidResultTimeMs_ = timestampMs;
                             }
                         }
+                        lastInterval_ = interval;
                     }
+                    lastBeatTimeMs_ = timestampMs;
+                    lastPeakTimeMs_ = timestampMs;
                 }
-                lastBeatTimeMs_ = timestampMs;
-                lastPeakTimeMs_ = timestampMs;
             }
             
             // ピーク確定後は「谷探し」状態へ移行
@@ -164,6 +172,7 @@ bool PulseAnalyzer::processSample(uint32_t irRaw, uint32_t redRaw, uint32_t time
     if (lastBeatTimeMs_ != 0 && timestampMs - lastBeatTimeMs_ > 3000) {
         heartRate_ = 0.0f;
         spo2_ = 0.0f;
+        lastValidResultTimeMs_ = 0;
         lastBeatTimeMs_ = 0;
         waitingForPeak_ = true; // ピーク検出も初期状態にリセット
         irMax_ = irAc_;
@@ -258,6 +267,15 @@ void PulseAnalyzer::analyzeDptSpectrum() {
                 dptHeartRate_ = dptBpm;
             } else {
                 dptHeartRate_ = dptHeartRate_ * 0.7f + dptBpm * 0.3f;
+            }
+            // 時間領域と周期領域が同じ拍動を示す場合だけ、閾値交差の
+            // 数十msの位相偏りをDPTで穏やかに補正する。大きく不一致の
+            // 場合は体動や高調波の可能性があるため混合しない。
+            if (heartRate_ > 0.0f &&
+                std::fabs(heartRate_ - dptHeartRate_) <=
+                    dptHeartRate_ * 0.10f) {
+                heartRate_ = heartRate_ * 0.8f +
+                             dptHeartRate_ * 0.2f;
             }
         }
         

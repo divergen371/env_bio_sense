@@ -2,387 +2,605 @@
 #include "services/logger.h"
 #include "hal/clock.h"
 #include "miniz.h"
+#include <algorithm>
+#include <cstring>
 
 namespace services {
+namespace {
 
 constexpr size_t ARCHIVE_IO_BUFFER_SIZE = 16 * 1024;
-constexpr uint32_t MINIMUM_FREE_SPACE_BYTES = 2 * 1024 * 1024; // 2MB min required
+constexpr uint32_t MINIMUM_FREE_SPACE_BYTES = 2 * 1024 * 1024;
+constexpr size_t MAX_MANUAL_FILES = 64;
+constexpr uint32_t TERMINAL_STATUS_HOLD_MS = 5000;
 
-static size_t mz_write_callback(void *pOpaque, mz_uint64 file_ofs, const void *pBuf, size_t n) {
-    File* pFile = static_cast<File*>(pOpaque);
-    if (!pFile) return 0;
-    
-    // miniz may seek back to update headers
-    if (pFile->position() != file_ofs) {
-        if (!pFile->seek(file_ofs)) {
-            return 0; // Seek failed
-        }
+struct ZipIoState {
+    File* file;
+    storage::StorageManager* storage;
+};
+
+size_t zipWriteCallback(void* opaque, mz_uint64 fileOffset,
+                        const void* buffer, size_t length) {
+    ZipIoState* state = static_cast<ZipIoState*>(opaque);
+    if (state == nullptr || state->file == nullptr ||
+        state->storage == nullptr || buffer == nullptr) {
+        return 0;
     }
-    
-    // Write in chunks
     size_t written = 0;
-    const uint8_t* pData = static_cast<const uint8_t*>(pBuf);
-    while (written < n) {
-        size_t toWrite = std::min(n - written, (size_t)4096);
-        size_t bytes = pFile->write(pData + written, toWrite);
-        if (bytes == 0) break;
-        written += bytes;
+    const uint8_t* source = static_cast<const uint8_t*>(buffer);
+    while (written < length) {
+        const size_t chunk = std::min<size_t>(length - written, 4096);
+        state->storage->lock();
+        bool positioned = state->file->position() == fileOffset + written;
+        if (!positioned) positioned = state->file->seek(fileOffset + written);
+        const size_t actual = positioned
+            ? state->file->write(source + written, chunk) : 0;
+        state->storage->unlock();
+        if (actual != chunk) break;
+        written += actual;
+        taskYIELD();
     }
     return written;
 }
 
-struct ReadCallbackState {
-    File* inFile;
-    storage::StorageManager* storageMgr;
-    ArchiveManager* archiveMgr;
-};
-
-static size_t mz_read_callback(void *pOpaque, mz_uint64 file_ofs, void *pBuf, size_t n) {
-    ReadCallbackState* state = static_cast<ReadCallbackState*>(pOpaque);
-    if (!state || !state->inFile) return 0;
-    
+size_t zipReadCallback(void* opaque, mz_uint64 fileOffset,
+                       void* buffer, size_t length) {
+    ZipIoState* state = static_cast<ZipIoState*>(opaque);
+    if (state == nullptr || state->file == nullptr ||
+        state->storage == nullptr || buffer == nullptr) {
+        return 0;
+    }
     size_t totalRead = 0;
-    uint8_t* pDest = static_cast<uint8_t*>(pBuf);
-    
-    // 16KiB単位で小ブロックreadし、こまめにMutexを解放してyieldする
-    while (totalRead < n) {
-        size_t toRead = std::min(n - totalRead, ARCHIVE_IO_BUFFER_SIZE);
-        
-        state->storageMgr->lock();
-        if (state->inFile->position() != file_ofs + totalRead) {
-            state->inFile->seek(file_ofs + totalRead);
+    uint8_t* destination = static_cast<uint8_t*>(buffer);
+    while (totalRead < length) {
+        const size_t chunk = std::min(
+            length - totalRead, ARCHIVE_IO_BUFFER_SIZE);
+        state->storage->lock();
+        bool positioned =
+            state->file->position() == fileOffset + totalRead;
+        if (!positioned) {
+            positioned = state->file->seek(fileOffset + totalRead);
         }
-        size_t bytesRead = state->inFile->read(pDest + totalRead, toRead);
-        state->storageMgr->unlock();
-        
-        if (bytesRead == 0) break;
-        totalRead += bytesRead;
-        
-        // 進捗を更新してロギング側へ実行機会を譲る
-        vTaskDelay(pdMS_TO_TICKS(10));
+        const size_t actual = positioned
+            ? state->file->read(destination + totalRead, chunk) : 0;
+        state->storage->unlock();
+        if (actual == 0) break;
+        totalRead += actual;
+        vTaskDelay(pdMS_TO_TICKS(1));
     }
     return totalRead;
 }
 
+bool hasAllowedArchiveSuffix(const String& path) {
+    return path.endsWith(".csv") || path.endsWith(".json") ||
+           path.endsWith(".ppg") || path.endsWith(".zip") ||
+           path.endsWith(".incomplete");
+}
+
+} // namespace
+
 ArchiveManager::ArchiveManager(storage::StorageManager& storageManager)
     : storageManager_(storageManager) {
+    statusMutex_ = xSemaphoreCreateMutex();
+    status_.state = ArchiveState::Idle;
+    status_.message = "Idle";
 }
 
 void ArchiveManager::begin() {
     Logger::info("ArchiveMgr", "Initializing Archive Manager...");
-    
     xTaskCreatePinnedToCore(
         [](void* arg) {
-            ArchiveManager* mgr = static_cast<ArchiveManager*>(arg);
-            mgr->processArchiveTask();
+            static_cast<ArchiveManager*>(arg)->processArchiveTask();
         },
-        "ArchiveTask",
-        8192,
-        this,
-        tskIDLE_PRIORITY + 1,
-        &taskHandle_,
-        0 // Core 0 (where WebServer runs)
-    );
+        "ArchiveTask", 8192, this, tskIDLE_PRIORITY + 1,
+        &taskHandle_, 0);
 }
 
-void ArchiveManager::setStatus(ArchiveState state, const String& message) {
+void ArchiveManager::setStatus(ArchiveState state,
+                               const String& message) {
+    if (statusMutex_ != nullptr) xSemaphoreTake(statusMutex_, portMAX_DELAY);
     status_.state = state;
     status_.message = message;
-    state_ = state;
-    Logger::info("ArchiveMgr", "Status changed to %d: %s", (int)state, message.c_str());
+    if (statusMutex_ != nullptr) xSemaphoreGive(statusMutex_);
+    state_.store(state);
+    Logger::info("ArchiveMgr", "Status changed to %d: %s",
+                 static_cast<int>(state), message.c_str());
+}
+
+void ArchiveManager::resetProgress() {
+    if (statusMutex_ != nullptr) xSemaphoreTake(statusMutex_, portMAX_DELAY);
+    status_.currentFile = "";
+    status_.processedFiles = 0;
+    status_.totalFiles = static_cast<int>(targetFiles_.size());
+    status_.processedBytes = 0;
+    status_.totalBytes = 0;
+    status_.progressPercent = 0;
+    status_.outputFile = outputZipName_;
+    status_.verified = false;
+    status_.retainedOriginals = 0;
+    if (statusMutex_ != nullptr) xSemaphoreGive(statusMutex_);
+}
+
+void ArchiveManager::updateProgress(const String& currentFile,
+                                    int processedFiles,
+                                    size_t processedBytes) {
+    if (statusMutex_ != nullptr) xSemaphoreTake(statusMutex_, portMAX_DELAY);
+    status_.currentFile = currentFile;
+    status_.processedFiles = processedFiles;
+    status_.processedBytes = processedBytes;
+    status_.progressPercent = status_.totalBytes == 0 ? 0
+        : static_cast<int>(std::min<size_t>(100,
+            static_cast<size_t>((static_cast<uint64_t>(processedBytes) * 100u) /
+                                status_.totalBytes)));
+    if (statusMutex_ != nullptr) xSemaphoreGive(statusMutex_);
 }
 
 ArchiveStatus ArchiveManager::getStatus() const {
-    ArchiveStatus s = status_;
-    return s;
+    if (statusMutex_ != nullptr) xSemaphoreTake(statusMutex_, portMAX_DELAY);
+    const ArchiveStatus copy = status_;
+    if (statusMutex_ != nullptr) xSemaphoreGive(statusMutex_);
+    return copy;
 }
 
-bool ArchiveManager::getFreeSpace(size_t& freeBytes) {
+bool ArchiveManager::isFileBusy(const String& path) const {
+    const ArchiveState current = state_.load();
+    if (current != ArchiveState::Preparing &&
+        current != ArchiveState::Compressing &&
+        current != ArchiveState::Verifying) {
+        return false;
+    }
+    bool busy = false;
+    if (statusMutex_ != nullptr) xSemaphoreTake(statusMutex_, portMAX_DELAY);
+    for (const String& target : targetFiles_) {
+        if (target == path) {
+            busy = true;
+            break;
+        }
+    }
+    if (statusMutex_ != nullptr) xSemaphoreGive(statusMutex_);
+    return busy;
+}
+
+bool ArchiveManager::getFreeSpace(uint64_t& freeBytes) {
     storageManager_.lock();
-    uint64_t total = SD.totalBytes();
-    uint64_t used = SD.usedBytes();
+    const uint64_t total = SD.totalBytes();
+    const uint64_t used = SD.usedBytes();
     storageManager_.unlock();
-    
-    if (total == 0) return false;
-    freeBytes = (size_t)(total - used);
+    if (total == 0 || used > total) return false;
+    freeBytes = total - used;
     return true;
 }
 
-bool ArchiveManager::startManualArchive(const std::vector<String>& files) {
-    if (state_ != ArchiveState::Idle) {
+bool ArchiveManager::isSafeArchivePath(const String& path) {
+    if (path.length() < 2 || path.length() > 120 || path[0] != '/' ||
+        path.indexOf("..") >= 0 || path.indexOf('\\') >= 0 ||
+        path.indexOf("//") >= 0 || path.endsWith(".tmp") ||
+        path.endsWith(".tmp.zip") || !hasAllowedArchiveSuffix(path)) {
         return false;
     }
-    
-    if (files.empty()) return false;
-    
+    for (size_t i = 1; i < path.length(); ++i) {
+        const char c = path[i];
+        const bool allowed = (c >= 'a' && c <= 'z') ||
+            (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+            c == '/' || c == '_' || c == '-' || c == '.';
+        if (!allowed) return false;
+    }
+    const int secondSlash = path.indexOf('/', 1);
+    return secondSlash < 0 || path.startsWith("/data/ppg/") ||
+           path.startsWith("/data/system/");
+}
+
+bool ArchiveManager::startManualArchive(
+        const std::vector<String>& files) {
+    const ArchiveState current = state_.load();
+    if (current != ArchiveState::Idle) return false;
+    if (files.empty() || files.size() > MAX_MANUAL_FILES) return false;
+    for (size_t i = 0; i < files.size(); ++i) {
+        if (!isSafeArchivePath(files[i])) return false;
+        for (size_t j = 0; j < i; ++j) {
+            if (files[i] == files[j]) return false;
+        }
+    }
+
+    char name[48] {};
+    if (hal::Clock::isTimeSet()) {
+        const time_t nowEpoch = hal::Clock::getEpoch() + 9 * 3600;
+        struct tm timeinfo {};
+        gmtime_r(&nowEpoch, &timeinfo);
+        std::snprintf(name, sizeof(name),
+            "manual_%04d%02d%02d_%02d%02d%02d_%04lX.zip",
+            timeinfo.tm_year + 1900, timeinfo.tm_mon + 1,
+            timeinfo.tm_mday, timeinfo.tm_hour, timeinfo.tm_min,
+            timeinfo.tm_sec, static_cast<unsigned long>(millis() & 0xFFFFu));
+    } else {
+        std::snprintf(name, sizeof(name), "manual_boot_%08lX.zip",
+            static_cast<unsigned long>(millis()));
+    }
+
+    if (statusMutex_ != nullptr) xSemaphoreTake(statusMutex_, portMAX_DELAY);
+    const ArchiveState lockedState = state_.load();
+    if (lockedState != ArchiveState::Idle) {
+        if (statusMutex_ != nullptr) xSemaphoreGive(statusMutex_);
+        return false;
+    }
     targetFiles_ = files;
+    outputZipName_ = "/" + String(name);
     isWeekly_ = false;
-    
-    char buf[32];
-    time_t nowEpoch = hal::Clock::getEpoch() + (9 * 3600); // JST
-    struct tm timeinfo;
-    gmtime_r(&nowEpoch, &timeinfo);
-    snprintf(buf, sizeof(buf), "manual_%04d%02d%02d_%02d%02d%02d",
-             timeinfo.tm_year + 1900, timeinfo.tm_mon + 1, timeinfo.tm_mday,
-             timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
-             
-    outputZipName_ = "/" + String(buf) + ".zip";
-    cancelRequested_ = false;
-    
-    setStatus(ArchiveState::Preparing, "Manual archive scheduled");
+    cancelRequested_.store(false);
+    terminalStateSinceMs_ = 0;
+    status_ = ArchiveStatus();
+    status_.state = ArchiveState::Preparing;
+    status_.message = "Manual archive scheduled";
+    status_.totalFiles = static_cast<int>(files.size());
+    status_.outputFile = outputZipName_;
+    state_.store(ArchiveState::Preparing);
+    if (statusMutex_ != nullptr) xSemaphoreGive(statusMutex_);
     return true;
 }
 
 void ArchiveManager::cancelArchive() {
-    if (state_ != ArchiveState::Idle && state_ != ArchiveState::Completed && state_ != ArchiveState::Failed) {
-        cancelRequested_ = true;
+    const ArchiveState current = state_.load();
+    if (current == ArchiveState::Preparing ||
+        current == ArchiveState::Compressing ||
+        current == ArchiveState::Verifying) {
+        cancelRequested_.store(true);
     }
 }
 
 void ArchiveManager::update(uint32_t nowMs) {
-    // スケジューリング処理
-    if (nowMs - lastScheduleCheckMs_ > 60000) { // 1分ごとにチェック
+    if (nowMs - lastScheduleCheckMs_ > 60000u) {
         lastScheduleCheckMs_ = nowMs;
         checkWeeklySchedule(nowMs);
     }
 }
 
-void ArchiveManager::checkWeeklySchedule(uint32_t nowMs) {
-    if (state_ != ArchiveState::Idle) return;
-    if (!hal::Clock::isTimeSet()) return;
-    
-    time_t nowEpoch = hal::Clock::getEpoch() + (9 * 3600); // JST
-    struct tm timeinfo;
-    gmtime_r(&nowEpoch, &timeinfo);
-    
-    // 月曜日の 03:00 〜 06:00
-    if (timeinfo.tm_wday == 1 && timeinfo.tm_hour >= 3 && timeinfo.tm_hour < 6) {
-        // 先週月曜日〜日曜日の日付を算出
-        time_t lastMonEpoch = nowEpoch - (7 * 86400) - (timeinfo.tm_hour * 3600) - (timeinfo.tm_min * 60) - timeinfo.tm_sec;
-        time_t lastSunEpoch = lastMonEpoch + (6 * 86400);
-        
-        struct tm tmStart, tmEnd;
-        gmtime_r(&lastMonEpoch, &tmStart);
-        gmtime_r(&lastSunEpoch, &tmEnd);
-        
-        char startStr[16], endStr[16];
-        snprintf(startStr, sizeof(startStr), "%04d%02d%02d", tmStart.tm_year + 1900, tmStart.tm_mon + 1, tmStart.tm_mday);
-        snprintf(endStr, sizeof(endStr), "%04d%02d%02d", tmEnd.tm_year + 1900, tmEnd.tm_mon + 1, tmEnd.tm_mday);
-        
-        String zipName = "/weekly_" + String(startStr) + "_" + String(endStr) + ".zip";
-        
-        storageManager_.lock();
-        bool exists = SD.exists(zipName.c_str());
-        storageManager_.unlock();
-        
-        if (!exists) {
-            // 対象ファイルを列挙
-            std::vector<String> candidates;
-            storageManager_.lock();
-            File root = SD.open("/");
-            if (root) {
-                File file = root.openNextFile();
-                while (file) {
-                    String name = file.name();
-                    if (!file.isDirectory() && name.startsWith("log_") && name.endsWith(".csv")) {
-                        // "log_YYYYMMDD.csv" -> YYYYMMDD
-                        String datePart = name.substring(4, 12);
-                        if (datePart >= startStr && datePart <= endStr) {
-                            String fullPath = "/" + name;
-                            if (fullPath != storageManager_.getCurrentFilename()) {
-                                candidates.push_back(fullPath);
-                            }
-                        }
-                    }
-                    file = root.openNextFile();
+void ArchiveManager::checkWeeklySchedule(uint32_t) {
+    if (state_.load() != ArchiveState::Idle ||
+        !hal::Clock::isTimeSet()) return;
+
+    const time_t nowEpoch = hal::Clock::getEpoch() + 9 * 3600;
+    struct tm now {};
+    gmtime_r(&nowEpoch, &now);
+    if (now.tm_wday != 1 || now.tm_hour < 3 || now.tm_hour >= 6) return;
+
+    const time_t lastMonday = nowEpoch - 7 * 86400 -
+        now.tm_hour * 3600 - now.tm_min * 60 - now.tm_sec;
+    const time_t lastSunday = lastMonday + 6 * 86400;
+    struct tm start {};
+    struct tm end {};
+    gmtime_r(&lastMonday, &start);
+    gmtime_r(&lastSunday, &end);
+    char startText[16] {};
+    char endText[16] {};
+    std::snprintf(startText, sizeof(startText), "%04d%02d%02d",
+        start.tm_year + 1900, start.tm_mon + 1, start.tm_mday);
+    std::snprintf(endText, sizeof(endText), "%04d%02d%02d",
+        end.tm_year + 1900, end.tm_mon + 1, end.tm_mday);
+    const String zipName = "/weekly_" + String(startText) + "_" +
+        String(endText) + ".zip";
+
+    std::vector<String> candidates;
+    const String currentLog = storageManager_.getCurrentFilename();
+    storageManager_.lock();
+    const bool archiveExists = SD.exists(zipName.c_str());
+    if (!archiveExists) {
+        File root = SD.open("/");
+        File file = root ? root.openNextFile() : File();
+        while (file) {
+            const String name = file.name();
+            const int slash = name.lastIndexOf('/');
+            const String basename = slash >= 0
+                ? name.substring(slash + 1) : name;
+            if (!file.isDirectory() && basename.startsWith("log_") &&
+                basename.endsWith(".csv")) {
+                const String datePart = basename.substring(4, 12);
+                String fullPath = name.startsWith("/") ? name : "/" + name;
+                if (datePart >= startText && datePart <= endText &&
+                    fullPath != currentLog) {
+                    candidates.push_back(fullPath);
                 }
-                root.close();
             }
-            storageManager_.unlock();
-            
-            if (!candidates.empty()) {
-                targetFiles_ = candidates;
-                isWeekly_ = true;
-                outputZipName_ = zipName;
-                cancelRequested_ = false;
-                setStatus(ArchiveState::Preparing, "Weekly archive scheduled");
-            }
+            file.close();
+            file = root.openNextFile();
         }
+        if (root) root.close();
     }
+    storageManager_.unlock();
+    if (archiveExists || candidates.empty()) return;
+
+    if (statusMutex_ != nullptr) xSemaphoreTake(statusMutex_, portMAX_DELAY);
+    if (state_.load() != ArchiveState::Idle) {
+        if (statusMutex_ != nullptr) xSemaphoreGive(statusMutex_);
+        return;
+    }
+    targetFiles_ = candidates;
+    outputZipName_ = zipName;
+    isWeekly_ = true;
+    cancelRequested_.store(false);
+    terminalStateSinceMs_ = 0;
+    status_ = ArchiveStatus();
+    status_.state = ArchiveState::Preparing;
+    status_.message = "Weekly archive scheduled";
+    status_.totalFiles = static_cast<int>(candidates.size());
+    status_.outputFile = outputZipName_;
+    state_.store(ArchiveState::Preparing);
+    if (statusMutex_ != nullptr) xSemaphoreGive(statusMutex_);
 }
 
 void ArchiveManager::processArchiveTask() {
     while (true) {
-        if (state_ == ArchiveState::Preparing) {
-            bool success = executeArchive();
+        if (state_.load() == ArchiveState::Preparing) {
+            resetProgress();
+            const bool success = executeArchive();
             if (success) {
-                setStatus(ArchiveState::Completed, "Archive completed successfully");
-                if (isWeekly_) {
-                    // 自動圧縮完了後、元CSVの削除
-                    storageManager_.lock();
-                    for (const auto& file : targetFiles_) {
-                        SD.remove(file.c_str());
-                    }
-                    storageManager_.unlock();
-                    Logger::info("ArchiveMgr", "Deleted original CSVs after weekly archive");
+                int retained = 0;
+                if (isWeekly_) retained = deleteVerifiedWeeklySources();
+                if (statusMutex_ != nullptr) {
+                    xSemaphoreTake(statusMutex_, portMAX_DELAY);
                 }
-            } else if (cancelRequested_) {
+                status_.verified = true;
+                status_.retainedOriginals = retained;
+                if (statusMutex_ != nullptr) xSemaphoreGive(statusMutex_);
+                setStatus(ArchiveState::Completed,
+                    retained == 0
+                        ? "Archive verified successfully"
+                        : "Archive verified; some originals were retained");
+            } else if (cancelRequested_.load()) {
                 setStatus(ArchiveState::Failed, "Archive cancelled by user");
             } else {
-                setStatus(ArchiveState::Failed, "Archive failed");
+                setStatus(ArchiveState::Failed, "Archive failed verification");
             }
-            
+            if (statusMutex_ != nullptr) xSemaphoreTake(statusMutex_, portMAX_DELAY);
             targetFiles_.clear();
+            if (statusMutex_ != nullptr) xSemaphoreGive(statusMutex_);
+            terminalStateSinceMs_ = millis();
+        } else {
+            const ArchiveState current = state_.load();
+            if ((current == ArchiveState::Completed ||
+                 current == ArchiveState::Failed) &&
+                terminalStateSinceMs_ != 0 &&
+                millis() - terminalStateSinceMs_ >= TERMINAL_STATUS_HOLD_MS) {
+                setStatus(ArchiveState::Idle, "Idle");
+                terminalStateSinceMs_ = 0;
+            }
         }
-        
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(250));
     }
+}
+
+bool ArchiveManager::inspectTargets(size_t& totalBytes) {
+    totalBytes = 0;
+    const String currentLog = storageManager_.getCurrentFilename();
+    storageManager_.lock();
+    for (const String& path : targetFiles_) {
+        if (!isSafeArchivePath(path) || path == currentLog ||
+            !SD.exists(path.c_str())) {
+            storageManager_.unlock();
+            return false;
+        }
+        File file = SD.open(path.c_str(), FILE_READ);
+        if (!file || file.isDirectory()) {
+            if (file) file.close();
+            storageManager_.unlock();
+            return false;
+        }
+        const size_t fileSize = file.size();
+        if (fileSize > SIZE_MAX - totalBytes) {
+            file.close();
+            storageManager_.unlock();
+            return false;
+        }
+        totalBytes += fileSize;
+        file.close();
+    }
+    storageManager_.unlock();
+    return totalBytes > 0;
 }
 
 bool ArchiveManager::executeArchive() {
-    size_t freeBytes = 0;
-    if (!getFreeSpace(freeBytes) || freeBytes < MINIMUM_FREE_SPACE_BYTES) {
-        setStatus(ArchiveState::Failed, "Insufficient SD free space");
+    size_t totalBytes = 0;
+    uint64_t freeBytes = 0;
+    if (!inspectTargets(totalBytes) ||
+        totalBytes > SIZE_MAX - MINIMUM_FREE_SPACE_BYTES ||
+        !getFreeSpace(freeBytes) ||
+        freeBytes < static_cast<uint64_t>(totalBytes) +
+            MINIMUM_FREE_SPACE_BYTES) {
+        Logger::error("ArchiveMgr", "Targets invalid or SD free space insufficient");
         return false;
     }
-    
-    // .tmp.zip をクリーンアップ
+    if (statusMutex_ != nullptr) xSemaphoreTake(statusMutex_, portMAX_DELAY);
+    status_.totalBytes = totalBytes;
+    if (statusMutex_ != nullptr) xSemaphoreGive(statusMutex_);
+
     cleanupTmpZip();
-    
     String tmpZipName = outputZipName_;
     tmpZipName.replace(".zip", ".tmp.zip");
-    
     storageManager_.lock();
-    File zipFile = SD.open(tmpZipName.c_str(), FILE_WRITE);
+    const bool finalCollision = SD.exists(outputZipName_.c_str());
+    File zipFile = finalCollision
+        ? File() : SD.open(tmpZipName.c_str(), FILE_WRITE);
     storageManager_.unlock();
-    
-    if (!zipFile) {
-        Logger::error("ArchiveMgr", "Failed to create %s", tmpZipName.c_str());
+    if (!zipFile || finalCollision) {
+        Logger::error("ArchiveMgr", "Archive output path collision or create failure");
         return false;
     }
-    
-    mz_zip_archive zip_archive;
-    memset(&zip_archive, 0, sizeof(zip_archive));
-    
-    // miniz の write コールバックを自作に設定
-    zip_archive.m_pWrite = mz_write_callback;
-    zip_archive.m_pIO_opaque = &zipFile;
 
-    if (!mz_zip_writer_init_v2(&zip_archive, 0, 0)) {
+    ZipIoState writeState {&zipFile, &storageManager_};
+    mz_zip_archive archive {};
+    archive.m_pWrite = zipWriteCallback;
+    archive.m_pIO_opaque = &writeState;
+    if (!mz_zip_writer_init_v2(&archive, 0, 0)) {
+        storageManager_.lock();
         zipFile.close();
+        storageManager_.unlock();
         return false;
     }
-    
-    status_.totalFiles = targetFiles_.size();
-    status_.processedFiles = 0;
-    
-    setStatus(ArchiveState::Compressing, "Compressing files...");
-    
-    for (const String& file : targetFiles_) {
-        if (cancelRequested_) break;
-        
-        status_.currentFile = file;
-        
-        if (!streamDeflateFile(file, &zip_archive)) {
-            Logger::error("ArchiveMgr", "Failed to deflate %s", file.c_str());
-            mz_zip_writer_end(&zip_archive);
-            zipFile.close();
-            return false;
+
+    setStatus(ArchiveState::Compressing, "Compressing files");
+    size_t processedBytes = 0;
+    int processedFiles = 0;
+    bool ok = true;
+    for (const String& path : targetFiles_) {
+        if (cancelRequested_.load()) {
+            ok = false;
+            break;
         }
-        
-        status_.processedFiles++;
+        updateProgress(path, processedFiles, processedBytes);
+        if (!streamDeflateFile(path, &archive)) {
+            Logger::error("ArchiveMgr", "Failed to deflate %s", path.c_str());
+            ok = false;
+            break;
+        }
+        storageManager_.lock();
+        File input = SD.open(path.c_str(), FILE_READ);
+        const size_t size = input ? input.size() : 0;
+        if (input) input.close();
+        storageManager_.unlock();
+        processedBytes += size;
+        ++processedFiles;
+        updateProgress(path, processedFiles, processedBytes);
     }
-    
-    setStatus(ArchiveState::Verifying, "Finalizing ZIP...");
-    
-    if (!mz_zip_writer_finalize_archive(&zip_archive)) {
-        mz_zip_writer_end(&zip_archive);
-        zipFile.close();
-        return false;
+
+    if (ok) {
+        setStatus(ArchiveState::Verifying, "Finalizing and verifying ZIP");
+        ok = mz_zip_writer_finalize_archive(&archive);
     }
-    
-    mz_zip_writer_end(&zip_archive);
-    
+    mz_zip_writer_end(&archive);
     storageManager_.lock();
+    zipFile.flush();
     zipFile.close();
     storageManager_.unlock();
-    
-    if (cancelRequested_) {
+    if (!ok || cancelRequested_.load()) {
         cleanupTmpZip();
         return false;
     }
-    
-    // rename
-    storageManager_.lock();
-    if (SD.exists(outputZipName_.c_str())) {
-        SD.remove(outputZipName_.c_str());
-    }
-    bool renameOk = SD.rename(tmpZipName.c_str(), outputZipName_.c_str());
-    storageManager_.unlock();
-    
-    if (!renameOk) {
-        Logger::error("ArchiveMgr", "Failed to rename tmp zip");
+
+    if (!validateArchive(tmpZipName, targetFiles_)) {
+        Logger::error("ArchiveMgr", "Temporary ZIP failed full validation");
         return false;
     }
-    
-    Logger::info("ArchiveMgr", "Successfully created archive: %s", outputZipName_.c_str());
+    storageManager_.lock();
+    const bool renamed = !SD.exists(outputZipName_.c_str()) &&
+        SD.rename(tmpZipName.c_str(), outputZipName_.c_str());
+    storageManager_.unlock();
+    if (!renamed) return false;
+
+    if (!validateArchive(outputZipName_, targetFiles_)) {
+        String invalidPath = outputZipName_ + ".invalid." + String(millis());
+        storageManager_.lock();
+        SD.rename(outputZipName_.c_str(), invalidPath.c_str());
+        storageManager_.unlock();
+        Logger::error("ArchiveMgr", "Final ZIP failed read-back validation");
+        return false;
+    }
+    updateProgress("", processedFiles, processedBytes);
+    Logger::info("ArchiveMgr", "Verified archive: %s",
+                 outputZipName_.c_str());
     return true;
 }
 
-bool ArchiveManager::streamDeflateFile(const String& filename, void* pZip) {
-    mz_zip_archive* zip = static_cast<mz_zip_archive*>(pZip);
-    
+bool ArchiveManager::streamDeflateFile(const String& filename,
+                                       void* zipPointer) {
+    mz_zip_archive* archive = static_cast<mz_zip_archive*>(zipPointer);
     storageManager_.lock();
-    File inFile = SD.open(filename.c_str(), FILE_READ);
+    File input = SD.open(filename.c_str(), FILE_READ);
+    const size_t fileSize = input ? input.size() : 0;
     storageManager_.unlock();
-    
-    if (!inFile) return false;
-    
-    size_t fileSize = inFile.size();
-    status_.totalBytes = fileSize;
-    status_.processedBytes = 0;
-    status_.progressPercent = 0;
-    
-    String entryName = filename;
-    if (entryName.startsWith("/")) {
-        entryName = entryName.substring(1); // 先頭の '/' を除去
+    if (!input || fileSize == 0) {
+        if (input) {
+            storageManager_.lock();
+            input.close();
+            storageManager_.unlock();
+        }
+        return false;
     }
-    
-    // miniz のストリーミングAPIを使用し、自作のコールバックを通じて読み込む
-    ReadCallbackState readState = { &inFile, &storageManager_, this };
-    
-    mz_uint level_and_flags = MZ_DEFAULT_LEVEL; // level 6
-    
-    bool ok = mz_zip_writer_add_read_buf_callback(
-        zip, 
-        entryName.c_str(), 
-        mz_read_callback, 
-        &readState, 
-        fileSize, 
-        nullptr, 
-        nullptr, 
-        0, 
-        level_and_flags,
-        nullptr,
-        0,
-        nullptr,
-        0
-    );
-    
+
+    String entryName = filename.startsWith("/")
+        ? filename.substring(1) : filename;
+    ZipIoState readState {&input, &storageManager_};
+    const bool ok = mz_zip_writer_add_read_buf_callback(
+        archive, entryName.c_str(), zipReadCallback, &readState,
+        fileSize, nullptr, nullptr, 0, MZ_DEFAULT_LEVEL,
+        nullptr, 0, nullptr, 0);
     storageManager_.lock();
-    inFile.close();
+    input.close();
     storageManager_.unlock();
-    
     return ok;
+}
+
+bool ArchiveManager::validateArchive(
+        const String& filename,
+        const std::vector<String>& expectedFiles) {
+    storageManager_.lock();
+    File input = SD.open(filename.c_str(), FILE_READ);
+    const size_t archiveSize = input ? input.size() : 0;
+    storageManager_.unlock();
+    if (!input || archiveSize == 0) {
+        if (input) {
+            storageManager_.lock();
+            input.close();
+            storageManager_.unlock();
+        }
+        return false;
+    }
+
+    ZipIoState readState {&input, &storageManager_};
+    mz_zip_archive archive {};
+    archive.m_pRead = zipReadCallback;
+    archive.m_pIO_opaque = &readState;
+    bool initialized = mz_zip_reader_init(&archive, archiveSize, 0);
+    bool ok = initialized &&
+        mz_zip_reader_get_num_files(&archive) == expectedFiles.size();
+    for (const String& path : expectedFiles) {
+        if (!ok) break;
+        const String entryName = path.startsWith("/")
+            ? path.substring(1) : path;
+        const int index = mz_zip_reader_locate_file(
+            &archive, entryName.c_str(), nullptr,
+            MZ_ZIP_FLAG_CASE_SENSITIVE);
+        mz_zip_archive_file_stat entry {};
+        ok = index >= 0 &&
+            mz_zip_reader_file_stat(&archive, index, &entry) &&
+            !entry.m_is_directory;
+        if (!ok) break;
+        storageManager_.lock();
+        File source = SD.open(path.c_str(), FILE_READ);
+        const bool sourceValid = source && !source.isDirectory();
+        const size_t sourceSize = sourceValid ? source.size() : 0;
+        if (source) source.close();
+        storageManager_.unlock();
+        ok = sourceValid &&
+            entry.m_uncomp_size == static_cast<mz_uint64>(sourceSize);
+    }
+    if (ok) ok = mz_zip_validate_archive(&archive, 0);
+    if (initialized) mz_zip_reader_end(&archive);
+    storageManager_.lock();
+    input.close();
+    storageManager_.unlock();
+    return ok;
+}
+
+int ArchiveManager::deleteVerifiedWeeklySources() {
+    int retained = 0;
+    storageManager_.lock();
+    for (const String& path : targetFiles_) {
+        const bool removed = SD.exists(path.c_str()) &&
+            SD.remove(path.c_str()) && !SD.exists(path.c_str());
+        if (!removed) ++retained;
+    }
+    storageManager_.unlock();
+    if (retained != 0) {
+        Logger::warn("ArchiveMgr",
+            "%d source files retained after verified weekly archive",
+            retained);
+    }
+    return retained;
 }
 
 void ArchiveManager::cleanupTmpZip() {
     String tmpZipName = outputZipName_;
     tmpZipName.replace(".zip", ".tmp.zip");
     storageManager_.lock();
-    if (SD.exists(tmpZipName.c_str())) {
-        SD.remove(tmpZipName.c_str());
-    }
+    if (SD.exists(tmpZipName.c_str())) SD.remove(tmpZipName.c_str());
     storageManager_.unlock();
 }
 

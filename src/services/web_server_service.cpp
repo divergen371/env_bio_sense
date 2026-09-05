@@ -1,907 +1,373 @@
 #include "services/web_server_service.h"
-#include "services/logger.h"
-#include <FS.h>
-#include <SPIFFS.h>
+#include "config/secrets.h"
+#include "generated/web_assets.h"
 #include "hal/clock.h"
 #include "hal/i2c_bus.h"
+#include "services/logger.h"
+#include "services/sensor_manager.h"
+#include "services/weather_service.h"
+#include "services/web_security.h"
 #include <ArduinoJson.h>
 #include <AsyncJson.h>
 #include <SD.h>
-#include "services/weather_service.h"
-#include "services/sensor_manager.h"
+#include <algorithm>
 #include <cmath>
+#include <esp_system.h>
+#include <memory>
+#include <vector>
 
 extern services::WeatherService weatherService;
 extern services::SensorManager sensorManager;
 
 namespace services {
+namespace {
 
-const char* htmlContent = R"rawliteral(
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Env Bio Sense - Files</title>
-  <style>
-    body { font-family: sans-serif; margin: 20px; background: #f4f4f9; }
-    h1 { color: #333; }
-    ul { list-style: none; padding: 0; }
-    li { background: #fff; margin: 10px 0; padding: 15px; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; justify-content: space-between; align-items: center; }
-    a { text-decoration: none; color: #007bff; font-weight: bold; }
-    a:hover { text-decoration: underline; }
-    .status { margin-bottom: 20px; padding: 10px; background: #e0f7fa; border-radius: 5px; }
-    .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.8); }
-    .modal-content { background-color: #fefefe; margin: 2% auto; padding: 20px; border: 1px solid #888; width: 95%; max-width: 1200px; height: 85vh; border-radius: 8px; position: relative; display: flex; flex-direction: column; }
-    .close { color: #aaa; align-self: flex-end; font-size: 28px; font-weight: bold; cursor: pointer; margin-top: -10px; }
-    .close:hover { color: black; }
-    .chart-container { position: relative; flex-grow: 1; width: 100%; min-height: 0; }
-    .link-name { color: #007bff; text-decoration: underline; cursor: pointer; font-weight: bold; }
-    .link-name:hover { color: #0056b3; }
-  </style>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
-</head>
-<body>
-  <h1>Data Logs</h1>
-  
-  <div id="capacityAlert" style="margin-bottom: 15px; padding: 10px; border-radius: 5px; font-weight: bold; display: none;">
-    FRAM Buffer: <span id="capacityText"></span>
-  </div>
+constexpr const char* AUTH_REALM = "Env Bio Sense";
+constexpr size_t MAX_LISTED_FILES = 512;
+constexpr size_t MAX_BULK_FILES = 64;
 
-  <div id="status" class="status">Connecting...</div>
+struct ListedFile {
+    String path;
+    String name;
+    String type;
+    size_t size {};
+    time_t modified {};
+    bool current {false};
+    bool activePpg {false};
+    bool archiveBusy {false};
+};
 
-  <div style="margin-bottom: 15px; padding: 10px; background-color: #f1f8ff; border: 1px solid #c8e1ff; border-radius: 4px; font-size: 14px;">
-    <strong>SCD41 diagnostics:</strong>
-    <a href="/api/events" download="scd41_events.json" style="margin-left: 8px;">Download compact event history</a>
-    <span id="i2cStatus" style="margin-left: 8px;"></span>
-    <a href="/api/i2c" target="_blank" style="margin-left: 8px;">I²C detail</a>
-    <br><small>Only state changes and recovery results are retained in FRAM; continuous serial output is not stored.</small>
-  </div>
-  
-  <div style="margin-bottom: 15px; padding: 10px; background-color: #f1f8ff; border: 1px solid #c8e1ff; border-radius: 4px; font-size: 14px;">
-    <strong>AMeDAS Sea Level Pressure:</strong> 
-    <span id="sealevelStatus">Waiting for connection...</span>
-  </div>
+struct DownloadState {
+    File file;
+    storage::StorageManager* storage {};
+    size_t size {};
+    bool closed {false};
 
-  <div style="margin-bottom: 15px; padding: 10px; background-color: #e8f5e9; border: 1px solid #c8e6c9; border-radius: 4px; font-size: 14px;">
-    <strong>BMP581 Absolute Altitude Calibration:</strong><br>
-    <small>Computes offset from actual altitude (takes 5-6 mins).</small><br>
-    Reference Altitude (m): <input type="number" id="bmp581Target" step="0.1" value="13.6" style="width: 80px; margin-top: 5px;">
-    <button onclick="calibrateBMP581()" style="padding: 4px 8px; font-size: 12px; cursor: pointer;">Calibrate</button>
-    <span id="bmp581CalibStatus" style="margin-left: 10px;"></span>
-  </div>
-
-  <div style="margin-bottom: 15px; padding: 10px; background-color: #fff3cd; border: 1px solid #ffeeba; border-radius: 4px; font-size: 14px;">
-    <strong>SCD41 Advanced / External Reference Calibration (FRC):</strong><br>
-    <small style="color: #c62828;">⚠️ 外部の信頼できる CO₂ 基準器または既知濃度の校正環境がある場合のみ使用する。SCD41 自身の表示値や「外気だから 400 ppm」という推定値を入力してはならない。</small><br>
-    <div style="margin-top: 8px; margin-bottom: 8px;">
-      <input type="checkbox" id="scd41ConfirmRef"> <label for="scd41ConfirmRef">This is a confirmed external reference value</label>
-    </div>
-    Reference CO2 (ppm): <input type="number" id="scd41Reference" value="" placeholder="e.g. 430" style="width: 80px;">
-    <button onclick="calibrateSCD41()" style="padding: 4px 8px; font-size: 12px; cursor: pointer;">Calibrate</button>
-    <span id="scd41CalibStatus" style="margin-left: 10px;"></span>
-  </div>
-
-  <div style="margin-bottom: 15px; padding: 10px; background-color: #f8d7da; border: 1px solid #f5c6cb; border-radius: 4px; font-size: 14px;">
-    <strong>Advanced / Maintenance:</strong><br>
-    <small style="color: #721c24;">⚠️ Factory Reset clears all user settings and calibration history.</small><br>
-    <div style="margin-top: 8px; margin-bottom: 8px;">
-      <input type="checkbox" id="scd41ConfirmReset"> <label for="scd41ConfirmReset">I understand this deletes calibration history</label>
-    </div>
-    <button onclick="factoryResetSCD41()" style="padding: 4px 8px; font-size: 12px; cursor: pointer; color: red;">Factory Reset SCD41</button>
-    <span id="scd41ResetStatus" style="margin-left: 10px;"></span>
-  </div>
-  
-  <div style="margin-bottom: 15px;">
-    <button onclick="flushAndReload()" style="padding: 10px 15px; font-size: 16px; font-weight: bold; cursor: pointer; border-radius: 5px; border: none; background-color: #28a745; color: white; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
-      🔄 Refresh & Flush
-    </button>
-  </div>
-  
-  <div style="margin-bottom: 15px; padding: 15px; background-color: #e2e3e5; border-radius: 5px;">
-    <h3>Archive CSV Files</h3>
-    <button onclick="selectAllCsv(true)" style="padding: 5px 10px; cursor: pointer;">Select All CSV</button>
-    <button onclick="selectAllCsv(false)" style="padding: 5px 10px; cursor: pointer;">Deselect All</button>
-    <button onclick="startArchive()" style="padding: 5px 10px; cursor: pointer; background-color: #007bff; color: white; border: none; border-radius: 3px; margin-left: 10px;">Archive Selected</button>
-    <button onclick="cancelArchive()" style="padding: 5px 10px; cursor: pointer; background-color: #dc3545; color: white; border: none; border-radius: 3px; margin-left: 10px; display: none;" id="cancelArchiveBtn">Cancel Archive</button>
-    <div id="archiveStatus" style="margin-top: 10px; font-weight: bold; color: #333;"></div>
-  </div>
-  
-  <ul id="file-list"></ul>
-
-  <div id="chartModal" class="modal">
-    <div class="modal-content">
-      <span class="close" onclick="closeChart()">&times;</span>
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; margin-top: -10px;">
-        <h2 id="chartTitle" style="margin: 0;">Graph</h2>
-        <div>
-          <button id="resetZoomBtn" onclick="if(currentChart) currentChart.resetZoom()" style="padding: 5px 15px; font-size: 14px; cursor: pointer; border-radius: 4px; border: 1px solid #007bff; background-color: transparent; color: #007bff; margin-right: 10px;">
-            🔍 Reset Zoom
-          </button>
-          <button id="reloadChartBtn" style="padding: 5px 15px; font-size: 14px; cursor: pointer; border-radius: 4px; border: none; background-color: #007bff; color: white; display: none;">
-            🔄 Reload Data
-          </button>
-        </div>
-      </div>
-      <div class="chart-container">
-        <canvas id="myChart"></canvas>
-      </div>
-    </div>
-  </div>
-
-  <script>
-    async function syncTime() {
-      const now = Math.floor(Date.now() / 1000);
-      try {
-        const response = await fetch('/api/time', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ epoch: now })
-        });
-        if (response.ok) {
-          document.getElementById('status').innerText = 'システム時刻同期完了 / Time Synchronized.';
-        }
-      } catch (err) {
-        document.getElementById('status').innerText = '時刻同期に失敗しました / Time Sync Failed.';
-      }
+    void close() {
+        if (closed || storage == nullptr) return;
+        storage->lock();
+        if (file) file.close();
+        storage->unlock();
+        closed = true;
     }
 
-    async function calibrateSCD41() {
-      const referencePpm = document.getElementById('scd41Reference').value;
-      const confirmRef = document.getElementById('scd41ConfirmRef').checked;
-      const statusSpan = document.getElementById('scd41CalibStatus');
-      
-      if (!referencePpm || isNaN(referencePpm)) {
-        statusSpan.innerText = 'Please enter a valid reference ppm';
-        statusSpan.style.color = 'red';
+    ~DownloadState() { close(); }
+};
+
+const char* timeSourceName(core::TimeSource source) {
+    switch (source) {
+        case core::TimeSource::Unset: return "UNSET";
+        case core::TimeSource::Manual: return "MANUAL";
+        case core::TimeSource::Ntp: return "NTP";
+        case core::TimeSource::Gnss: return "GNSS";
+        case core::TimeSource::Holdover: return "HOLDOVER";
+    }
+    return "UNKNOWN";
+}
+
+const char* ppgStateName(storage::PpgJournalState state) {
+    switch (state) {
+        case storage::PpgJournalState::Empty: return "IDLE";
+        case storage::PpgJournalState::Preparing: return "PREPARING";
+        case storage::PpgJournalState::Recording: return "RECORDING";
+        case storage::PpgJournalState::Finalizing: return "FINALIZING";
+        case storage::PpgJournalState::Committed: return "COMPLETED";
+        case storage::PpgJournalState::RecoveryPending: return "RECOVERY_PENDING";
+        case storage::PpgJournalState::CommittedPartial: return "RECOVERED_PARTIAL";
+        case storage::PpgJournalState::RecoveryFailed: return "RECOVERY_FAILED";
+        case storage::PpgJournalState::Aborted: return "ABORTED";
+        case storage::PpgJournalState::Failed: return "FAILED";
+    }
+    return "UNKNOWN";
+}
+
+bool ppgPathIsActive(const PpgSessionStatus& status, const char* path) {
+    const bool active = status.state == storage::PpgJournalState::Preparing ||
+        status.state == storage::PpgJournalState::Recording ||
+        status.state == storage::PpgJournalState::Finalizing ||
+        status.state == storage::PpgJournalState::RecoveryPending;
+    return active && web_security::isPathInside(path, status.directory);
+}
+
+String baseName(const String& path) {
+    const int slash = path.lastIndexOf('/');
+    return slash >= 0 ? path.substring(slash + 1) : path;
+}
+
+String classifyFile(const String& path, const String& name) {
+    if (path.endsWith(".zip")) return "archive";
+    if (path.startsWith("/data/ppg/")) return "ppg";
+    if (name.startsWith("log_") && name.endsWith(".csv")) return "log";
+    return "diagnostic";
+}
+
+void addSecurityHeaders(AsyncWebServerResponse* response) {
+    if (response == nullptr) return;
+    response->addHeader("Cache-Control", "no-store, max-age=0");
+    response->addHeader("Pragma", "no-cache");
+    response->addHeader("X-Content-Type-Options", "nosniff");
+    response->addHeader("X-Frame-Options", "DENY");
+    response->addHeader("Referrer-Policy", "no-referrer");
+    response->addHeader("Content-Security-Policy",
+        "default-src 'self'; script-src 'self'; style-src 'self'; "
+        "img-src 'self' data:; connect-src 'self'; object-src 'none'; "
+        "base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+}
+
+void sendJsonError(AsyncWebServerRequest* request, int status,
+                   const char* error) {
+    JsonDocument document;
+    document["status"] = "rejected";
+    document["error"] = error;
+    String body;
+    serializeJson(document, body);
+    AsyncWebServerResponse* response = request->beginResponse(
+        status, "application/json", body);
+    addSecurityHeaders(response);
+    request->send(response);
+}
+
+void sendJsonResponse(AsyncWebServerRequest* request, int status,
+                      const String& body) {
+    AsyncWebServerResponse* response = request->beginResponse(
+        status, "application/json", body);
+    addSecurityHeaders(response);
+    request->send(response);
+}
+
+void sendAsset(AsyncWebServerRequest* request, const char* contentType,
+               const uint8_t* data, size_t size) {
+    AsyncWebServerResponse* response = request->beginResponse(
+        200, contentType, data, size);
+    response->addHeader("Content-Encoding", "gzip");
+    addSecurityHeaders(response);
+    request->send(response);
+}
+
+void collectVisibleFiles(File& directory, std::vector<ListedFile>& output,
+                         bool& truncated, uint8_t depth) {
+    if (!directory || depth > 5 || output.size() >= MAX_LISTED_FILES) {
+        truncated = output.size() >= MAX_LISTED_FILES;
         return;
-      }
-      
-      if (!confirmRef) {
-        statusSpan.innerText = 'Please confirm that this is an external reference';
-        statusSpan.style.color = 'red';
-        return;
-      }
-      
-      statusSpan.innerText = 'Calibrating... (takes ~500ms)';
-      statusSpan.style.color = '#856404';
-      
-      try {
-        const response = await fetch('/api/scd41/calibrate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reference_ppm: parseInt(referencePpm), confirm_external_reference: confirmRef })
-        });
-        const data = await response.json();
-        if (response.ok) {
-          statusSpan.innerText = 'Success! Correction: ' + data.correction_ppm + ' ppm';
-          statusSpan.style.color = 'green';
+    }
+    File child = directory.openNextFile();
+    while (child) {
+        if (child.isDirectory()) {
+            collectVisibleFiles(child, output, truncated, depth + 1);
         } else {
-          statusSpan.innerText = 'Failed: ' + (data.error || data.message || 'Unknown error');
-          statusSpan.style.color = 'red';
-        }
-      } catch (err) {
-        statusSpan.innerText = 'Network error';
-        statusSpan.style.color = 'red';
-      }
-    }
-
-    async function factoryResetSCD41() {
-      const confirmReset = document.getElementById('scd41ConfirmReset').checked;
-      const statusSpan = document.getElementById('scd41ResetStatus');
-      
-      if (!confirmReset) {
-        statusSpan.innerText = 'Please check the confirmation box.';
-        statusSpan.style.color = 'red';
-        return;
-      }
-      
-      statusSpan.innerText = 'Resetting... (takes ~2s)';
-      statusSpan.style.color = '#856404';
-      
-      try {
-        const response = await fetch('/api/scd41/factory_reset', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ confirmation: 'RESET_SCD41' })
-        });
-        const data = await response.json();
-        if (response.ok) {
-          statusSpan.innerText = 'Success! Sensor factory reset.';
-          statusSpan.style.color = 'green';
-        } else {
-          statusSpan.innerText = 'Failed: ' + (data.error || 'Unknown error');
-          statusSpan.style.color = 'red';
-        }
-      } catch (err) {
-        statusSpan.innerText = 'Network error';
-        statusSpan.style.color = 'red';
-      }
-    }
-
-    async function calibrateBMP581() {
-      const targetStr = document.getElementById('bmp581Target').value;
-      const target = parseFloat(targetStr);
-      if (isNaN(target)) {
-        alert("Invalid target altitude");
-        return;
-      }
-      const statusEl = document.getElementById('bmp581CalibStatus');
-      statusEl.innerText = "Starting calibration...";
-      statusEl.style.color = "#333";
-      
-      try {
-        const response = await fetch('/api/bmp581/calibrate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ reference_altitude_m: target })
-        });
-        const data = await response.json();
-        if (response.ok) {
-          statusEl.style.color = "green";
-          statusEl.innerText = data.message || "Calibration started (takes 6 mins)";
-        } else {
-          statusEl.style.color = "red";
-          statusEl.innerText = "Error: " + (data.error || "Unknown error");
-        }
-      } catch (err) {
-        statusEl.style.color = "red";
-        statusEl.innerText = "Network error: " + err.message;
-      }
-    }
-
-    function formatBytes(bytes) {
-      if (bytes === 0) return '0 B';
-      const k = 1024;
-      const sizes = ['B', 'KB', 'MB', 'GB'];
-      const i = Math.floor(Math.log(bytes) / Math.log(k));
-      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    }
-
-    function selectAllCsv(checked) {
-      document.querySelectorAll('.csv-checkbox').forEach(cb => {
-        if (!cb.disabled) cb.checked = checked;
-      });
-    }
-
-    async function startArchive() {
-      const selected = Array.from(document.querySelectorAll('.csv-checkbox:checked')).map(cb => cb.value);
-      if (selected.length === 0) {
-        alert("Please select at least one CSV file.");
-        return;
-      }
-      
-      try {
-        const response = await fetch('/api/archive/manual', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ files: selected })
-        });
-        if (response.ok) {
-          pollArchiveStatus();
-        } else {
-          const err = await response.text();
-          alert("Failed to start archive: " + err);
-        }
-      } catch (e) {
-        alert("Network error: " + e);
-      }
-    }
-
-    async function cancelArchive() {
-      try {
-        await fetch('/api/archive/cancel', { method: 'POST' });
-      } catch (e) {}
-    }
-
-    let archiveStatusInterval = null;
-    async function pollArchiveStatus() {
-      if (archiveStatusInterval) return;
-      
-      const updateUi = async () => {
-        try {
-          const response = await fetch('/api/archive/status');
-          const data = await response.json();
-          const statusDiv = document.getElementById('archiveStatus');
-          const cancelBtn = document.getElementById('cancelArchiveBtn');
-          
-          if (data.state === 0) { // Idle
-            statusDiv.innerText = '';
-            cancelBtn.style.display = 'none';
-            clearInterval(archiveStatusInterval);
-            archiveStatusInterval = null;
-          } else if (data.state === 4) { // Completed
-            statusDiv.innerText = 'Archive Completed: ' + data.message;
-            cancelBtn.style.display = 'none';
-            clearInterval(archiveStatusInterval);
-            archiveStatusInterval = null;
-            setTimeout(() => { statusDiv.innerText = ''; loadFiles(); }, 3000);
-          } else if (data.state === 5) { // Failed
-            statusDiv.innerText = 'Archive Failed: ' + data.message;
-            statusDiv.style.color = 'red';
-            cancelBtn.style.display = 'none';
-            clearInterval(archiveStatusInterval);
-            archiveStatusInterval = null;
-          } else {
-            statusDiv.style.color = '#333';
-            statusDiv.innerText = `Archiving: ${data.message} (${data.processedFiles}/${data.totalFiles}) - Current: ${data.currentFile}`;
-            cancelBtn.style.display = 'inline-block';
-          }
-        } catch (e) {}
-      };
-      
-      updateUi();
-      archiveStatusInterval = setInterval(updateUi, 1000);
-    }
-
-    async function loadFiles() {
-      try {
-        const response = await fetch('/api/files');
-        const data = await response.json();
-        const list = document.getElementById('file-list');
-        list.innerHTML = '';
-        data.files.forEach(f => {
-          const li = document.createElement('li');
-          
-          const leftDiv = document.createElement('div');
-          leftDiv.style.display = 'flex';
-          leftDiv.style.alignItems = 'center';
-          
-          if (f.name.endsWith('.csv') && !f.isCurrent) {
-            const cb = document.createElement('input');
-            cb.type = 'checkbox';
-            cb.className = 'csv-checkbox';
-            cb.value = f.name;
-            cb.style.marginRight = '10px';
-            leftDiv.appendChild(cb);
-          } else if (f.name.endsWith('.csv') && f.isCurrent) {
-            const cb = document.createElement('input');
-            cb.type = 'checkbox';
-            cb.disabled = true;
-            cb.style.marginRight = '10px';
-            leftDiv.appendChild(cb);
-          }
-
-          const nameSpan = document.createElement('span');
-          if (f.size > 0 && f.name.endsWith('.csv')) {
-            nameSpan.innerHTML = `<span class="link-name" onclick="openChart('${f.name}')">${f.name}</span> (${formatBytes(f.size)})`;
-          } else {
-            nameSpan.innerText = f.name + ' (' + formatBytes(f.size) + ')';
-          }
-          
-          if (f.isCurrent) {
-            nameSpan.innerHTML += ' <span style="color:#d32f2f; font-weight:bold;">[Recording...]</span>';
-          }
-          leftDiv.appendChild(nameSpan);
-          
-          const actionsDiv = document.createElement('div');
-          
-          const dlLink = document.createElement('a');
-          dlLink.href = '/download?file=' + encodeURIComponent(f.name);
-          dlLink.innerText = 'Download';
-          dlLink.download = f.name;
-          actionsDiv.appendChild(dlLink);
-
-          if (!f.isCurrent) {
-            const delBtn = document.createElement('button');
-            delBtn.innerText = 'Delete';
-            delBtn.style.marginLeft = '15px';
-            delBtn.style.color = '#fff';
-            delBtn.style.backgroundColor = '#dc3545';
-            delBtn.style.border = 'none';
-            delBtn.style.padding = '5px 10px';
-            delBtn.style.borderRadius = '3px';
-            delBtn.style.cursor = 'pointer';
-            delBtn.onclick = async () => {
-              if (confirm(f.name + ' を完全に削除しますか？ / Delete this file?')) {
-                try {
-                  const res = await fetch('/api/delete?file=' + encodeURIComponent(f.name), { method: 'DELETE' });
-                  if (res.ok) {
-                    await loadFiles();
-                  } else {
-                    alert('削除に失敗しました / Failed to delete');
-                  }
-                } catch (e) {
-                  alert('エラー / Error');
-                }
-              }
-            };
-            actionsDiv.appendChild(delBtn);
-          }
-
-          li.appendChild(leftDiv);
-          li.appendChild(actionsDiv);
-          list.appendChild(li);
-        });
-      } catch (err) {
-        document.getElementById('status').innerText += ' ファイル取得エラー / Failed to load files.';
-      }
-    }
-
-    let currentChart = null;
-    let activeFileName = '';
-
-    async function fetchStatus() {
-      try {
-        const response = await fetch('/api/status');
-        const data = await response.json();
-        const alertDiv = document.getElementById('capacityAlert');
-        const textSpan = document.getElementById('capacityText');
-        
-        const pct = Math.round((data.pending / data.max) * 100);
-        
-        alertDiv.style.display = 'block';
-        if (pct >= 80) {
-          alertDiv.style.backgroundColor = '#ffebee';
-          alertDiv.style.color = '#c62828';
-          alertDiv.style.border = '1px solid #c62828';
-          textSpan.innerText = `⚠️ FRAM Buffer is almost full: ${data.pending} / ${data.max} (${pct}%) - Please click "Refresh & Flush" soon!`;
-        } else {
-          alertDiv.style.backgroundColor = '#e8f5e9';
-          alertDiv.style.color = '#2e7d32';
-          alertDiv.style.border = '1px solid #2e7d32';
-          textSpan.innerText = `${data.pending} / ${data.max} (${pct}%)`;
-        }
-
-        const i2cStatus = document.getElementById('i2cStatus');
-        i2cStatus.innerText = `I²C: lock ${data.i2c_lock_timeouts}, communication ${data.i2c_communication_errors}`;
-        
-        // SCD41 calibration recommendation logic has been removed.
-      } catch (e) {
-        console.error("Status fetch failed", e);
-      }
-    }
-
-    async function fetchWeatherStatus() {
-      const statusEl = document.getElementById('sealevelStatus');
-      try {
-        const response = await fetch('/api/weather');
-        if (!response.ok) throw new Error('weather status unavailable');
-        const data = await response.json();
-        if (!data.has_pressure_field) {
-          statusEl.innerText = `No usable pressure field (${data.state}); location: ${data.location.source}`;
-          return;
-        }
-        const ageMin = data.observation_age_ms == null ? '?' :
-          Math.round(data.observation_age_ms / 60000);
-        const stationIds = data.stations.filter(st => st.used).map(st => st.id).join(', ');
-        statusEl.innerText = `${data.pressure_hpa.toFixed(1)} hPa / ${data.state} / ${data.location.source} / observation age ${ageMin} min / stations ${stationIds || '-'}`;
-      } catch (error) {
-        statusEl.innerText = `Status error: ${error.message}`;
-      }
-    }
-
-    async function fetchAltitudeStatus() {
-      const statusEl = document.getElementById('bmp581CalibStatus');
-      try {
-        const response = await fetch('/api/altitude');
-        if (!response.ok) throw new Error('altitude status unavailable');
-        const data = await response.json();
-        const altitude = data.altitude_valid ?
-          `${data.display_altitude_m.toFixed(1)} m` : 'altitude invalid';
-        const offset = data.calibration_offset_hpa == null ? '' :
-          ` / offset ${data.calibration_offset_hpa.toFixed(3)} hPa`;
-        statusEl.innerText = `${data.calibration_state} / ${altitude}${offset}`;
-        statusEl.style.color = data.altitude_valid ? 'green' : '#856404';
-      } catch (error) {
-        statusEl.innerText = `Status error: ${error.message}`;
-        statusEl.style.color = 'red';
-      }
-    }
-
-    async function flushAndReload() {
-      const btn = document.querySelector('button[onclick="flushAndReload()"]');
-      const originalText = btn.innerText;
-      btn.innerText = '⏳ Flushing...';
-      try {
-        await fetch('/api/flush', { method: 'POST' });
-        await loadFiles();
-        await fetchStatus();
-      } catch(e) {
-        alert('フラッシュに失敗しました / Flush failed');
-      }
-      btn.innerText = originalText;
-    }
-
-    async function openChart(fileName) {
-      activeFileName = fileName;
-      document.getElementById('chartTitle').innerText = 'Loading ' + fileName + '...';
-      document.getElementById('chartModal').style.display = 'flex';
-      
-      const reloadBtn = document.getElementById('reloadChartBtn');
-      reloadBtn.style.display = 'block';
-      reloadBtn.onclick = async () => {
-        reloadBtn.innerText = '⏳ Reloading...';
-        try {
-          await fetch('/api/flush', { method: 'POST' });
-          const response = await fetch('/download?file=' + encodeURIComponent(activeFileName));
-          const text = await response.text();
-          drawChart(activeFileName, text);
-          await loadFiles(); // 裏でファイルリストのサイズも更新
-        } catch(e) {}
-        reloadBtn.innerText = '🔄 Reload Data';
-      };
-      
-      try {
-        const response = await fetch('/download?file=' + encodeURIComponent(fileName));
-        const text = await response.text();
-        drawChart(fileName, text);
-      } catch (e) {
-        document.getElementById('chartTitle').innerText = 'Error: ' + e.message;
-        console.error("Chart error:", e);
-      }
-    }
-
-    function closeChart() {
-      document.getElementById('chartModal').style.display = 'none';
-      if (currentChart) {
-        currentChart.destroy();
-        currentChart = null;
-      }
-    }
-
-    function drawChart(fileName, csvText) {
-      document.getElementById('chartTitle').innerText = fileName;
-      
-      const lines = csvText.trim().split('\n');
-      if (lines.length < 2) return;
-      
-      const headerCols = lines[0].split(',').map(c => c.trim());
-      const colIdx = {};
-      headerCols.forEach((col, idx) => colIdx[col] = idx);
-
-      const labels = [];
-      const co2 = [];
-      const temp = [];
-      const rh = [];
-      const press = [];
-      const voc = [];
-      const nox = [];
-      const hr = [];
-      const spo2 = [];
-      const altitude = [];
-      const speed = [];
-      const sats = [];
-      
-      const getTimeLabel = (cols) => {
-        let t = "";
-        if (colIdx['TimestampUtc'] !== undefined) t = cols[colIdx['TimestampUtc']];
-        else if (colIdx['Timestamp'] !== undefined) t = cols[colIdx['Timestamp']];
-        if (!t || t === "") {
-          const upIdx = colIdx['UptimeMs'] !== undefined ? colIdx['UptimeMs'] : 1;
-          t = (parseInt(cols[upIdx]) / 1000).toFixed(1) + 's';
-        }
-        // Extract time from UTC ISO string if applicable
-        if (t.includes('T') && t.endsWith('Z')) {
-           const d = new Date(t);
-           return d.toLocaleTimeString(); // ローカル時刻（JSTなど）に変換して表示
-        } else if (t.includes('T')) {
-           t = t.split('T')[1].replace('Z', '');
-        }
-        return t;
-      };
-
-      const getVal = (cols, names) => {
-        for (const n of names) {
-          if (colIdx[n] !== undefined) return parseFloat(cols[colIdx[n]]);
-        }
-        return NaN;
-      };
-
-      for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(',');
-        if (cols.length < 5) continue;
-        
-        labels.push(getTimeLabel(cols));
-        co2.push(getVal(cols, ['CO2_ppm']));
-        temp.push(getVal(cols, ['Temp_C']));
-        rh.push(getVal(cols, ['RH_pct']));
-        press.push(getVal(cols, ['Pressure_hPa']));
-        voc.push(getVal(cols, ['VOC_Index']));
-        nox.push(getVal(cols, ['NOx_Index']));
-        hr.push(getVal(cols, ['HR_bpm']));
-        spo2.push(getVal(cols, ['SpO2_pct']));
-        altitude.push(getVal(cols, ['BMP_Altitude_m', 'Altitude_m']));
-        
-        if (colIdx['GNSS_Speed_mps'] !== undefined) {
-           speed.push(getVal(cols, ['GNSS_Speed_mps']));
-           sats.push(getVal(cols, ['GNSS_Satellites']));
-        }
-      }
-
-      const ctx = document.getElementById('myChart').getContext('2d');
-      if (currentChart) currentChart.destroy();
-      
-      currentChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-          labels: labels,
-          datasets: [
-            { label: 'CO2 (ppm)', data: co2, borderColor: '#e53935', backgroundColor: '#e53935', yAxisID: 'y' },
-            { label: 'Temp (°C)', data: temp, borderColor: '#fb8c00', backgroundColor: '#fb8c00', yAxisID: 'y1' },
-            { label: 'Humidity (%)', data: rh, borderColor: '#1e88e5', backgroundColor: '#1e88e5', yAxisID: 'y1' },
-            { label: 'Pressure (hPa)', data: press, borderColor: '#43a047', backgroundColor: '#43a047', yAxisID: 'y3', hidden: true },
-            { label: 'VOC Index', data: voc, borderColor: '#8e24aa', backgroundColor: '#8e24aa', yAxisID: 'y2', hidden: true },
-            { label: 'NOx Index', data: nox, borderColor: '#5e35b1', backgroundColor: '#5e35b1', yAxisID: 'y2', hidden: true },
-            { label: 'HR (bpm)', data: hr, borderColor: '#d81b60', backgroundColor: '#d81b60', yAxisID: 'y', hidden: true },
-            { label: 'SpO2 (%)', data: spo2, borderColor: '#00acc1', backgroundColor: '#00acc1', yAxisID: 'y1', hidden: true },
-            { label: 'Altitude (m)', data: altitude, borderColor: '#78909c', backgroundColor: '#78909c', yAxisID: 'y4', hidden: false },
-            { label: 'GNSS Speed (m/s)', data: speed, borderColor: '#ab47bc', backgroundColor: '#ab47bc', yAxisID: 'y5', hidden: true },
-            { label: 'Satellites', data: sats, borderColor: '#9e9d24', backgroundColor: '#9e9d24', yAxisID: 'y5', hidden: true }
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          interaction: { mode: 'index', intersect: false },
-          plugins: {
-            zoom: {
-              pan: {
-                enabled: true,
-                mode: 'x',
-              },
-              zoom: {
-                wheel: {
-                  enabled: true,
-                },
-                pinch: {
-                  enabled: true
-                },
-                mode: 'x',
-              }
+            const String rawPath = child.path();
+            char normalized[web_security::MAX_DATA_PATH + 1] {};
+            if (web_security::normalizeVisibleDataPath(
+                    rawPath.c_str(), normalized, sizeof(normalized))) {
+                ListedFile item;
+                item.path = normalized;
+                item.name = baseName(item.path);
+                item.type = classifyFile(item.path, item.name);
+                item.size = child.size();
+                item.modified = child.getLastWrite();
+                output.push_back(item);
+                if (output.size() >= MAX_LISTED_FILES) truncated = true;
             }
-          },
-          scales: {
-            x: { ticks: { maxTicksLimit: 15 } },
-            y: { type: 'linear', display: true, position: 'left', title: { display: true, text: 'CO2 / HR' } },
-            y1: { type: 'linear', display: true, position: 'right', title: { display: true, text: 'Temp/RH/SpO2' }, grid: { drawOnChartArea: false } },
-            y2: { type: 'linear', display: false, position: 'right' },
-            y3: { type: 'linear', display: false, position: 'left' },
-            y4: { type: 'linear', display: true, position: 'right', title: { display: true, text: 'Altitude (m)' }, grid: { drawOnChartArea: false } },
-            y5: { type: 'linear', display: false, position: 'left', title: { display: true, text: 'GNSS' } }
-          },
-          elements: { point: { radius: 0, hitRadius: 10, hoverRadius: 5 } },
-          animation: false // ESP32からのロード直後の重さを軽減
         }
-      });
+        child.close();
+        if (truncated) return;
+        child = directory.openNextFile();
     }
+}
 
-    async function calibrateSeaLevelPressure() {
-      const statusEl = document.getElementById('sealevelStatus');
-      statusEl.innerText = 'Fetching current sea level pressure from JMA AMeDAS (IDW)...';
-      try {
-        const locationRes = await fetch('/api/location');
-        if (!locationRes.ok) throw new Error('Failed to get device location');
-        const location = await locationRes.json();
-        if (!location.valid) throw new Error('GNSS and fallback location are unavailable');
-        const myLat = location.latitudeDeg;
-        const myLon = location.longitudeDeg;
-        const sourceLabel = location.source === 'GNSS_LIVE' ? 'GNSS Live' :
-          location.source === 'GNSS_LAST_KNOWN' ? 'Last GNSS fix' :
-          'Configured fallback';
-        statusEl.innerText = `Location: ${sourceLabel}. Fetching JMA AMeDAS...`;
+bool normalizeRequestPath(const String& requested, String& normalized) {
+    char output[web_security::MAX_DATA_PATH + 1] {};
+    if (!web_security::normalizeVisibleDataPath(
+            requested.c_str(), output, sizeof(output))) return false;
+    normalized = output;
+    return true;
+}
 
-        const distanceKm = (lat1, lon1, lat2, lon2) => {
-          const toRad = Math.PI / 180.0;
-          const meanLat = (lat1 + lat2) * 0.5 * toRad;
-          const x = (lon2 - lon1) * toRad * Math.cos(meanLat);
-          const y = (lat2 - lat1) * toRad;
-          return 6371.0 * Math.sqrt(x * x + y * y);
-        };
-        
-        // 1. Fetch station list
-        const tableRes = await fetch('https://www.jma.go.jp/bosai/amedas/const/amedastable.json');
-        if (!tableRes.ok) throw new Error('Failed to fetch amedastable');
-        const table = await tableRes.json();
-        
-        // 2. Calculate distances for all A or B stations
-        let stations = [];
-        for (const [id, station] of Object.entries(table)) {
-          if (station.type === 'A' || station.type === 'B') {
-            if (station.lat && station.lon && station.lat.length >= 2 && station.lon.length >= 2) {
-              const lat = station.lat[0] + station.lat[1] / 60.0;
-              const lon = station.lon[0] + station.lon[1] / 60.0;
-              const distance = distanceKm(myLat, myLon, lat, lon);
-              stations.push({ id, distanceKm: distance });
-            }
-          }
-        }
-        
-        // Sort by distance and pick top 5
-        stations.sort((a, b) => a.distanceKm - b.distanceKm);
-        const topStations = stations.slice(0, 5);
-        if (topStations.length === 0) throw new Error('No valid AMeDAS station found');
-        
-        // 3. Fetch latest time
-        const timeRes = await fetch('https://www.jma.go.jp/bosai/amedas/data/latest_time.txt');
-        if (!timeRes.ok) throw new Error('Failed to fetch latest_time');
-        const timeText = await timeRes.text();
-        const observationTime = new Date(timeText.trim());
-        const observationAgeMs = Date.now() - observationTime.getTime();
-        if (!Number.isFinite(observationTime.getTime()) ||
-            observationAgeMs > 15 * 60 * 1000 || observationAgeMs < -2 * 60 * 1000) {
-          throw new Error('AMeDAS observation time is stale or invalid');
-        }
-        const dt = timeText.trim().replace(/[-T:]/g, '').substring(0, 14);
-        
-        // 4. Fetch pressure data
-        const mapRes = await fetch(`https://www.jma.go.jp/bosai/amedas/data/map/${dt}.json`);
-        if (!mapRes.ok) throw new Error('Failed to fetch map data');
-        const mapData = await mapRes.json();
-        
-        // 5. Calculate IDW (Inverse Distance Weighting)
-        let sumWeight = 0.0;
-        let sumWeightedPressure = 0.0;
-        let exactPressure = null;
-        let validCount = 0;
-        let usedStations = [];
-        let minP = 9999.0;
-        let maxP = -9999.0;
-        let minDistSq = 999999.0;
-        let maxDistSq = 0.0;
-        
-        for (const st of topStations) {
-          const stationData = mapData[st.id];
-          if (stationData && Array.isArray(stationData.normalPressure) &&
-              stationData.normalPressure[0] != null && stationData.normalPressure[1] === 0) {
-            const p = stationData.normalPressure[0];
-            if (!Number.isFinite(p) || p <= 800 || p >= 1100) continue;
-            if (st.distanceKm < 0.001) { // Within one metre of station
-              exactPressure = p;
-            } else {
-              const distanceSq = st.distanceKm * st.distanceKm;
-              const w = 1.0 / distanceSq;
-              sumWeight += w;
-              sumWeightedPressure += p * w;
-            }
-            validCount++;
-            usedStations.push(st.id);
-            if (p < minP) minP = p;
-            if (p > maxP) maxP = p;
-            const distanceSq = st.distanceKm * st.distanceKm;
-            if (distanceSq < minDistSq) minDistSq = distanceSq;
-            if (distanceSq > maxDistSq) maxDistSq = distanceSq;
-          }
-        }
-        
-        if (validCount < 3) {
-          throw new Error('Fewer than 3 fresh quality=0 pressure stations');
-        }
-        
-        let slpNum = exactPressure !== null ? exactPressure : sumWeightedPressure / sumWeight;
-        // Clamp to min/max range
-        if (slpNum < minP) slpNum = minP;
-        if (slpNum > maxP) slpNum = maxP;
-        
-        const slp = slpNum.toFixed(1);
-        const minDistKm = Math.sqrt(minDistSq).toFixed(1);
-        const maxDistKm = Math.sqrt(maxDistSq).toFixed(1);
-        statusEl.innerText = `Location: ${sourceLabel}. Retrieved IDW: ${slp} hPa (Used ${validCount}/5 quality=0 stations: ${usedStations.join(',')}, observation age ${Math.round(observationAgeMs / 60000)} min, distance ${minDistKm}-${maxDistKm} km). Updating ESP32...`;
-        
-        const postRes = await fetch('/api/sealevel', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: `pressure=${slp}`
-        });
-        
-        if (postRes.ok) {
-          statusEl.innerHTML = `<span style="color: green;">✔ IDW Calibration successful! Base pressure set to ${slp} hPa.</span>`;
-        } else {
-          throw new Error('ESP32 rejected update');
-        }
-      } catch (err) {
-        statusEl.innerHTML = `<span style="color: red;">✖ Failed: ${err.message}</span>`;
-      }
-    }
+String contentTypeFor(const String& path) {
+    if (path.endsWith(".csv")) return "text/csv; charset=utf-8";
+    if (path.endsWith(".json")) return "application/json";
+    if (path.endsWith(".zip")) return "application/zip";
+    return "application/octet-stream";
+}
 
-    window.onload = async () => {
-      await syncTime();
-      await fetchStatus();
-      await loadFiles();
-      await fetchWeatherStatus();
-      await fetchAltitudeStatus();
-      setInterval(fetchStatus, 10000); // 10秒ごとに容量を更新
-      setInterval(fetchAltitudeStatus, 10000);
-      setInterval(fetchWeatherStatus, 60000);
-    };
-  </script>
-</body>
-</html>
-)rawliteral";
+long queryLong(AsyncWebServerRequest* request, const char* name,
+               long fallback, long minimum, long maximum) {
+    if (!request->hasParam(name)) return fallback;
+    const long value = request->getParam(name)->value().toInt();
+    return value < minimum || value > maximum ? fallback : value;
+}
 
-WebServerService::WebServerService(storage::StorageManager& storageManager,
-                                   ArchiveManager& archiveManager,
-                                   LocationService& locationService)
+} // namespace
+
+WebServerService::WebServerService(
+        storage::StorageManager& storageManager,
+        ArchiveManager& archiveManager,
+        LocationService& locationService,
+        PpgSessionManager& ppgSessionManager)
     : storageManager_(storageManager),
       archiveManager_(archiveManager),
-      locationService_(locationService) {
+      locationService_(locationService),
+      ppgSessionManager_(ppgSessionManager) {
     server_.reset(new AsyncWebServer(80));
 }
 
+bool WebServerService::authorize(AsyncWebServerRequest* request) const {
+    if (request->authenticate(
+            WEB_ADMIN_USER, WEB_ADMIN_PASSWORD, AUTH_REALM, false)) {
+        return true;
+    }
+    request->requestAuthentication(AUTH_REALM, true);
+    return false;
+}
+
+bool WebServerService::authorizeMutation(
+        AsyncWebServerRequest* request) const {
+    if (!authorize(request)) return false;
+    if (!request->hasHeader("X-CSRF-Token") ||
+        !web_security::constantTimeEquals(
+            request->getHeader("X-CSRF-Token")->value().c_str(),
+            csrfToken_)) {
+        sendJsonError(request, 403, "CSRF_TOKEN_REQUIRED");
+        return false;
+    }
+    return true;
+}
+
 void WebServerService::begin() {
+    const uint32_t randomWords[4] = {
+        esp_random(), esp_random(), esp_random(), esp_random()};
+    std::snprintf(csrfToken_, sizeof(csrfToken_),
+        "%08lX%08lX%08lX%08lX",
+        static_cast<unsigned long>(randomWords[0]),
+        static_cast<unsigned long>(randomWords[1]),
+        static_cast<unsigned long>(randomWords[2]),
+        static_cast<unsigned long>(randomWords[3]));
     setupRoutes();
     server_->begin();
-    Logger::info("WebServer", "Server started on port 80");
+    Logger::info("WebServer", "Authenticated server started on port 80");
 }
 
 void WebServerService::setupRoutes() {
-    server_->on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-        request->send(200, "text/html", htmlContent);
+    server_->on("/", HTTP_GET, [this](AsyncWebServerRequest* request) {
+        if (!authorize(request)) return;
+        sendAsset(request, "text/html; charset=utf-8",
+                  web_assets::INDEX_HTML_GZ,
+                  web_assets::INDEX_HTML_GZ_SIZE);
     });
+    server_->on("/app.css", HTTP_GET,
+        [this](AsyncWebServerRequest* request) {
+            if (!authorize(request)) return;
+            sendAsset(request, "text/css; charset=utf-8",
+                      web_assets::APP_CSS_GZ, web_assets::APP_CSS_GZ_SIZE);
+        });
+    server_->on("/app.js", HTTP_GET,
+        [this](AsyncWebServerRequest* request) {
+            if (!authorize(request)) return;
+            sendAsset(request, "application/javascript; charset=utf-8",
+                      web_assets::APP_JS_GZ, web_assets::APP_JS_GZ_SIZE);
+        });
+
+    server_->on("/api/session", HTTP_GET,
+        [this](AsyncWebServerRequest* request) {
+            if (!authorize(request)) return;
+            const core::TimeSnapshot clock = hal::Clock::snapshot();
+            JsonDocument document;
+            document["csrf_token"] = csrfToken_;
+            document["clock_valid"] = clock.utcValid;
+            document["clock_source"] = timeSourceName(clock.source);
+            String body;
+            serializeJson(document, body);
+            AsyncWebServerResponse* response = request->beginResponse(
+                200, "application/json", body);
+            addSecurityHeaders(response);
+            request->send(response);
+        });
+
+    server_->on("/api/status", HTTP_GET,
+        [this](AsyncWebServerRequest* request) {
+            if (!authorize(request)) return;
+            const storage::FramWalStats wal = storageManager_.getWalStats();
+            const hal::I2cDiagnosticCounters i2c =
+                hal::I2cBus::diagnosticTotals();
+            const core::TimeSnapshot clock = hal::Clock::snapshot();
+            JsonDocument document;
+            document["pending"] = storageManager_.getPendingCount();
+            document["max"] = storageManager_.getMaxRecords();
+            document["sd_available"] = storageManager_.isSdAvailable();
+            document["fram_read_only"] = storageManager_.isFramReadOnly();
+            document["dropped_records"] = wal.droppedRecords;
+            document["high_water_records"] = wal.highWaterRecords;
+            document["event_count"] = storageManager_.getEventCount();
+            document["event_max"] = storageManager_.getMaxEventRecords();
+            document["i2c_lock_timeouts"] = i2c.lockTimeouts;
+            document["i2c_communication_errors"] = i2c.communicationErrors;
+            document["clock_valid"] = clock.utcValid;
+            document["clock_source"] = timeSourceName(clock.source);
+            document["clock_disciplined"] = clock.disciplined;
+            String body;
+            serializeJson(document, body);
+            sendJsonResponse(request, 200, body);
+        });
 
     server_->on("/api/location", HTTP_GET,
-        [this](AsyncWebServerRequest *request) {
+        [this](AsyncWebServerRequest* request) {
+            if (!authorize(request)) return;
             const core::DeviceLocation location =
                 locationService_.current(millis());
-            JsonDocument doc;
-            doc["valid"] = location.valid;
-            doc["source"] = core::locationSourceName(location.source);
+            JsonDocument document;
+            document["valid"] = location.valid;
+            document["source"] = core::locationSourceName(location.source);
             if (location.valid) {
-                doc["latitudeDeg"] = location.latitudeDeg;
-                doc["longitudeDeg"] = location.longitudeDeg;
-                if (location.ageMs == UINT32_MAX) doc["ageMs"] = nullptr;
-                else doc["ageMs"] = location.ageMs;
+                document["latitudeDeg"] = location.latitudeDeg;
+                document["longitudeDeg"] = location.longitudeDeg;
+                if (location.ageMs == UINT32_MAX) {
+                    document["ageMs"] = nullptr;
+                } else {
+                    document["ageMs"] = location.ageMs;
+                }
                 if (location.source == core::LocationSource::GnssLive ||
                     location.source == core::LocationSource::GnssLastKnown) {
-                    doc["satellites"] = location.satellites;
-                    if (std::isfinite(location.hdop)) doc["hdop"] = location.hdop;
+                    document["satellites"] = location.satellites;
+                    if (std::isfinite(location.hdop)) {
+                        document["hdop"] = location.hdop;
+                    }
                 }
             }
-            String response;
-            serializeJson(doc, response);
-            request->send(200, "application/json", response);
+            String body;
+            serializeJson(document, body);
+            sendJsonResponse(request, 200, body);
         });
 
     server_->on("/api/weather", HTTP_GET,
-        [](AsyncWebServerRequest *request) {
+        [this](AsyncWebServerRequest* request) {
+            if (!authorize(request)) return;
             const AmedasStatus status = weatherService.status(millis());
-            JsonDocument doc;
-            doc["state"] = core::pressureFieldStateName(status.state);
             const bool hasPressure =
                 (status.state == core::PressureFieldState::Valid ||
                  status.state == core::PressureFieldState::LastKnown) &&
                 std::isfinite(status.interpolatedSeaLevelPressureHpa);
-            doc["has_pressure_field"] = hasPressure;
+            JsonDocument document;
+            document["state"] = core::pressureFieldStateName(status.state);
+            document["has_pressure_field"] = hasPressure;
             if (hasPressure) {
-                doc["pressure_hpa"] =
+                document["pressure_hpa"] =
                     status.interpolatedSeaLevelPressureHpa;
             }
-            doc["last_fetch_succeeded"] = status.lastFetchSucceeded;
+            document["last_fetch_succeeded"] = status.lastFetchSucceeded;
             if (status.observationAgeMs == UINT32_MAX) {
-                doc["observation_age_ms"] = nullptr;
+                document["observation_age_ms"] = nullptr;
             } else {
-                doc["observation_age_ms"] = status.observationAgeMs;
+                document["observation_age_ms"] = status.observationAgeMs;
             }
-            if (status.observationUtcMs > 0) {
-                doc["observation_utc_ms"] = status.observationUtcMs;
-            }
-            JsonObject location = doc["location"].to<JsonObject>();
-            location["valid"] = status.location.valid;
-            location["source"] =
-                core::locationSourceName(status.location.source);
-            if (status.location.valid) {
-                location["latitude_deg"] = status.location.latitudeDeg;
-                location["longitude_deg"] = status.location.longitudeDeg;
-            }
-            doc["cached_station_count"] = status.cachedStations;
-            doc["used_station_count"] = status.usedStations;
-            if (std::isfinite(status.minDistanceKm)) {
-                doc["min_distance_km"] = status.minDistanceKm;
-            }
-            if (std::isfinite(status.maxDistanceKm)) {
-                doc["max_distance_km"] = status.maxDistanceKm;
-            }
-            JsonArray stations = doc["stations"].to<JsonArray>();
-            for (uint8_t i = 0; i < status.cachedStations && i < 5u; ++i) {
+            document["cached_station_count"] = status.cachedStations;
+            document["used_station_count"] = status.usedStations;
+            JsonArray stations = document["stations"].to<JsonArray>();
+            for (uint8_t i = 0; i < status.cachedStations && i < 5; ++i) {
                 JsonObject station = stations.add<JsonObject>();
                 station["id"] = status.stations[i].id;
                 station["distance_km"] = status.stations[i].distanceKm;
                 station["used"] = status.stations[i].used;
-                if (std::isfinite(status.stations[i].seaLevelPressureHpa) &&
-                    status.stations[i].seaLevelPressureHpa > 800.0f &&
-                    status.stations[i].seaLevelPressureHpa < 1100.0f) {
+                if (std::isfinite(status.stations[i].seaLevelPressureHpa)) {
                     station["pressure_hpa"] =
                         status.stations[i].seaLevelPressureHpa;
                 }
@@ -912,523 +378,561 @@ void WebServerService::setupRoutes() {
                         status.stations[i].qualityCode;
                 }
             }
-            String response;
-            serializeJson(doc, response);
-            request->send(200, "application/json", response);
+            String body;
+            serializeJson(document, body);
+            sendJsonResponse(request, 200, body);
         });
 
     server_->on("/api/altitude", HTTP_GET,
-        [this](AsyncWebServerRequest *request) {
+        [this](AsyncWebServerRequest* request) {
+            if (!authorize(request)) return;
             const core::SensorSnapshot snapshot = sensorManager.snapshot();
             const core::AltitudeTelemetry& altitude =
                 snapshot.telemetry.altitude;
-            float storedOffset = NAN;
-            float storedTemperature = NAN;
-            float storedSeaLevelPressure = NAN;
-            uint32_t storedEpoch = 0;
+            float offset = NAN;
+            float temperature = NAN;
+            float pressure = NAN;
+            uint32_t epoch = 0;
             const bool calibrated = storageManager_.getBmp581Calibration(
-                storedOffset, storedEpoch, storedTemperature,
-                storedSeaLevelPressure);
-
-            JsonDocument doc;
-            doc["calibration_state"] = sensorManager.isBmp581Calibrating()
+                offset, epoch, temperature, pressure);
+            JsonDocument document;
+            document["calibration_state"] = sensorManager.isBmp581Calibrating()
                 ? "CALIBRATING" : (calibrated ? "CALIBRATED" : "UNCALIBRATED");
-            doc["altitude_valid"] = snapshot.environment.altitudeValid;
-            if (snapshot.environment.altitudeValid &&
-                std::isfinite(altitude.rawAltitudeM) &&
-                std::isfinite(altitude.displayAltitudeM)) {
-                doc["raw_altitude_m"] = altitude.rawAltitudeM;
-                doc["display_altitude_m"] = altitude.displayAltitudeM;
+            document["altitude_valid"] = snapshot.environment.altitudeValid;
+            if (snapshot.environment.altitudeValid) {
+                document["raw_altitude_m"] = altitude.rawAltitudeM;
+                document["display_altitude_m"] = altitude.displayAltitudeM;
             }
-            if (snapshot.environment.pressureValid &&
-                std::isfinite(snapshot.environment.pressureHpa)) {
-                doc["raw_pressure_hpa"] = snapshot.environment.pressureHpa;
-                doc["corrected_pressure_hpa"] =
-                    snapshot.environment.pressureHpa -
-                    altitude.pressureOffsetHpa;
-            }
-            doc["pressure_field_state"] =
+            document["pressure_field_state"] =
                 core::pressureFieldStateName(altitude.pressureState);
-            doc["pressure_field_source"] =
+            document["pressure_field_source"] =
                 core::pressureReferenceSourceName(altitude.pressureSource);
-            if (altitude.pressureState !=
-                    core::PressureFieldState::Invalid &&
-                std::isfinite(altitude.seaLevelPressureHpa)) {
-                doc["sea_level_pressure_hpa"] =
-                    altitude.seaLevelPressureHpa;
-            }
-            if (altitude.seaLevelPressureAgeMs == UINT32_MAX) {
-                doc["sea_level_pressure_age_ms"] = nullptr;
-            } else {
-                doc["sea_level_pressure_age_ms"] =
-                    altitude.seaLevelPressureAgeMs;
-            }
-            doc["used_station_count"] = altitude.usedStationCount;
             if (std::isfinite(altitude.calculationTemperatureC)) {
-                doc["calculation_temperature_c"] =
+                document["calculation_temperature_c"] =
                     altitude.calculationTemperatureC;
-                doc["calculation_temperature_source"] =
+                document["calculation_temperature_source"] =
                     altitude.externalTemperatureSource ? "SHT45" : "BMP581";
             }
             if (calibrated) {
-                doc["calibration_offset_hpa"] = storedOffset;
-                doc["calibration_epoch"] = storedEpoch;
-                doc["calibration_temperature_c"] = storedTemperature;
-                doc["calibration_sea_level_pressure_hpa"] =
-                    storedSeaLevelPressure;
-            } else {
-                doc["calibration_offset_hpa"] = nullptr;
+                document["calibration_offset_hpa"] = offset;
+                document["calibration_epoch"] = epoch;
             }
-            String response;
-            serializeJson(doc, response);
-            request->send(200, "application/json", response);
+            String body;
+            serializeJson(document, body);
+            sendJsonResponse(request, 200, body);
         });
 
-    server_->on("/api/files", HTTP_GET, [this](AsyncWebServerRequest *request){
-        JsonDocument doc;
-        JsonArray files = doc["files"].to<JsonArray>();
+    server_->on("/api/ppg", HTTP_GET,
+        [this](AsyncWebServerRequest* request) {
+            if (!authorize(request)) return;
+            const PpgSessionStatus status = ppgSessionManager_.status();
+            JsonDocument document;
+            document["state"] = ppgStateName(status.state);
+            document["error"] = ppgSessionErrorName(status.error);
+            document["session_id"] = status.sessionId;
+            document["directory"] = status.directory;
+            document["block_count"] = status.blockCount;
+            document["stored_samples"] = status.storedSamples;
+            document["dropped_samples"] = status.droppedSamples;
+            document["fifo_overflows"] = status.fifoOverflows;
+            document["ring_high_water_samples"] = status.ringHighWaterSamples;
+            document["max_sd_write_us"] = status.maxSdWriteUs;
+            document["buffer_memory"] = status.usingPsram ? "PSRAM" : "INTERNAL";
+            String body;
+            serializeJson(document, body);
+            sendJsonResponse(request, 200, body);
+        });
 
-        String currentPath = storageManager_.getCurrentFilename();
-        
-        storageManager_.lock();
-        File root = SD.open("/");
-        if (root) {
-            File file = root.openNextFile();
-            while(file){
-                if (!file.isDirectory()) {
-                    String fileName = String(file.name());
-                    if (fileName.endsWith(".csv") || fileName.endsWith(".zip")) {
-                        JsonObject fObj = files.add<JsonObject>();
-                        fObj["name"] = fileName;
-                        fObj["size"] = file.size();
-                        
-                        // StorageManagerから取得するパスは "/log_xxx.csv" なので、
-                        // fileName が "log_xxx.csv" または "/log_xxx.csv" と一致するかチェック
-                        fObj["isCurrent"] = (fileName.endsWith(".csv") && (fileName == currentPath || ("/" + fileName) == currentPath));
-                    }
-                }
-                file = root.openNextFile();
+    server_->on("/api/files", HTTP_GET,
+        [this](AsyncWebServerRequest* request) {
+            if (!authorize(request)) return;
+            std::vector<ListedFile> files;
+            files.reserve(96);
+            bool truncated = false;
+            storageManager_.lock();
+            File root = SD.open("/");
+            if (root) collectVisibleFiles(root, files, truncated, 0);
+            if (root) root.close();
+            storageManager_.unlock();
+
+            const String currentLog = storageManager_.getCurrentFilename();
+            const PpgSessionStatus ppg = ppgSessionManager_.status();
+            for (ListedFile& file : files) {
+                file.current = file.path == currentLog;
+                file.activePpg = ppgPathIsActive(ppg, file.path.c_str());
+                file.archiveBusy = archiveManager_.isFileBusy(file.path);
             }
-            root.close();
-        }
-        storageManager_.unlock();
 
-        String response;
-        serializeJson(doc, response);
-        request->send(200, "application/json", response);
-    });
+            String query = request->hasParam("q")
+                ? request->getParam("q")->value() : "";
+            String type = request->hasParam("type")
+                ? request->getParam("type")->value() : "all";
+            query.toLowerCase();
+            std::vector<ListedFile> filtered;
+            filtered.reserve(files.size());
+            for (const ListedFile& file : files) {
+                String candidate = file.path;
+                candidate.toLowerCase();
+                if ((!query.isEmpty() && candidate.indexOf(query) < 0) ||
+                    (type != "all" && file.type != type)) continue;
+                filtered.push_back(file);
+            }
+            const String sort = request->hasParam("sort")
+                ? request->getParam("sort")->value() : "name";
+            const bool ascending = request->hasParam("order") &&
+                request->getParam("order")->value() == "asc";
+            std::sort(filtered.begin(), filtered.end(),
+                [sort, ascending](const ListedFile& a, const ListedFile& b) {
+                    int comparison = 0;
+                    if (sort == "size") {
+                        comparison = a.size == b.size ? 0 :
+                            (a.size < b.size ? -1 : 1);
+                    } else {
+                        comparison = a.path.compareTo(b.path);
+                    }
+                    return ascending ? comparison < 0 : comparison > 0;
+                });
 
-    server_->on("/api/time", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
-        [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
-            JsonDocument doc;
-            DeserializationError error = deserializeJson(doc, data, len);
-            if (error) {
-                request->send(400, "application/json", "{\"error\":\"Invalid JSON\"}");
+            const size_t limit = static_cast<size_t>(
+                queryLong(request, "limit", 50, 10, 100));
+            const size_t total = filtered.size();
+            const size_t pageCount = std::max<size_t>(
+                1, (total + limit - 1) / limit);
+            const size_t requestedPage = static_cast<size_t>(
+                queryLong(request, "page", 1, 1, 10000));
+            const size_t page = std::min(requestedPage, pageCount);
+            const size_t first = std::min(total, (page - 1) * limit);
+            const size_t last = std::min(total, first + limit);
+
+            AsyncResponseStream* response =
+                request->beginResponseStream("application/json", 12288);
+            response->printf(
+                "{\"page\":%u,\"page_count\":%u,\"total\":%u,\"truncated\":%s,\"files\":[",
+                static_cast<unsigned>(page),
+                static_cast<unsigned>(pageCount),
+                static_cast<unsigned>(total), truncated ? "true" : "false");
+            for (size_t i = first; i < last; ++i) {
+                const ListedFile& file = filtered[i];
+                if (i != first) response->print(',');
+                const bool locked = file.current || file.activePpg ||
+                    file.archiveBusy;
+                const bool selectable = !locked;
+                const bool downloadable = !file.activePpg;
+                response->printf(
+                    "{\"path\":\"%s\",\"name\":\"%s\",\"type\":\"%s\",\"size\":%u,\"modified\":%lld,\"locked\":%s,\"selectable\":%s,\"downloadable\":%s}",
+                    file.path.c_str(), file.name.c_str(), file.type.c_str(),
+                    static_cast<unsigned>(file.size),
+                    static_cast<long long>(file.modified),
+                    locked ? "true" : "false",
+                    selectable ? "true" : "false",
+                    downloadable ? "true" : "false");
+            }
+            response->print("]}");
+            addSecurityHeaders(response);
+            request->send(response);
+        });
+
+    server_->on("/download", HTTP_GET,
+        [this](AsyncWebServerRequest* request) {
+            if (!authorize(request)) return;
+            if (!request->hasParam("file")) {
+                sendJsonError(request, 400, "MISSING_FILE");
                 return;
             }
-            if (!doc["epoch"].isNull()) {
-                time_t epoch = doc["epoch"].as<time_t>();
-                hal::Clock::setEpoch(epoch);
-                Logger::info("WebServer", "Time synced via HTTP: %s", hal::Clock::getFormattedDate().c_str());
-                request->send(200, "application/json", "{\"status\":\"ok\"}");
-            } else {
-                request->send(400, "application/json", "{\"error\":\"Missing epoch\"}");
+            String path;
+            if (!normalizeRequestPath(
+                    request->getParam("file")->value(), path)) {
+                sendJsonError(request, 400, "INVALID_FILE_PATH");
+                return;
             }
-    });
+            const PpgSessionStatus ppg = ppgSessionManager_.status();
+            if (ppgPathIsActive(ppg, path.c_str())) {
+                sendJsonError(request, 423, "ACTIVE_PPG_FILE_LOCKED");
+                return;
+            }
+            if (path == storageManager_.getCurrentFilename()) {
+                // Wi-Fi mode pauses normal WAL flushes. Force one verified
+                // boundary before opening, after which this file is stable.
+                storageManager_.forceFlush();
+            }
+            std::shared_ptr<DownloadState> state(new DownloadState());
+            state->storage = &storageManager_;
+            storageManager_.lock();
+            state->file = SD.open(path.c_str(), FILE_READ);
+            const bool valid = state->file && !state->file.isDirectory();
+            state->size = valid ? state->file.size() : 0;
+            storageManager_.unlock();
+            if (!valid) {
+                state->close();
+                sendJsonError(request, 404, "FILE_NOT_FOUND");
+                return;
+            }
+            AsyncWebServerResponse* response = request->beginResponse(
+                contentTypeFor(path), state->size,
+                [state](uint8_t* buffer, size_t maxLength,
+                        size_t index) -> size_t {
+                    if (index >= state->size || state->closed) {
+                        state->close();
+                        return 0;
+                    }
+                    const size_t wanted = std::min(
+                        maxLength, state->size - index);
+                    state->storage->lock();
+                    bool positioned = state->file.position() == index;
+                    if (!positioned) positioned = state->file.seek(index);
+                    const size_t actual = positioned
+                        ? state->file.read(buffer, wanted) : 0;
+                    if (index + actual >= state->size) {
+                        state->file.close();
+                        state->closed = true;
+                    }
+                    state->storage->unlock();
+                    return actual;
+                });
+            const String disposition = "attachment; filename=\"" +
+                baseName(path) + "\"";
+            response->addHeader("Content-Disposition", disposition);
+            response->addHeader("Connection", "close");
+            addSecurityHeaders(response);
+            request->send(response);
+        });
 
-    server_->on("/api/flush", HTTP_POST, [this](AsyncWebServerRequest *request){
-        Logger::info("WebServer", "Manual flush requested via HTTP");
-        storageManager_.forceFlush();
-        request->send(200, "application/json", "{\"status\":\"ok\"}");
-    });
+    server_->on("/api/i2c", HTTP_GET,
+        [this](AsyncWebServerRequest* request) {
+            if (!authorize(request)) return;
+            AsyncResponseStream* response =
+                request->beginResponseStream("application/json");
+            const hal::I2cDiagnosticCounters totals =
+                hal::I2cBus::diagnosticTotals();
+            response->printf(
+                "{\"lock_timeouts\":%lu,\"communication_errors\":%lu,\"breakdown\":[",
+                static_cast<unsigned long>(totals.lockTimeouts),
+                static_cast<unsigned long>(totals.communicationErrors));
+            bool first = true;
+            for (uint8_t deviceIndex = 0;
+                 deviceIndex < static_cast<uint8_t>(hal::I2cDevice::Count);
+                 ++deviceIndex) {
+                for (uint8_t operationIndex = 0;
+                     operationIndex < static_cast<uint8_t>(hal::I2cOperation::Count);
+                     ++operationIndex) {
+                    const auto device =
+                        static_cast<hal::I2cDevice>(deviceIndex);
+                    const auto operation =
+                        static_cast<hal::I2cOperation>(operationIndex);
+                    const hal::I2cDiagnosticCounters counters =
+                        hal::I2cBus::diagnostics(device, operation);
+                    if (counters.lockTimeouts == 0 &&
+                        counters.communicationErrors == 0) continue;
+                    if (!first) response->print(',');
+                    first = false;
+                    response->printf(
+                        "{\"device\":\"%s\",\"operation\":\"%s\",\"lock_timeouts\":%lu,\"communication_errors\":%lu}",
+                        hal::i2cDeviceName(device),
+                        hal::i2cOperationName(operation),
+                        static_cast<unsigned long>(counters.lockTimeouts),
+                        static_cast<unsigned long>(counters.communicationErrors));
+                }
+            }
+            response->print("]}");
+            addSecurityHeaders(response);
+            request->send(response);
+        });
 
-    server_->on("/api/status", HTTP_GET, [this](AsyncWebServerRequest *request){
-        String response = "{";
-        response += "\"pending\":" + String(storageManager_.getPendingCount()) + ",";
-        response += "\"max\":" + String(storageManager_.getMaxRecords()) + ",";
-        storage::FramWalStats walStats = storageManager_.getWalStats();
-        response += "\"fram_read_only\":" + String(storageManager_.isFramReadOnly() ? "true" : "false") + ",";
-        response += "\"dropped_records\":" + String(walStats.droppedRecords) + ",";
-        response += "\"high_water_records\":" + String(walStats.highWaterRecords) + ",";
-        response += "\"event_count\":" + String(storageManager_.getEventCount()) + ",";
-        response += "\"event_max\":" + String(storageManager_.getMaxEventRecords()) + ",";
-        const hal::I2cDiagnosticCounters i2c = hal::I2cBus::diagnosticTotals();
-        response += "\"i2c_lock_timeouts\":" + String(i2c.lockTimeouts) + ",";
-        response += "\"i2c_communication_errors\":" + String(i2c.communicationErrors);
-        response += "}";
-        request->send(200, "application/json", response);
-    });
+    server_->on("/api/events", HTTP_GET,
+        [this](AsyncWebServerRequest* request) {
+            if (!authorize(request)) return;
+            constexpr size_t MAX_EVENTS = 64;
+            const size_t requested = static_cast<size_t>(
+                queryLong(request, "limit", MAX_EVENTS, 1, MAX_EVENTS));
+            storage::EventRecord events[MAX_EVENTS] {};
+            const size_t count =
+                storageManager_.readRecentEvents(events, requested);
+            AsyncResponseStream* response =
+                request->beginResponseStream("application/json", 8192);
+            response->printf(
+                "{\"retained\":%u,\"returned\":%u,\"events\":[",
+                storageManager_.getEventCount(),
+                static_cast<unsigned>(count));
+            for (size_t i = 0; i < count; ++i) {
+                if (i != 0) response->print(',');
+                const storage::EventCode code =
+                    static_cast<storage::EventCode>(events[i].eventCode);
+                response->printf(
+                    "{\"sequence\":%lu,\"uptime_ms\":%lu,\"code\":%u,\"name\":\"%s\",\"detail\":%ld}",
+                    static_cast<unsigned long>(events[i].header.sequence),
+                    static_cast<unsigned long>(events[i].uptimeMs),
+                    events[i].eventCode, storage::eventCodeName(code),
+                    static_cast<long>(events[i].detail));
+            }
+            response->print("]}");
+            response->addHeader("Content-Disposition",
+                                "attachment; filename=\"scd41_events.json\"");
+            addSecurityHeaders(response);
+            request->send(response);
+        });
 
-    server_->on("/api/i2c", HTTP_GET, [](AsyncWebServerRequest *request){
-        AsyncResponseStream* response = request->beginResponseStream("application/json");
-        const hal::I2cDiagnosticCounters totals = hal::I2cBus::diagnosticTotals();
-        response->printf("{\"lock_timeouts\":%lu,\"communication_errors\":%lu,\"breakdown\":[",
-            static_cast<unsigned long>(totals.lockTimeouts),
-            static_cast<unsigned long>(totals.communicationErrors));
-        bool first = true;
-        for (uint8_t deviceIndex = 0;
-             deviceIndex < static_cast<uint8_t>(hal::I2cDevice::Count);
-             ++deviceIndex) {
-            for (uint8_t operationIndex = 0;
-                 operationIndex < static_cast<uint8_t>(hal::I2cOperation::Count);
-                 ++operationIndex) {
-                const auto device = static_cast<hal::I2cDevice>(deviceIndex);
-                const auto operation = static_cast<hal::I2cOperation>(operationIndex);
-                const hal::I2cDiagnosticCounters counters =
-                    hal::I2cBus::diagnostics(device, operation);
-                if (counters.lockTimeouts == 0 && counters.communicationErrors == 0) {
+    auto* timeHandler = new AsyncCallbackJsonWebHandler(
+        "/api/time", [this](AsyncWebServerRequest* request,
+                             JsonVariant& json) {
+            if (!authorizeMutation(request)) return;
+            if (!json.is<JsonObject>() ||
+                !json["epoch"].is<int64_t>()) {
+                sendJsonError(request, 400, "INVALID_EPOCH");
+                return;
+            }
+            const int64_t epoch = json["epoch"].as<int64_t>();
+            if (epoch < 1704067200LL || epoch > 4102444800LL) {
+                sendJsonError(request, 400, "EPOCH_OUT_OF_RANGE");
+                return;
+            }
+            if (hal::Clock::isDisciplined()) {
+                sendJsonError(request, 409, "DISCIPLINED_CLOCK_ACTIVE");
+                return;
+            }
+            hal::Clock::setEpoch(static_cast<time_t>(epoch));
+            sendJsonResponse(request, 200, "{\"status\":\"ok\"}");
+        });
+    timeHandler->setMethod(HTTP_POST);
+    timeHandler->setMaxContentLength(128);
+    server_->addHandler(timeHandler);
+
+    server_->on("/api/flush", HTTP_POST,
+        [this](AsyncWebServerRequest* request) {
+            if (!authorizeMutation(request)) return;
+            storageManager_.forceFlush();
+            sendJsonResponse(request, 200, "{\"status\":\"ok\"}");
+        });
+
+    auto* deleteHandler = new AsyncCallbackJsonWebHandler(
+        "/api/files/delete",
+        [this](AsyncWebServerRequest* request, JsonVariant& json) {
+            if (!authorizeMutation(request)) return;
+            if (!json.is<JsonObject>() ||
+                !json["confirmation"].is<const char*>() ||
+                !web_security::constantTimeEquals(
+                    json["confirmation"].as<const char*>(),
+                    "DELETE_SELECTED") ||
+                !json["files"].is<JsonArray>()) {
+                sendJsonError(request, 400, "INVALID_DELETE_REQUEST");
+                return;
+            }
+            const JsonArray files = json["files"].as<JsonArray>();
+            if (files.size() == 0 || files.size() > MAX_BULK_FILES) {
+                sendJsonError(request, 400, "INVALID_FILE_COUNT");
+                return;
+            }
+            JsonDocument result;
+            JsonArray deleted = result["deleted"].to<JsonArray>();
+            JsonArray rejected = result["rejected"].to<JsonArray>();
+            const String currentLog = storageManager_.getCurrentFilename();
+            const PpgSessionStatus ppg = ppgSessionManager_.status();
+            for (JsonVariant value : files) {
+                String path;
+                if (!value.is<const char*>() ||
+                    !normalizeRequestPath(value.as<String>(), path) ||
+                    path == currentLog ||
+                    ppgPathIsActive(ppg, path.c_str()) ||
+                    archiveManager_.isFileBusy(path)) {
+                    rejected.add(value.as<String>());
                     continue;
                 }
-                if (!first) response->print(',');
-                first = false;
-                response->printf(
-                    "{\"device\":\"%s\",\"operation\":\"%s\",\"lock_timeouts\":%lu,\"communication_errors\":%lu}",
-                    hal::i2cDeviceName(device), hal::i2cOperationName(operation),
-                    static_cast<unsigned long>(counters.lockTimeouts),
-                    static_cast<unsigned long>(counters.communicationErrors));
-            }
-        }
-        response->print("]}");
-        request->send(response);
-    });
-
-    server_->on("/api/events", HTTP_GET, [this](AsyncWebServerRequest *request){
-        constexpr size_t MAX_API_EVENTS = 64;
-        size_t requested = MAX_API_EVENTS;
-        if (request->hasParam("limit")) {
-            long value = request->getParam("limit")->value().toInt();
-            if (value > 0 && value < static_cast<long>(MAX_API_EVENTS)) {
-                requested = static_cast<size_t>(value);
-            }
-        }
-
-        storage::EventRecord events[MAX_API_EVENTS];
-        size_t count = storageManager_.readRecentEvents(events, requested);
-
-        AsyncResponseStream* response = request->beginResponseStream("application/json");
-        response->printf("{\"retained\":%u,\"returned\":%u,\"events\":[",
-            storageManager_.getEventCount(), static_cast<unsigned>(count));
-        for (size_t i = 0; i < count; ++i) {
-            if (i > 0) response->print(',');
-            storage::EventCode code = static_cast<storage::EventCode>(events[i].eventCode);
-            response->printf(
-                "{\"sequence\":%lu,\"uptime_ms\":%lu,\"code\":%u,\"name\":\"%s\",\"detail\":%ld",
-                events[i].header.sequence, events[i].uptimeMs, events[i].eventCode,
-                storage::eventCodeName(code), static_cast<long>(events[i].detail));
-
-            if (events[i].eventCode >= static_cast<uint16_t>(storage::EventCode::Scd41Stale) &&
-                events[i].eventCode <= static_cast<uint16_t>(storage::EventCode::Scd41Stabilizing)) {
-                uint32_t packed = static_cast<uint32_t>(events[i].detail);
-                uint16_t rawError = static_cast<uint16_t>(packed >> 16);
-                uint16_t ageSeconds = static_cast<uint16_t>(packed & 0xFFFFu);
-                response->printf(",\"raw_error\":%u,\"age_ms\":", rawError);
-                if (ageSeconds == UINT16_MAX) response->print("null");
-                else response->printf("%lu", static_cast<unsigned long>(ageSeconds) * 1000ul);
-            } else if (events[i].eventCode == static_cast<uint16_t>(storage::EventCode::Scd41FrcSucceeded) ||
-                       events[i].eventCode == static_cast<uint16_t>(storage::EventCode::Scd41FrcFailed)) {
-                const uint32_t packed = static_cast<uint32_t>(events[i].detail);
-                const uint16_t rawWord = static_cast<uint16_t>(packed >> 16u);
-                response->printf(",\"reference_ppm\":%u,\"raw_word\":%u",
-                    static_cast<unsigned>(packed & 0xFFFFu), rawWord);
-                if (events[i].eventCode ==
-                        static_cast<uint16_t>(storage::EventCode::Scd41FrcSucceeded) &&
-                    rawWord != 0xFFFFu) {
-                    response->printf(",\"correction_ppm\":%ld",
-                        static_cast<long>(static_cast<int32_t>(rawWord) - 0x8000L));
+                storageManager_.lock();
+                File file = SD.open(path.c_str(), FILE_READ);
+                const bool regular = file && !file.isDirectory();
+                if (file) file.close();
+                const bool removed = regular && SD.remove(path.c_str()) &&
+                    !SD.exists(path.c_str());
+                storageManager_.unlock();
+                if (removed) {
+                    deleted.add(path);
+                    Logger::warn("WebServer", "File deleted: %s", path.c_str());
+                } else {
+                    rejected.add(path);
                 }
-            } else if (events[i].eventCode == static_cast<uint16_t>(storage::EventCode::I2cLockTimeout) ||
-                       events[i].eventCode == static_cast<uint16_t>(storage::EventCode::I2cCommunicationError)) {
-                const uint32_t packed = static_cast<uint32_t>(events[i].detail);
-                const auto device = static_cast<hal::I2cDevice>(packed & 0xFFu);
-                const auto operation = static_cast<hal::I2cOperation>((packed >> 8u) & 0xFFu);
-                response->printf(",\"device\":\"%s\",\"operation\":\"%s\",\"delta\":%u",
-                    hal::i2cDeviceName(device), hal::i2cOperationName(operation),
-                    static_cast<unsigned>((packed >> 16u) & 0xFFFFu));
-            } else if (events[i].eventCode == static_cast<uint16_t>(
-                           storage::EventCode::PressureFieldUpdated)) {
-                const uint32_t packed = static_cast<uint32_t>(events[i].detail);
-                const uint16_t previous = static_cast<uint16_t>(packed >> 16u);
-                const uint16_t current = static_cast<uint16_t>(packed & 0xFFFFu);
-                response->print(",\"previous_pressure_hpa\":");
-                if (previous == UINT16_MAX) response->print("null");
-                else response->printf("%.1f", previous / 10.0f);
-                response->printf(",\"current_pressure_hpa\":%.1f", current / 10.0f);
-            } else if (events[i].eventCode == static_cast<uint16_t>(
-                           storage::EventCode::PressureFieldStateChanged)) {
-                const uint32_t packed = static_cast<uint32_t>(events[i].detail);
-                const auto previous = static_cast<core::PressureFieldState>(
-                    packed & 0xFFu);
-                const auto current = static_cast<core::PressureFieldState>(
-                    (packed >> 8u) & 0xFFu);
-                const auto source = static_cast<core::PressureReferenceSource>(
-                    (packed >> 16u) & 0xFFu);
-                response->printf(",\"previous_state\":\"%s\",\"current_state\":\"%s\",\"source\":\"%s\"",
-                    core::pressureFieldStateName(previous),
-                    core::pressureFieldStateName(current),
-                    core::pressureReferenceSourceName(source));
-            } else if (events[i].eventCode == static_cast<uint16_t>(
-                           storage::EventCode::Bmp581CalibrationSucceeded)) {
-                response->printf(",\"offset_hpa\":%.3f",
-                    static_cast<float>(events[i].detail) / 1000.0f);
-            } else if (events[i].eventCode == static_cast<uint16_t>(
-                           storage::EventCode::Bmp581CalibrationFailed)) {
-                const uint32_t packed = static_cast<uint32_t>(events[i].detail);
-                const auto failure =
-                    static_cast<utils::bmp581_calibration::Failure>(
-                        (packed >> 24u) & 0xFFu);
-                response->printf(",\"failure\":\"%s\",\"valid_samples\":%lu",
-                    utils::bmp581_calibration::failureName(failure),
-                    static_cast<unsigned long>(packed & 0x00FFFFFFu));
             }
-            response->print('}');
-        }
-        response->print("]}");
-        request->send(response);
-    });
+            String body;
+            serializeJson(result, body);
+            sendJsonResponse(request, 200, body);
+        });
+    deleteHandler->setMethod(HTTP_POST);
+    deleteHandler->setMaxContentLength(8192);
+    server_->addHandler(deleteHandler);
 
-    auto* scd41CalibrateHandler = new AsyncCallbackJsonWebHandler(
+    auto* archiveHandler = new AsyncCallbackJsonWebHandler(
+        "/api/archive/manual",
+        [this](AsyncWebServerRequest* request, JsonVariant& json) {
+            if (!authorizeMutation(request)) return;
+            if (!json.is<JsonObject>() ||
+                !json["files"].is<JsonArray>()) {
+                sendJsonError(request, 400, "INVALID_ARCHIVE_REQUEST");
+                return;
+            }
+            const JsonArray input = json["files"].as<JsonArray>();
+            if (input.size() == 0 || input.size() > MAX_BULK_FILES) {
+                sendJsonError(request, 400, "INVALID_FILE_COUNT");
+                return;
+            }
+            const String currentLog = storageManager_.getCurrentFilename();
+            const PpgSessionStatus ppg = ppgSessionManager_.status();
+            std::vector<String> paths;
+            paths.reserve(input.size());
+            for (JsonVariant value : input) {
+                String path;
+                if (!value.is<const char*>() ||
+                    !normalizeRequestPath(value.as<String>(), path) ||
+                    path == currentLog ||
+                    ppgPathIsActive(ppg, path.c_str())) {
+                    sendJsonError(request, 409,
+                                  "FILE_ACTIVE_OR_NOT_ARCHIVABLE");
+                    return;
+                }
+                storageManager_.lock();
+                File selected = SD.open(path.c_str(), FILE_READ);
+                const bool regular = selected && !selected.isDirectory();
+                if (selected) selected.close();
+                storageManager_.unlock();
+                if (!regular) {
+                    sendJsonError(request, 404, "FILE_NOT_FOUND");
+                    return;
+                }
+                paths.push_back(path);
+            }
+            if (!archiveManager_.startManualArchive(paths)) {
+                sendJsonError(request, 409,
+                              "ARCHIVE_BUSY_OR_INVALID_SELECTION");
+                return;
+            }
+            sendJsonResponse(request, 202,
+                             "{\"status\":\"scheduled\"}");
+        });
+    archiveHandler->setMethod(HTTP_POST);
+    archiveHandler->setMaxContentLength(8192);
+    server_->addHandler(archiveHandler);
+
+    server_->on("/api/archive/cancel", HTTP_POST,
+        [this](AsyncWebServerRequest* request) {
+            if (!authorizeMutation(request)) return;
+            archiveManager_.cancelArchive();
+            sendJsonResponse(request, 202,
+                             "{\"status\":\"cancellation_requested\"}");
+        });
+
+    server_->on("/api/archive/status", HTTP_GET,
+        [this](AsyncWebServerRequest* request) {
+            if (!authorize(request)) return;
+            const ArchiveStatus status = archiveManager_.getStatus();
+            JsonDocument document;
+            document["state"] = static_cast<int>(status.state);
+            document["currentFile"] = status.currentFile;
+            document["processedFiles"] = status.processedFiles;
+            document["totalFiles"] = status.totalFiles;
+            document["processedBytes"] = status.processedBytes;
+            document["totalBytes"] = status.totalBytes;
+            document["progressPercent"] = status.progressPercent;
+            document["message"] = status.message;
+            document["outputFile"] = status.outputFile;
+            document["verified"] = status.verified;
+            document["retainedOriginals"] = status.retainedOriginals;
+            String body;
+            serializeJson(document, body);
+            sendJsonResponse(request, 200, body);
+        });
+
+    auto* scdCalibrationHandler = new AsyncCallbackJsonWebHandler(
         "/api/scd41/calibrate",
-        [](AsyncWebServerRequest *request, JsonVariant& json) {
-            if (!json.is<JsonObject>()) {
-                request->send(400, "application/json",
-                    "{\"status\":\"rejected\",\"error_code\":\"INVALID_JSON_OBJECT\"}");
+        [this](AsyncWebServerRequest* request, JsonVariant& json) {
+            if (!authorizeMutation(request)) return;
+            if (!json.is<JsonObject>() ||
+                !json["reference_ppm"].is<int32_t>() ||
+                !json["confirm_external_reference"].is<bool>() ||
+                !json["confirm_external_reference"].as<bool>()) {
+                sendJsonError(request, 400,
+                              "EXTERNAL_REFERENCE_NOT_CONFIRMED");
                 return;
             }
-            JsonObject doc = json.as<JsonObject>();
-            if (!doc["reference_ppm"].is<int32_t>() ||
-                !doc["confirm_external_reference"].is<bool>()) {
-                request->send(400, "application/json",
-                    "{\"status\":\"rejected\",\"error_code\":\"INVALID_REQUEST_FIELDS\"}");
+            const int32_t reference = json["reference_ppm"].as<int32_t>();
+            if (reference < 400 || reference > 5000) {
+                sendJsonError(request, 400, "REFERENCE_OUT_OF_RANGE");
                 return;
             }
-            if (!doc["confirm_external_reference"].as<bool>()) {
-                request->send(400, "application/json",
-                    "{\"status\":\"rejected\",\"error_code\":\"EXTERNAL_REFERENCE_NOT_CONFIRMED\",\"message\":\"FRC requires an externally obtained CO2 reference value.\"}");
-                return;
-            }
-
-            const int32_t referenceValue = doc["reference_ppm"].as<int32_t>();
-            if (referenceValue < 400 || referenceValue > 5000) {
-                request->send(400, "application/json",
-                    "{\"status\":\"rejected\",\"error_code\":\"REFERENCE_OUT_OF_RANGE\"}");
-                return;
-            }
-
-            drivers::sensors::Scd41FrcResult frcResult;
+            drivers::sensors::Scd41FrcResult result;
             const bool success = sensorManager.calibrateScd41(
-                static_cast<uint16_t>(referenceValue), frcResult);
-            const char* errorCode = frcResult.errorMessage != nullptr
-                ? frcResult.errorMessage : "UNKNOWN_ERROR";
-
-            if (success) {
-                String resp = "{\"status\":\"ok\",";
-                resp += "\"reference_ppm\":" + String(frcResult.referencePpm) + ",";
-                resp += "\"pre_co2_ppm\":" + String(frcResult.preCalibrationCo2Ppm) + ",";
-                resp += "\"correction_ppm\":" + String(frcResult.correctionPpm) + ",";
-                resp += "\"raw_word\":" + String(frcResult.rawWord) + ",";
-                resp += "\"ambient_pressure_hpa\":" + String(frcResult.ambientPressureHpa) + ",";
-                resp += "\"pressure_age_ms\":" + String(frcResult.pressureAgeMs) + ",";
-                resp += "\"measurement_uptime_ms\":" + String(frcResult.measurementUptimeMs) + ",";
-                resp += "\"restart_success\":";
-                resp += frcResult.restartSuccess ? "true}" : "false}";
-                request->send(200, "application/json", resp);
-                return;
+                static_cast<uint16_t>(reference), result);
+            JsonDocument responseDocument;
+            responseDocument["status"] = success ? "ok" : "failed";
+            responseDocument["reference_ppm"] = result.referencePpm;
+            responseDocument["pre_co2_ppm"] = result.preCalibrationCo2Ppm;
+            responseDocument["correction_ppm"] = result.correctionPpm;
+            responseDocument["raw_word"] = result.rawWord;
+            responseDocument["ambient_pressure_hpa"] =
+                result.ambientPressureHpa;
+            responseDocument["measurement_uptime_ms"] =
+                result.measurementUptimeMs;
+            responseDocument["restart_success"] = result.restartSuccess;
+            if (!success) {
+                responseDocument["error"] = result.errorMessage != nullptr
+                    ? result.errorMessage : "FRC_FAILED";
             }
-
-            const bool rejected =
-                strcmp(errorCode, "SENSOR_NOT_READY") == 0 ||
-                strcmp(errorCode, "CALIBRATION_ALREADY_IN_PROGRESS") == 0 ||
-                strcmp(errorCode, "MEASUREMENT_UPTIME_TOO_SHORT") == 0 ||
-                strcmp(errorCode, "NO_VALID_DATA") == 0 ||
-                strcmp(errorCode, "PRESSURE_UNAVAILABLE") == 0 ||
-                strcmp(errorCode, "PRESSURE_STALE") == 0;
-            const bool unavailable = strncmp(errorCode, "LOCK_FAILED_", 12) == 0;
-            const int httpStatus = rejected ? 409 : (unavailable ? 503 : 500);
-
-            String resp = rejected
-                ? "{\"status\":\"rejected\",\"error\":\""
-                : "{\"status\":\"failed\",\"error\":\"";
-            resp += errorCode;
-            resp += "\",\"error_code\":\"";
-            resp += errorCode;
-            resp += "\",\"reference_ppm\":" + String(frcResult.referencePpm) + ",";
-            resp += "\"pre_co2_ppm\":" + String(frcResult.preCalibrationCo2Ppm) + ",";
-            resp += "\"ambient_pressure_hpa\":" + String(frcResult.ambientPressureHpa) + ",";
-            resp += "\"pressure_age_ms\":";
-            if (frcResult.pressureAgeMs == UINT32_MAX) resp += "null,";
-            else resp += String(frcResult.pressureAgeMs) + ",";
-            resp += "\"measurement_uptime_ms\":" + String(frcResult.measurementUptimeMs) + ",";
-            resp += "\"restart_success\":";
-            resp += frcResult.restartSuccess ? "true}" : "false}";
-            request->send(httpStatus, "application/json", resp);
+            String body;
+            serializeJson(responseDocument, body);
+            sendJsonResponse(request, success ? 200 : 409, body);
         });
-    scd41CalibrateHandler->setMethod(HTTP_POST);
-    scd41CalibrateHandler->setMaxContentLength(256);
-    server_->addHandler(scd41CalibrateHandler);
+    scdCalibrationHandler->setMethod(HTTP_POST);
+    scdCalibrationHandler->setMaxContentLength(256);
+    server_->addHandler(scdCalibrationHandler);
 
-    auto* scd41FactoryResetHandler = new AsyncCallbackJsonWebHandler(
+    auto* scdResetHandler = new AsyncCallbackJsonWebHandler(
         "/api/scd41/factory_reset",
-        [](AsyncWebServerRequest *request, JsonVariant& json) {
-            if (!json.is<JsonObject>()) {
-                request->send(400, "application/json",
-                    "{\"status\":\"rejected\",\"error_code\":\"INVALID_JSON_OBJECT\"}");
+        [this](AsyncWebServerRequest* request, JsonVariant& json) {
+            if (!authorizeMutation(request)) return;
+            if (!json.is<JsonObject>() ||
+                !json["confirmation"].is<const char*>() ||
+                !web_security::constantTimeEquals(
+                    json["confirmation"].as<const char*>(),
+                    "RESET_SCD41")) {
+                sendJsonError(request, 400, "CONFIRMATION_REQUIRED");
                 return;
             }
-            JsonObject doc = json.as<JsonObject>();
-            if (!doc["confirmation"].is<const char*>() ||
-                strcmp(doc["confirmation"].as<const char*>(), "RESET_SCD41") != 0) {
-                request->send(400, "application/json",
-                    "{\"status\":\"rejected\",\"error_code\":\"CONFIRMATION_REQUIRED\"}");
-                return;
-            }
-            if (sensorManager.factoryResetScd41()) {
-                request->send(200, "application/json", "{\"status\":\"ok\"}");
-            } else {
-                request->send(500, "application/json",
-                    "{\"status\":\"failed\",\"error_code\":\"FACTORY_RESET_FAILED\"}");
-            }
+            const bool success = sensorManager.factoryResetScd41();
+            sendJsonResponse(request, success ? 200 : 500,
+                success ? "{\"status\":\"ok\"}"
+                        : "{\"status\":\"failed\",\"error\":\"FACTORY_RESET_FAILED\"}");
         });
-    scd41FactoryResetHandler->setMethod(HTTP_POST);
-    scd41FactoryResetHandler->setMaxContentLength(128);
-    server_->addHandler(scd41FactoryResetHandler);
+    scdResetHandler->setMethod(HTTP_POST);
+    scdResetHandler->setMaxContentLength(128);
+    server_->addHandler(scdResetHandler);
 
-    server_->on("/api/sealevel", HTTP_POST, [](AsyncWebServerRequest *request){
-        if (request->hasParam("pressure", true)) {
-            String pStr = request->getParam("pressure", true)->value();
-            float p = pStr.toFloat();
-            if (p > 800.0f && p < 1200.0f) {
-                weatherService.forceUpdate(p);
-                request->send(200, "text/plain", "Sea level pressure updated");
-                return;
-            }
-        }
-        request->send(400, "text/plain", "Invalid pressure parameter");
-    });
-
-    auto* bmp581CalibrationHandler = new AsyncCallbackJsonWebHandler(
+    auto* bmpCalibrationHandler = new AsyncCallbackJsonWebHandler(
         "/api/bmp581/calibrate",
-        [](AsyncWebServerRequest *request, JsonVariant& json) {
-            if (!json.is<JsonObject>()) {
-                request->send(400, "application/json",
-                    "{\"status\":\"rejected\",\"error_code\":\"INVALID_JSON_OBJECT\"}");
+        [this](AsyncWebServerRequest* request, JsonVariant& json) {
+            if (!authorizeMutation(request)) return;
+            if (!json.is<JsonObject>() ||
+                !json["reference_altitude_m"].is<float>()) {
+                sendJsonError(request, 400,
+                              "INVALID_REFERENCE_ALTITUDE");
                 return;
             }
-            JsonObject doc = json.as<JsonObject>();
-            if (!doc["reference_altitude_m"].is<float>()) {
-                request->send(400, "application/json",
-                    "{\"status\":\"rejected\",\"error_code\":\"INVALID_REFERENCE_ALTITUDE\"}");
+            const float reference =
+                json["reference_altitude_m"].as<float>();
+            if (!utils::bmp581_calibration::validReferenceAltitude(reference)) {
+                sendJsonError(request, 400, "REFERENCE_MUST_BE_13_6_M");
                 return;
             }
-            const float referenceAltitudeM =
-                doc["reference_altitude_m"].as<float>();
-            if (!utils::bmp581_calibration::validReferenceAltitude(
-                    referenceAltitudeM)) {
-                request->send(400, "application/json",
-                    "{\"status\":\"rejected\",\"error_code\":\"REFERENCE_MUST_BE_13_6_M\"}");
+            if (!sensorManager.startBmp581Calibration(reference)) {
+                sendJsonError(request, 409,
+                    "CALIBRATION_BUSY_OR_PRESSURE_FIELD_NOT_VALID");
                 return;
             }
-            if (!sensorManager.startBmp581Calibration(referenceAltitudeM)) {
-                request->send(409, "application/json",
-                    "{\"status\":\"rejected\",\"error_code\":\"CALIBRATION_BUSY_OR_PRESSURE_FIELD_NOT_VALID\"}");
-                return;
-            }
-            request->send(202, "application/json",
-                "{\"status\":\"started\",\"reference_altitude_m\":13.6,\"settle_seconds\":60,\"collection_seconds\":300}");
+            sendJsonResponse(request, 202,
+                "{\"status\":\"started\",\"message\":\"Calibration started\",\"reference_altitude_m\":13.6}");
         });
-    bmp581CalibrationHandler->setMethod(HTTP_POST);
-    bmp581CalibrationHandler->setMaxContentLength(128);
-    server_->addHandler(bmp581CalibrationHandler);
+    bmpCalibrationHandler->setMethod(HTTP_POST);
+    bmpCalibrationHandler->setMaxContentLength(128);
+    server_->addHandler(bmpCalibrationHandler);
 
-    server_->on("/download", HTTP_GET, [this](AsyncWebServerRequest *request){
-        if (!request->hasParam("file")) {
-            request->send(400, "text/plain", "Missing file parameter");
-            return;
-        }
-        String fileName = request->getParam("file")->value();
-        String fullPath = "/" + fileName;
-
-        // 指定されたファイルが存在しなければ404
-        if (!SD.exists(fullPath)) {
-            request->send(404, "text/plain", "File Not Found");
-            return;
-        }
-
-        // Wi-Fiモード中はSDへの新規書き込みが停止しているため、直接ファイルを送信して問題ない
-        String contentType = "text/csv";
-        if (fileName.endsWith(".zip")) {
-            contentType = "application/zip";
-        }
-        
-        AsyncWebServerResponse *response = request->beginResponse(SD, fullPath, contentType, true);
-        // ダウンロードが100%で完了しない現象（ESPAsyncWebServer + lwIPの既知の不具合）を回避するため
-        // 強制的にコネクションをクローズさせる
-        response->addHeader("Connection", "close");
-        request->send(response);
-    });
-
-    server_->on("/api/delete", HTTP_DELETE, [this](AsyncWebServerRequest *request){
-        if (!request->hasParam("file")) {
-            request->send(400, "text/plain", "Missing file parameter");
-            return;
-        }
-        String fileName = request->getParam("file")->value();
-        String fullPath = "/" + fileName;
-
-        if (fullPath == storageManager_.getCurrentFilename() || fileName == storageManager_.getCurrentFilename()) {
-            request->send(403, "text/plain", "Cannot delete currently recording file");
-            return;
-        }
-
-        storageManager_.lock();
-        if (SD.exists(fullPath)) {
-            SD.remove(fullPath);
-            storageManager_.unlock();
-            Logger::info("WebServer", "File deleted via HTTP: %s", fullPath.c_str());
-            request->send(200, "application/json", "{\"status\":\"deleted\"}");
-        } else {
-            storageManager_.unlock();
-            request->send(404, "text/plain", "File Not Found");
-        }
-    });
-    server_->on("/api/archive/manual", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL,
-        [this](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
-            JsonDocument doc;
-            DeserializationError error = deserializeJson(doc, data, len);
-            if (error || !doc.containsKey("files")) {
-                request->send(400, "text/plain", "Invalid JSON");
-                return;
-            }
-            
-            std::vector<String> filesToArchive;
-            JsonArray arr = doc["files"].as<JsonArray>();
-            for (JsonVariant v : arr) {
-                filesToArchive.push_back("/" + v.as<String>()); // ensure absolute path
-            }
-            
-            if (archiveManager_.startManualArchive(filesToArchive)) {
-                request->send(200);
-            } else {
-                request->send(400, "text/plain", "Archive already in progress or failed to start");
-            }
-    });
-
-    server_->on("/api/archive/cancel", HTTP_POST, [this](AsyncWebServerRequest *request){
-        archiveManager_.cancelArchive();
-        request->send(200);
-    });
-
-    server_->on("/api/archive/status", HTTP_GET, [this](AsyncWebServerRequest *request){
-        ArchiveStatus status = archiveManager_.getStatus();
-        JsonDocument doc;
-        doc["state"] = static_cast<int>(status.state);
-        doc["currentFile"] = status.currentFile;
-        doc["processedFiles"] = status.processedFiles;
-        doc["totalFiles"] = status.totalFiles;
-        doc["message"] = status.message;
-        
-        String response;
-        serializeJson(doc, response);
-        request->send(200, "application/json", response);
+    server_->onNotFound([this](AsyncWebServerRequest* request) {
+        if (!authorize(request)) return;
+        sendJsonError(request, 404, "NOT_FOUND");
     });
 }
 

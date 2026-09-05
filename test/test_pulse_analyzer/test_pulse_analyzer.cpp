@@ -1,5 +1,6 @@
 #include <unity.h>
 #include "utils/pulse_analyzer.h"
+#include "utils/ppg_timing.h"
 #include <cmath>
 
 void setUp(void) {}
@@ -148,6 +149,21 @@ void test_low_perfusion_blocks_spo2(void) {
     }
     // 低灌流ではSpO2が更新されず0のままであるべき
     TEST_ASSERT_LESS_THAN(1.0f, analyzer.getSpo2Percent());
+    TEST_ASSERT_LESS_THAN(1.0f, analyzer.getHeartRateBpm());
+    TEST_ASSERT_FALSE(analyzer.hasFreshResult(timeMs));
+}
+
+void test_fifo_samples_receive_distinct_timestamps(void) {
+    TEST_ASSERT_EQUAL_UINT32(970,
+        utils::ppg_timing::bufferedSampleTimestampMs(1000, 4, 0));
+    TEST_ASSERT_EQUAL_UINT32(980,
+        utils::ppg_timing::bufferedSampleTimestampMs(1000, 4, 1));
+    TEST_ASSERT_EQUAL_UINT32(990,
+        utils::ppg_timing::bufferedSampleTimestampMs(1000, 4, 2));
+    TEST_ASSERT_EQUAL_UINT32(1000,
+        utils::ppg_timing::bufferedSampleTimestampMs(1000, 4, 3));
+    TEST_ASSERT_EQUAL_UINT32(7,
+        utils::ppg_timing::droppedFromLibraryBuffer(10, 3));
 }
 
 // 10. R < 0.4 のクランプ処理テスト（SpO2 ≈ 100%）
@@ -175,6 +191,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_dpt_heart_rate_72bpm);
     RUN_TEST(test_dpt_ignores_harmonic);
     RUN_TEST(test_low_perfusion_blocks_spo2);
+    RUN_TEST(test_fifo_samples_receive_distinct_timestamps);
     RUN_TEST(test_r_ratio_clamp);
     return UNITY_END();
 }

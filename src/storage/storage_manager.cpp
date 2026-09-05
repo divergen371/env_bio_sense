@@ -11,7 +11,8 @@
 namespace storage {
 
 StorageManager::StorageManager()
-    : wal_(fram_), sdTransaction_(fram_), sdAvailable_(false), framAvailable_(false),
+    : wal_(fram_), sdTransaction_(fram_), ppgJournal_(fram_),
+      sdAvailable_(false), framAvailable_(false),
       lastSdInitAttempt_(0) {
     mutex_ = xSemaphoreCreateRecursiveMutex();
 }
@@ -89,6 +90,14 @@ bool StorageManager::begin() {
                         static_cast<unsigned long>(sdTransaction_.current().sequence),
                         currentFilename_.c_str());
                 }
+                if (framAvailable_) {
+                    const FramWalStatus ppgStatus = ppgJournal_.begin();
+                    ppgJournalAvailable_ = ppgStatus == FramWalStatus::Ready;
+                    if (!ppgJournalAvailable_) {
+                        services::Logger::error("StorageMgr",
+                            "PPG checkpoint journal unavailable; PPG sessions disabled without altering other FRAM data");
+                    }
+                }
                 services::Logger::info("StorageMgr",
                     "FRAM WAL loaded. boot=%u pending=%u dropped=%lu high_water=%u",
                     superblock_.bootCount, getPendingCount(),
@@ -106,6 +115,33 @@ bool StorageManager::begin() {
     initSdCard();
 
     return framAvailable_ || sdAvailable_;
+}
+
+bool StorageManager::getPpgCheckpoint(
+        FramPpgCheckpoint& checkpoint) const {
+    lock();
+    const bool available = framAvailable_ && ppgJournalAvailable_ &&
+        ppgJournal_.initialized();
+    if (available) checkpoint = ppgJournal_.current();
+    unlock();
+    return available;
+}
+
+bool StorageManager::savePpgCheckpoint(
+        const FramPpgCheckpoint& checkpoint) {
+    if (!framAvailable_ || !ppgJournalAvailable_) return false;
+    lock();
+    const bool saved = ppgJournal_.persist(checkpoint) == FramWalStatus::Ready;
+    unlock();
+    return saved;
+}
+
+bool StorageManager::clearPpgCheckpoint() {
+    if (!framAvailable_ || !ppgJournalAvailable_) return false;
+    lock();
+    const bool saved = ppgJournal_.clear() == FramWalStatus::Ready;
+    unlock();
+    return saved;
 }
 
 void StorageManager::initSuperblock() {
@@ -395,7 +431,9 @@ bool StorageManager::readEventSlot(uint16_t index, EventRecord& record) {
                      (code >= static_cast<uint16_t>(EventCode::FramRecordCorrupt) &&
                       code <= static_cast<uint16_t>(EventCode::FramCheckpointFailed)) ||
                      (code >= static_cast<uint16_t>(EventCode::PressureFieldUpdated) &&
-                      code <= static_cast<uint16_t>(EventCode::Bmp581CalibrationFailed));
+                      code <= static_cast<uint16_t>(EventCode::Bmp581CalibrationFailed)) ||
+                     (code >= static_cast<uint16_t>(EventCode::PpgSessionStarted) &&
+                      code <= static_cast<uint16_t>(EventCode::PpgStorageFailed));
     if (!knownCode) return false;
 
     const uint8_t* payload = reinterpret_cast<const uint8_t*>(&record.uptimeMs);

@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Env Bio Sense</title>
+  <link rel="stylesheet" href="app.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="app-header">
+    <div>
+      <p class="eyebrow">ENV BIO SENSE</p>
+      <h1>計測データ管理</h1>
+    </div>
+    <span id="connectionBadge" class="badge neutral">接続中</span>
+  </header>
+
+  <nav class="tabs" aria-label="画面切替">
+    <button class="tab active" data-view="status" type="button">状態</button>
+    <button class="tab" data-view="files" type="button">ファイル</button>
+    <button class="tab" data-view="maintenance" type="button">メンテナンス</button>
+  </nav>
+
+  <main>
+    <section id="view-status" class="view active" aria-labelledby="statusTitle">
+      <div class="section-heading">
+        <div><p class="eyebrow">OVERVIEW</p><h2 id="statusTitle">現在の状態</h2></div>
+        <button id="refreshStatus" class="secondary" type="button">更新</button>
+      </div>
+      <div class="status-grid">
+        <article class="card"><h3>記録バッファ</h3><p id="storageValue" class="metric">—</p><p id="storageDetail" class="muted">確認中</p></article>
+        <article class="card"><h3>PPGセッション</h3><p id="ppgValue" class="metric">—</p><p id="ppgDetail" class="muted">確認中</p></article>
+        <article class="card"><h3>高度</h3><p id="altitudeValue" class="metric">—</p><p id="altitudeDetail" class="muted">確認中</p></article>
+        <article class="card"><h3>AMeDAS気圧場</h3><p id="weatherValue" class="metric">—</p><p id="weatherDetail" class="muted">確認中</p></article>
+        <article class="card"><h3>現在地</h3><p id="locationValue" class="metric">—</p><p id="locationDetail" class="muted">確認中</p></article>
+        <article class="card"><h3>I²C</h3><p id="i2cValue" class="metric">—</p><p id="i2cDetail" class="muted">確認中</p></article>
+      </div>
+    </section>
+
+    <section id="view-files" class="view" aria-labelledby="filesTitle">
+      <div class="section-heading">
+        <div><p class="eyebrow">SD CARD</p><h2 id="filesTitle">ファイル</h2></div>
+        <button id="refreshFiles" class="secondary" type="button">一覧更新</button>
+      </div>
+      <div class="toolbar card">
+        <label>検索<input id="fileSearch" type="search" placeholder="日付・名前・パス"></label>
+        <label>種類<select id="fileType"><option value="all">すべて</option><option value="log">環境ログ</option><option value="ppg">PPG</option><option value="archive">ZIP</option><option value="diagnostic">診断</option></select></label>
+        <label>並び順<select id="fileSort"><option value="name_desc">名前・新しい順</option><option value="name_asc">名前・古い順</option><option value="size_desc">容量・大きい順</option><option value="size_asc">容量・小さい順</option></select></label>
+      </div>
+
+      <div class="bulk-bar card">
+        <div><strong id="selectionCount">0件選択</strong><span id="selectionSize" class="muted">0 B</span></div>
+        <div class="button-row">
+          <button id="selectPage" class="secondary" type="button">表示中を全選択</button>
+          <button id="clearSelection" class="secondary" type="button">選択解除</button>
+          <button id="downloadSelected" class="primary" type="button" disabled>選択をダウンロード</button>
+          <button id="deleteSelected" class="danger" type="button" disabled>選択を削除</button>
+        </div>
+      </div>
+
+      <div id="archiveNotice" class="notice hidden" role="status"></div>
+      <div class="table-wrap card">
+        <table>
+          <thead><tr><th class="check-cell"><span class="sr-only">選択</span></th><th>ファイル</th><th>種類</th><th>容量</th><th>状態</th><th>操作</th></tr></thead>
+          <tbody id="fileRows"><tr><td colspan="6" class="empty">読込中…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="pager">
+        <button id="previousPage" class="secondary" type="button">前へ</button>
+        <span id="pageStatus">—</span>
+        <button id="nextPage" class="secondary" type="button">次へ</button>
+      </div>
+    </section>
+
+    <section id="view-maintenance" class="view" aria-labelledby="maintenanceTitle">
+      <div class="section-heading"><div><p class="eyebrow">ADVANCED</p><h2 id="maintenanceTitle">メンテナンス</h2></div></div>
+      <p class="warning">計測条件や保存状態を変える操作です。目的と入力値を確認してから実行してください。</p>
+
+      <details class="card" open>
+        <summary>診断と日常操作</summary>
+        <div class="maintenance-body">
+          <div class="button-row">
+            <button id="syncTime" class="secondary" type="button">端末時刻を送信</button>
+            <button id="flushStorage" class="primary" type="button">FRAMをSDへFlush</button>
+            <a class="button secondary" href="/api/events" download="scd41_events.json">compact eventを取得</a>
+            <a class="button secondary" href="/api/i2c" target="_blank" rel="noopener">I²C詳細</a>
+          </div>
+          <p id="routineResult" class="result muted"></p>
+        </div>
+      </details>
+
+      <details class="card">
+        <summary>BMP581 高度校正</summary>
+        <div class="maintenance-body">
+          <p class="muted">既知標高13.6 mで約6分かけて統計校正します。</p>
+          <label>基準標高（m）<input id="bmpReference" type="number" value="13.6" step="0.1" readonly></label>
+          <button id="calibrateBmp" class="primary" type="button">校正を開始</button>
+          <p id="bmpResult" class="result muted"></p>
+        </div>
+      </details>
+
+      <details class="card">
+        <summary>SCD41 外部基準FRC</summary>
+        <div class="maintenance-body">
+          <p class="warning compact">信頼できる外部CO₂基準器がある場合だけ使用します。SCD41自身の値や「外気だから400 ppm」という推定は使えません。</p>
+          <label>外部基準（ppm）<input id="scdReference" type="number" min="400" max="5000" placeholder="例: 430"></label>
+          <label class="confirm"><input id="confirmFrc" type="checkbox"> 外部基準値であることを確認しました</label>
+          <button id="calibrateScd" class="primary" type="button">FRCを実行</button>
+          <p id="scdResult" class="result muted"></p>
+        </div>
+      </details>
+
+      <details class="card danger-zone">
+        <summary>SCD41 Factory Reset</summary>
+        <div class="maintenance-body">
+          <p class="warning compact">ユーザー設定と校正履歴を消去します。</p>
+          <label class="confirm"><input id="confirmReset" type="checkbox"> 消去されることを理解しました</label>
+          <button id="resetScd" class="danger" type="button">Factory Reset</button>
+          <p id="resetResult" class="result muted"></p>
+        </div>
+      </details>
+    </section>
+  </main>
+
+  <dialog id="chartDialog">
+    <div class="dialog-head"><h2 id="chartTitle">グラフ</h2><button id="closeChart" class="icon-button" type="button" aria-label="閉じる">×</button></div>
+    <label>系列<select id="chartMetric"></select></label>
+    <canvas id="chartCanvas" width="1000" height="480"></canvas>
+    <p id="chartMessage" class="muted"></p>
+  </dialog>
+
+  <div id="toast" class="toast hidden" role="status"></div>
+</body>
+</html>

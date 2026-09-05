@@ -1,39 +1,40 @@
-# SDカードリモートアクセスおよびログローテーション実装完了
+# SDカードリモートアクセス運用ガイド
 
-ご指示いただいた要件に基づき、すべての実装が完了しました！
+更新日: 2026-09-06
 
-## 1. 実装内容の概要
+## 接続
 
-1. **オンデマンドWi-Fi機能 (`services/wifi_manager`)**
-   - XIAO ESP32S3本体の **BOOTボタンを3秒間長押し** することで、Wi-Fiアクセスポイント（`ENV_SENSE_AP`）を立ち上げ・停止する機能を実装しました。
-   - 起動中は本体の青色LEDが点滅してWi-Fi稼働中であることを知らせます。
+1. 本体のActionButtonを3秒長押しして、オンデマンドWi-Fi APを起動する。
+2. `src/config/secrets.h`で設定した`WEB_AP_SSID`へ接続する。AP passwordは`WEB_ADMIN_PASSWORD`と共通である。
+3. `http://192.168.4.1`または`http://env.local`を開く。
+4. 認証画面へ`WEB_ADMIN_USER`と`WEB_ADMIN_PASSWORD`を入力する。
 
-2. **Webブラウザからのファイル閲覧・ダウンロード (`services/web_server_service`)**
-   - スマホからアクセスポイントに繋がり、ブラウザで `http://192.168.4.1` (ESP32-S3のデフォルトAP IP) にアクセスすると、SDカード内のCSVファイル一覧が表示されます。
-   - 画面を開いた瞬間に、**ブラウザのJavaScriptがスマホの現在時刻をESP32-S3に送信し、自動で時刻同期** を行います。
+固定の既定passwordは使用しない。`src/config/secrets.h.example`を複製した後、12文字以上、推奨16文字以上のランダムpasswordへ変更する。`src/config/secrets.h`はGit管理対象外である。
 
-3. **1日ごとのログローテーション (`storage/storage_manager`)**
-   - 時刻同期が完了すると、ログファイル名が `log_YYYYMMDD.csv`（例: `log_20231024.csv`）に切り替わります。
-   - 日付が変わると自動的に新しいファイルが作成されます。
-   - 未同期状態（電源投入直後など）は、一時的に `log_boot_XXX.csv` というファイルに記録され、データを欠損させない仕組みになっています。
+## 画面
 
-4. **排他制御と閲覧用スナップショット (`storage/storage_manager`)**
-   - センサの測定と記録タスクは、Wi-Fi動作中も止まらずに稼働し続けます。
-   - Webブラウザから「現在書き込み中の最新ログ」をダウンロードしようとすると、システムが自動的にその瞬間の内容を `log_view.csv` として安全にコピー（スナップショット）し、それを送信します。
-   - これにより、ファイルの破損やセンサ読み取りのフリーズを完全に防いでいます。
+- 「状態」: FRAM使用量、PPG保存状態、高度、AMeDAS、現在地、I²C errorを確認する。
+- 「ファイル」: SD rootと`/data/ppg`、`/data/system`を再帰表示する。検索、種類絞込み、名前／容量順、50件pageを利用できる。
+- 「メンテナンス」: 時刻、Flush、compact event、I²C詳細、BMP581校正、SCD41 FRC、Factory Resetを扱う。破壊的操作は確認を必要とする。
 
-## 2. 使い方（テスト方法）
+## ファイル操作
 
-1. 電源を入れると、通常通りセンサの測定とSD（FRAM経由）への書き込みが始まります。
-2. 基板上の **BOOTボタンを3秒間長押し** します。青色LEDが点滅し始めます。
-3. スマホのWi-Fi設定から `ENV_SENSE_AP` に接続します（パスワード: `12345678`）。
-4. ブラウザを開き `http://192.168.4.1` にアクセスします。
-5. 「システム時刻同期完了」の文字が出たら、ESP32-S3の時刻が合い、新しい日付のログへの記録が開始されます。
-6. 一覧からダウンロードを試し、問題なくCSVが保存されることを確認してください。
-7. 再度 **BOOTボタンを3秒間長押し** するとWi-FiがOFFになり、通常動作に戻ります。
+- 表示中の操作可能ファイルを一括選択できる。選択はpageを移動しても保持する。
+- 1件の取得は直接downloadする。複数件は装置内で1本のZIPを作成し、全entryの展開CRCとrename後の再読込み検証に成功してからdownloadする。
+- 選択削除は対象件数と合計容量をまとめて確認し、サーバーが件別に削除／保護結果を返す。
+- 現在書込み対象の環境CSV、記録中PPG session、Archive処理中の入力は削除・Archive対象から除外する。
+- 現在の環境CSVを取得する場合、FRAMを明示的にFlushしてからファイルを開く。Wi-Fi AP中は通常Flushが停止しているため、その境界以降はdownload完了まで対象CSVが変化しない。
+- PPG記録中の`raw.ppg.tmp`等は一覧へ公開せず、確定後または復旧後のファイルだけを操作対象とする。
 
-## 3. 次のステップ
+## 安全性
 
-これで基本的なリモートアクセス機能が完成しました。必要に応じてOLED画面（DisplayManager）にも「Wi-Fi AP稼働中」のアイコンや現在のIPアドレスを表示する改修を追加するとさらに使いやすくなると思います。
+- 全画面、API、downloadでDigest認証を要求する。
+- POST操作は起動ごとに変わる128 bit CSRF tokenを要求する。
+- ファイルpathは許可文字、拡張子、root、長さをサーバー側で検査し、`..`、encoded separator、未知directory、`.tmp`を拒否する。
+- UIは外部CDNを使わない。APがInternetへ接続されていなくても、一覧と簡易CSV graphが動作する。
+- HTML、CSS、JavaScriptの編集元は`web/`へ分離した。PlatformIOのpre-buildで決定的gzip dataを`include/generated/web_assets.h`へ生成し、単一firmware配布を維持する。
+- stale UIを避けるため、Web assetとAPIへ`Cache-Control: no-store`を付ける。
 
-実機でビルド・動作確認をお願いいたします。問題がなければ本タスクはクローズとなります！
+## 終了
+
+ActionButtonを再度3秒長押ししてAPを停止する。環境WALの通常SD Flushが再開し、AMeDAS／NTPのSTA接続も再び利用可能になる。

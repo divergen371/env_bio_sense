@@ -143,7 +143,8 @@ struct EnvironmentData {
 enum class PpgState : uint8_t {
     NoFinger,
     Calibrating,
-    Measuring
+    Measuring,
+    Unavailable
 };
 
 struct PpgData {
@@ -160,6 +161,10 @@ struct PpgData {
     bool calculatedValid {};
     bool signalPoor {false}; // アプローチA: 波形品質フラグ
     uint32_t signalAmplitude {0};
+    uint32_t droppedSamples {0};
+    uint32_t fifoOverflows {0};
+    uint16_t redLedCurrentX10Ma {0};
+    uint16_t irLedCurrentX10Ma {0};
 };
 
 enum class TimeSource : uint8_t {
