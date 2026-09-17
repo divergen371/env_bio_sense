@@ -4,6 +4,7 @@
 #include "hal/clock.h"
 #include "hal/i2c_bus.h"
 #include "services/logger.h"
+#include "services/io_probe.h"
 #include "services/sensor_manager.h"
 #include "services/weather_service.h"
 #include "services/web_security.h"
@@ -15,6 +16,8 @@
 #include <esp_system.h>
 #include <memory>
 #include <vector>
+#include <freertos/semphr.h>
+#include <freertos/task.h>
 
 extern services::WeatherService weatherService;
 extern services::SensorManager sensorManager;
@@ -145,15 +148,17 @@ void sendAsset(AsyncWebServerRequest* request, const char* contentType,
 }
 
 void collectVisibleFiles(File& directory, std::vector<ListedFile>& output,
-                         bool& truncated, uint8_t depth) {
+                         bool& truncated, uint8_t depth, IoProbe& probe) {
     if (!directory || depth > 5 || output.size() >= MAX_LISTED_FILES) {
         truncated = output.size() >= MAX_LISTED_FILES;
         return;
     }
+    probe.add(IoProbe::Metric::Directories);
     File child = directory.openNextFile();
     while (child) {
+        probe.add(IoProbe::Metric::Entries);
         if (child.isDirectory()) {
-            collectVisibleFiles(child, output, truncated, depth + 1);
+            collectVisibleFiles(child, output, truncated, depth + 1, probe);
         } else {
             const String rawPath = child.path();
             char normalized[web_security::MAX_DATA_PATH + 1] {};
@@ -166,6 +171,7 @@ void collectVisibleFiles(File& directory, std::vector<ListedFile>& output,
                 item.size = child.size();
                 item.modified = child.getLastWrite();
                 output.push_back(item);
+                probe.add(IoProbe::Metric::Files);
                 if (output.size() >= MAX_LISTED_FILES) truncated = true;
             }
         }
@@ -199,6 +205,21 @@ long queryLong(AsyncWebServerRequest* request, const char* name,
 
 } // namespace
 
+struct WebServerService::FileIndexState {
+    SemaphoreHandle_t mutex {xSemaphoreCreateMutex()};
+    TaskHandle_t task {nullptr};
+    std::vector<ListedFile> files;
+    bool ready {false};
+    bool busy {false};
+    bool failed {false};
+    bool truncated {false};
+    uint32_t generation {0};
+
+    ~FileIndexState() {
+        if (mutex) vSemaphoreDelete(mutex);
+    }
+};
+
 WebServerService::WebServerService(
         storage::StorageManager& storageManager,
         ArchiveManager& archiveManager,
@@ -209,6 +230,54 @@ WebServerService::WebServerService(
       locationService_(locationService),
       ppgSessionManager_(ppgSessionManager) {
     server_.reset(new AsyncWebServer(80));
+    fileIndex_.reset(new FileIndexState());
+}
+
+WebServerService::~WebServerService() = default;
+
+void WebServerService::fileIndexTaskEntry(void* context) {
+    static_cast<WebServerService*>(context)->runFileIndexTask();
+}
+
+void WebServerService::requestFileIndexRefresh() {
+    if (!fileIndex_ || !fileIndex_->mutex || !fileIndex_->task) return;
+    xSemaphoreTake(fileIndex_->mutex, portMAX_DELAY);
+    const bool start = !fileIndex_->busy;
+    if (start) {
+        fileIndex_->busy = true;
+        fileIndex_->failed = false;
+    }
+    xSemaphoreGive(fileIndex_->mutex);
+    if (start) xTaskNotifyGive(fileIndex_->task);
+}
+
+void WebServerService::runFileIndexTask() {
+    while (true) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        IoProbe probe("file_index.refresh", 0);
+        std::vector<ListedFile> files;
+        files.reserve(96);
+        bool truncated = false;
+        probe.stage(IoProbe::Stage::Wait);
+        storageManager_.lock("FileIndexTask.scan");
+        probe.stage(IoProbe::Stage::Open);
+        File root = SD.open("/");
+        const bool opened = static_cast<bool>(root);
+        probe.stage(IoProbe::Stage::Scan);
+        if (opened) collectVisibleFiles(root, files, truncated, 0, probe);
+        probe.stage(IoProbe::Stage::Close);
+        if (root) root.close();
+        storageManager_.unlock();
+
+        xSemaphoreTake(fileIndex_->mutex, portMAX_DELAY);
+        if (opened) fileIndex_->files.swap(files);
+        fileIndex_->ready = opened;
+        fileIndex_->failed = !opened;
+        fileIndex_->truncated = truncated;
+        fileIndex_->busy = false;
+        ++fileIndex_->generation;
+        xSemaphoreGive(fileIndex_->mutex);
+    }
 }
 
 bool WebServerService::authorize(AsyncWebServerRequest* request) const {
@@ -243,32 +312,45 @@ void WebServerService::begin() {
         static_cast<unsigned long>(randomWords[2]),
         static_cast<unsigned long>(randomWords[3]));
     setupRoutes();
+    if (fileIndex_ && !fileIndex_->task) {
+        if (xTaskCreatePinnedToCore(fileIndexTaskEntry, "FileIndexTask", 8192,
+                this, 1, &fileIndex_->task, 0) != pdPASS) {
+            Logger::error("WebServer", "File index worker creation failed");
+        }
+    }
     server_->begin();
     Logger::info("WebServer", "Authenticated server started on port 80");
 }
 
 void WebServerService::setupRoutes() {
     server_->on("/", HTTP_GET, [this](AsyncWebServerRequest* request) {
+        IoProbe probe("web.asset.index", 0);
         if (!authorize(request)) return;
+        probe.stage(IoProbe::Stage::Send);
         sendAsset(request, "text/html; charset=utf-8",
                   web_assets::INDEX_HTML_GZ,
                   web_assets::INDEX_HTML_GZ_SIZE);
     });
     server_->on("/app.css", HTTP_GET,
         [this](AsyncWebServerRequest* request) {
+            IoProbe probe("web.asset.css", 0);
             if (!authorize(request)) return;
+            probe.stage(IoProbe::Stage::Send);
             sendAsset(request, "text/css; charset=utf-8",
                       web_assets::APP_CSS_GZ, web_assets::APP_CSS_GZ_SIZE);
         });
     server_->on("/app.js", HTTP_GET,
         [this](AsyncWebServerRequest* request) {
+            IoProbe probe("web.asset.js", 0);
             if (!authorize(request)) return;
+            probe.stage(IoProbe::Stage::Send);
             sendAsset(request, "application/javascript; charset=utf-8",
                       web_assets::APP_JS_GZ, web_assets::APP_JS_GZ_SIZE);
         });
 
     server_->on("/api/session", HTTP_GET,
         [this](AsyncWebServerRequest* request) {
+            IoProbe probe("web.session", 0);
             if (!authorize(request)) return;
             const core::TimeSnapshot clock = hal::Clock::snapshot();
             JsonDocument document;
@@ -277,6 +359,8 @@ void WebServerService::setupRoutes() {
             document["clock_source"] = timeSourceName(clock.source);
             String body;
             serializeJson(document, body);
+            probe.add(IoProbe::Metric::Bytes, body.length());
+            probe.stage(IoProbe::Stage::Send);
             AsyncWebServerResponse* response = request->beginResponse(
                 200, "application/json", body);
             addSecurityHeaders(response);
@@ -285,6 +369,7 @@ void WebServerService::setupRoutes() {
 
     server_->on("/api/status", HTTP_GET,
         [this](AsyncWebServerRequest* request) {
+            IoProbe probe("web.status", 0);
             if (!authorize(request)) return;
             const storage::FramWalStats wal = storageManager_.getWalStats();
             const hal::I2cDiagnosticCounters i2c =
@@ -311,6 +396,7 @@ void WebServerService::setupRoutes() {
 
     server_->on("/api/location", HTTP_GET,
         [this](AsyncWebServerRequest* request) {
+            IoProbe probe("web.location", 0);
             if (!authorize(request)) return;
             const core::DeviceLocation location =
                 locationService_.current(millis());
@@ -340,6 +426,7 @@ void WebServerService::setupRoutes() {
 
     server_->on("/api/weather", HTTP_GET,
         [this](AsyncWebServerRequest* request) {
+            IoProbe probe("web.weather", 0);
             if (!authorize(request)) return;
             const AmedasStatus status = weatherService.status(millis());
             const bool hasPressure =
@@ -385,6 +472,7 @@ void WebServerService::setupRoutes() {
 
     server_->on("/api/altitude", HTTP_GET,
         [this](AsyncWebServerRequest* request) {
+            IoProbe probe("web.altitude", 0);
             if (!authorize(request)) return;
             const core::SensorSnapshot snapshot = sensorManager.snapshot();
             const core::AltitudeTelemetry& altitude =
@@ -424,6 +512,7 @@ void WebServerService::setupRoutes() {
 
     server_->on("/api/ppg", HTTP_GET,
         [this](AsyncWebServerRequest* request) {
+            IoProbe probe("web.ppg", 0);
             if (!authorize(request)) return;
             const PpgSessionStatus status = ppgSessionManager_.status();
             JsonDocument document;
@@ -445,15 +534,43 @@ void WebServerService::setupRoutes() {
 
     server_->on("/api/files", HTTP_GET,
         [this](AsyncWebServerRequest* request) {
+            IoProbe probe("web.files", 0);
+            probe.sampleHeap();
             if (!authorize(request)) return;
             std::vector<ListedFile> files;
-            files.reserve(96);
             bool truncated = false;
-            storageManager_.lock();
-            File root = SD.open("/");
-            if (root) collectVisibleFiles(root, files, truncated, 0);
-            if (root) root.close();
-            storageManager_.unlock();
+            bool ready = false;
+            bool busy = false;
+            bool failed = false;
+            uint32_t generation = 0;
+            const bool refresh = request->hasParam("refresh") &&
+                request->getParam("refresh")->value() == "1";
+
+            xSemaphoreTake(fileIndex_->mutex, portMAX_DELAY);
+            ready = fileIndex_->ready;
+            xSemaphoreGive(fileIndex_->mutex);
+            if (refresh || !ready) requestFileIndexRefresh();
+
+            probe.stage(IoProbe::Stage::Snapshot);
+            xSemaphoreTake(fileIndex_->mutex, portMAX_DELAY);
+            ready = fileIndex_->ready;
+            busy = fileIndex_->busy;
+            failed = fileIndex_->failed;
+            truncated = fileIndex_->truncated;
+            generation = fileIndex_->generation;
+            if (ready) files = fileIndex_->files;
+            xSemaphoreGive(fileIndex_->mutex);
+
+            if (!ready) {
+                JsonDocument pending;
+                pending["status"] = failed ? "failed" : "building";
+                pending["retry_after_ms"] = 750;
+                pending["generation"] = generation;
+                String body;
+                serializeJson(pending, body);
+                sendJsonResponse(request, failed ? 503 : 202, body);
+                return;
+            }
 
             const String currentLog = storageManager_.getCurrentFilename();
             const PpgSessionStatus ppg = ppgSessionManager_.status();
@@ -463,6 +580,7 @@ void WebServerService::setupRoutes() {
                 file.archiveBusy = archiveManager_.isFileBusy(file.path);
             }
 
+            probe.stage(IoProbe::Stage::Filter);
             String query = request->hasParam("q")
                 ? request->getParam("q")->value() : "";
             String type = request->hasParam("type")
@@ -481,6 +599,8 @@ void WebServerService::setupRoutes() {
                 ? request->getParam("sort")->value() : "name";
             const bool ascending = request->hasParam("order") &&
                 request->getParam("order")->value() == "asc";
+            probe.sampleHeap();
+            probe.stage(IoProbe::Stage::Sort);
             std::sort(filtered.begin(), filtered.end(),
                 [sort, ascending](const ListedFile& a, const ListedFile& b) {
                     int comparison = 0;
@@ -504,36 +624,41 @@ void WebServerService::setupRoutes() {
             const size_t first = std::min(total, (page - 1) * limit);
             const size_t last = std::min(total, first + limit);
 
+            probe.stage(IoProbe::Stage::Json);
             AsyncResponseStream* response =
                 request->beginResponseStream("application/json", 12288);
-            response->printf(
-                "{\"page\":%u,\"page_count\":%u,\"total\":%u,\"truncated\":%s,\"files\":[",
+            probe.add(IoProbe::Metric::Bytes, response->printf(
+                "{\"page\":%u,\"page_count\":%u,\"total\":%u,\"truncated\":%s,\"refreshing\":%s,\"generation\":%lu,\"files\":[",
                 static_cast<unsigned>(page),
                 static_cast<unsigned>(pageCount),
-                static_cast<unsigned>(total), truncated ? "true" : "false");
+                static_cast<unsigned>(total), truncated ? "true" : "false",
+                busy ? "true" : "false", static_cast<unsigned long>(generation)));
             for (size_t i = first; i < last; ++i) {
                 const ListedFile& file = filtered[i];
-                if (i != first) response->print(',');
+                if (i != first) probe.add(IoProbe::Metric::Bytes, response->print(','));
                 const bool locked = file.current || file.activePpg ||
                     file.archiveBusy;
                 const bool selectable = !locked;
                 const bool downloadable = !file.activePpg;
-                response->printf(
+                probe.add(IoProbe::Metric::Bytes, response->printf(
                     "{\"path\":\"%s\",\"name\":\"%s\",\"type\":\"%s\",\"size\":%u,\"modified\":%lld,\"locked\":%s,\"selectable\":%s,\"downloadable\":%s}",
                     file.path.c_str(), file.name.c_str(), file.type.c_str(),
                     static_cast<unsigned>(file.size),
                     static_cast<long long>(file.modified),
                     locked ? "true" : "false",
                     selectable ? "true" : "false",
-                    downloadable ? "true" : "false");
+                    downloadable ? "true" : "false"));
             }
-            response->print("]}");
+            probe.add(IoProbe::Metric::Bytes, response->print("]}"));
+            probe.sampleHeap();
             addSecurityHeaders(response);
+            probe.stage(IoProbe::Stage::Send);
             request->send(response);
         });
 
     server_->on("/download", HTTP_GET,
         [this](AsyncWebServerRequest* request) {
+            IoProbe probe("web.download");
             if (!authorize(request)) return;
             if (!request->hasParam("file")) {
                 sendJsonError(request, 400, "MISSING_FILE");
@@ -698,6 +823,7 @@ void WebServerService::setupRoutes() {
 
     server_->on("/api/flush", HTTP_POST,
         [this](AsyncWebServerRequest* request) {
+            IoProbe probe("web.flush");
             if (!authorizeMutation(request)) return;
             storageManager_.forceFlush();
             sendJsonResponse(request, 200, "{\"status\":\"ok\"}");

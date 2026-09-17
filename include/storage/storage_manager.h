@@ -24,8 +24,9 @@ public:
     // センサ更新の記録 (FRAMへの追加)
     bool appendRecord(const core::SensorSnapshot& snapshot, uint32_t uptimeMs);
 
-    // 未flushレコードのSDへの書き出し (バッチ処理)
-    void flushPendingToSd();
+    // 未flushレコードのSDへの書き出し。1回の呼出しで処理する件数を
+    // 制限し、record境界でmutexを解放できるようにする。
+    void flushPendingToSd(uint16_t maxRecords = 1);
 
     bool isSdAvailable() const { return sdAvailable_.load(); }
     bool isFramAvailable() const { return framAvailable_.load(); }
@@ -75,7 +76,8 @@ public:
     bool setBmp581Calibration(float offsetHpa, uint32_t epoch, float tempC, float slpHpa);
 
     // スレッドセーフなアクセスを提供するため
-    void lock() const;
+    // GCC evaluates this default at the call site, including existing callers.
+    void lock(const char* caller = __builtin_FUNCTION()) const;
     void unlock() const;
 
 private:

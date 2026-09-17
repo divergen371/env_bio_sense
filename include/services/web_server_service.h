@@ -15,6 +15,7 @@ public:
                      ArchiveManager& archiveManager,
                      LocationService& locationService,
                      PpgSessionManager& ppgSessionManager);
+    ~WebServerService();
     void begin();
 
 private:
@@ -23,11 +24,16 @@ private:
     LocationService& locationService_;
     PpgSessionManager& ppgSessionManager_;
     std::unique_ptr<AsyncWebServer> server_;
+    struct FileIndexState;
+    std::unique_ptr<FileIndexState> fileIndex_;
     char csrfToken_[33] {};
 
     void setupRoutes();
     bool authorize(AsyncWebServerRequest* request) const;
     bool authorizeMutation(AsyncWebServerRequest* request) const;
+    void requestFileIndexRefresh();
+    static void fileIndexTaskEntry(void* context);
+    void runFileIndexTask();
 };
 
 } // namespace services

@@ -2,6 +2,7 @@
 #include "hal/pins.h"
 #include "hal/i2c_bus.h"
 #include "services/logger.h"
+#include "services/io_probe.h"
 #include "services/sensor_manager.h"
 #include "services/display_manager.h"
 #include "storage/storage_manager.h"
@@ -34,14 +35,17 @@ void weatherTask(void* pvParameters) {
 }
 
 void storageTask(void* pvParameters) {
-    uint32_t lastEnvironmentFlushMs = 0;
+    uint32_t lastEnvironmentFlushAttemptMs = 0;
     uint32_t lastStackReportMs = 0;
     while (true) {
         const uint32_t nowMs = millis();
         ppgSessionManager.update(sensorManager.snapshot(), nowMs);
-        if (nowMs - lastEnvironmentFlushMs >= 5000u) {
-            lastEnvironmentFlushMs = nowMs;
-            storageManager.flushPendingToSd();
+        // One verified record costs roughly 0.5-0.6 s on the measured SD.
+        // Retry frequently enough to drain a backlog, but release the Storage
+        // mutex after every record so loopTask and PPG servicing can run.
+        if (nowMs - lastEnvironmentFlushAttemptMs >= 100u) {
+            lastEnvironmentFlushAttemptMs = nowMs;
+            storageManager.flushPendingToSd(1);
             if (lastStackReportMs == 0 ||
                 nowMs - lastStackReportMs >= 60000u) {
                 lastStackReportMs = nowMs;
@@ -75,6 +79,7 @@ void setup() {
     services::Logger::info("MAIN", "");
     services::Logger::info("MAIN", "XIAO ESP32S3 sensor station");
     services::Logger::info("MAIN", "----------------------------");
+    services::IoProbe::beginReporter();
 
     pinMode(hal::pins::BMP5_INT, INPUT_PULLUP);
     pinMode(hal::pins::USER_LED, OUTPUT);
@@ -121,6 +126,7 @@ void setup() {
 }
 
 void loop() {
+    services::IoProbe::loopHeartbeat();
     static uint32_t previousDisplayMs = 0;
     static uint32_t previousSensorMs = 0;
     uint32_t nowMs = millis();
@@ -169,7 +175,9 @@ void loop() {
 
     // 時刻同期サービス(NTPフォールバック)の更新
     // ※SensorManagerの内部実装に立ち入らずグローバルに更新できるようにする
-    services::TimeManager::update(nowMs, sensorManager.status().timeSource, sensorManager.getGnssTimeSyncService());
+    services::TimeManager::update(
+        nowMs, sensorManager.status().timeSource,
+        sensorManager.getGnssTimeSyncService(), wifiManager.isOn());
 
     static uint32_t previousLogMs = 0;
     // 2000msごとにPPGの計算結果(HR/SpO2)または生データをシリアルに出力

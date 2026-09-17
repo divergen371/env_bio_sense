@@ -19,7 +19,23 @@ void TimeManager::begin() {
     Logger::info("NTP", "TimeManager initialized (NTP fallback enabled after %ums)", gnssGraceBeforeNtpMs_);
 }
 
-void TimeManager::update(uint32_t nowMs, core::TimeSource currentSource, GnssTimeSyncService* timeSyncService) {
+void TimeManager::update(uint32_t nowMs, core::TimeSource currentSource,
+                         GnssTimeSyncService* timeSyncService,
+                         bool accessPointActive) {
+    // The maintenance AP owns the radio while it is active. Starting the NTP
+    // STA path here would replace WIFI_AP with WIFI_STA, and its cleanup would
+    // subsequently force WIFI_OFF.
+    if (accessPointActive) {
+        if (ntpRunning_) {
+            Logger::warn("NTP",
+                "NTP fallback paused because the maintenance AP is active");
+            ntpRunning_ = false;
+            ntpConnected_ = false;
+            ntpStartMs_ = 0;
+        }
+        return;
+    }
+
     // すでにGNSSや手動で同期済みならNTPは試行しない
     if (currentSource == core::TimeSource::Gnss || currentSource == core::TimeSource::Manual) {
         return;

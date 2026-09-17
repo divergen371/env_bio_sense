@@ -9,7 +9,9 @@ namespace services {
 class TimeManager {
 public:
     static void begin();
-    static void update(uint32_t nowMs, core::TimeSource currentSource, GnssTimeSyncService* timeSyncService);
+    static void update(uint32_t nowMs, core::TimeSource currentSource,
+                       GnssTimeSyncService* timeSyncService,
+                       bool accessPointActive);
 
 private:
     static bool enableNtpFallback_;

@@ -15,9 +15,21 @@ const app = {
 };
 
 const $ = (id) => document.getElementById(id);
+// R01 isolation only; no query parameter means the existing startup is unchanged.
+const ioProbeMode = new URLSearchParams(window.location.search).get('io_probe');
+const ioProbeActive = ioProbeMode === 'status' || ioProbeMode === 'files';
 
 async function api(path, options = {}) {
   const method = (options.method || 'GET').toUpperCase();
+  if (ioProbeActive) {
+    const route = path.split('?')[0];
+    const allowed = ioProbeMode === 'files'
+      ? ['/api/session', '/api/files']
+      : ['/api/session', '/api/status', '/api/location', '/api/weather', '/api/altitude', '/api/ppg'];
+    if (method !== 'GET' || !allowed.includes(route)) {
+      throw new Error('調査モードではこの操作は停止しています。通常URLで開き直してください。');
+    }
+  }
   const headers = new Headers(options.headers || {});
   if (!['GET', 'HEAD'].includes(method)) {
     headers.set('X-CSRF-Token', app.csrf);
@@ -255,11 +267,18 @@ function renderFiles(data) {
   updateSelection();
 }
 
-async function loadFiles(resetPage = false) {
+async function loadFiles(resetPage = false, refresh = false) {
   if (resetPage) app.page = 1;
   try {
-    const response = await api(`/api/files?${queryString()}`);
-    renderFiles(await response.json());
+    const suffix = refresh ? `${queryString()}&refresh=1` : queryString();
+    const response = await api(`/api/files?${suffix}`);
+    const data = await response.json();
+    if (response.status === 202 || data.status === 'building') {
+      $('fileRows').innerHTML = '<tr><td colspan="6" class="empty">一覧を作成中…</td></tr>';
+      window.setTimeout(() => loadFiles(false, false), data.retry_after_ms || 750);
+      return;
+    }
+    renderFiles(data);
   } catch (error) {
     $('fileRows').replaceChildren();
     const row = document.createElement('tr');
@@ -441,7 +460,7 @@ async function postMaintenance(path, body, resultId) {
 
 function setupActions() {
   $('refreshStatus').addEventListener('click', loadStatus);
-  $('refreshFiles').addEventListener('click', () => loadFiles());
+  $('refreshFiles').addEventListener('click', () => loadFiles(false, true));
   $('fileSearch').addEventListener('input', () => {
     window.clearTimeout(setupActions.searchTimer);
     setupActions.searchTimer = window.setTimeout(() => loadFiles(true), 300);
@@ -494,9 +513,27 @@ async function boot() {
     const session = await response.json();
     app.csrf = session.csrf_token;
     setConnection(true, '接続済');
-    if (!session.clock_valid) await syncTime(true);
-    await Promise.all([loadStatus(), loadFiles()]);
-    window.setInterval(loadStatus, 10000);
+    if (ioProbeActive) {
+      // No auto time write or status timer: capture only the selected routes.
+      showToast(`I/O調査: ${ioProbeMode === 'files' ? 'ファイル一覧のみ' : '状態取得のみ'}。自動更新・変更操作は停止中。`, 15000);
+      if (ioProbeMode === 'files') {
+        document.querySelectorAll('.tab').forEach((button) => {
+          button.classList.toggle('active', button.dataset.view === 'files');
+        });
+        document.querySelectorAll('.view').forEach((view) => {
+          view.classList.toggle('active', view.id === 'view-files');
+        });
+        await loadFiles();
+      } else {
+        await loadStatus();
+      }
+    } else {
+      if (!session.clock_valid) await syncTime(true);
+      // Do not scan the SD card during every initial load/F5. The file tab
+      // requests its listing only when the user opens it.
+      await loadStatus();
+      window.setInterval(loadStatus, 10000);
+    }
   } catch (error) {
     setConnection(false, '認証・接続エラー');
     showToast(`初期化失敗: ${error.message}`, 8000);

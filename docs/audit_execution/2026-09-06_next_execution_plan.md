@@ -2,15 +2,15 @@
 
 日付: 2026-09-06  
 対象: 監査中の全27件  
-状態: 2026-09-06の調査を終了。次回はR01から再開する。  
+状態: 2026-09-18にR02実機計測とD01を完了。M02のrecord単位flush分割は実装・自動確認PASS、実機backlog Gate待ち。R01のWeb発火route分離計測は継続する。
 原則: 調査結果を固定する前に設計を確定せず、設計判断を記録する前に本修正へ入らない。
 
 ## 現在地
 
 - 再修正または追加調査が必要: P0-03、P0-06、P1-01、P1-02、P1-06。
 - 実装済みで実機Gate待ち: 上記以外の22件。
-- P0-06はWebUI初回接続、F5、ファイル「一覧更新」の3経路で再現し、発火routeを`GET /api/files`へ確定した。route内の停止段階は未確定。
-- P0-03は旧FRAM 75件のflushにより約29.3秒メインloopが停止した。
+- P0-06は二つの経路を確認した。第一にNTP fallbackがAP稼働を認識せず`WIFI_STA`、続いて`WIFI_OFF`へ切り替えるため、Web操作中に見かけ上APが強制解除される。AP稼働中はNTPのradio操作を停止する修正を実装した。第二に`GET /api/files`の同期SD走査／AsyncTCP Watchdog候補は残っており、worker/cache化と分離Gateが必要。
+- P0-03は旧実装でFRAM 180件flushがStorage mutexを107.154秒保持し、main loopを107.220秒停止させた。M02書込み後の通常記録では1件ずつ処理され、loop gapは最大0.893秒まで改善したが、1 recordのmutex保持は最大1.186秒。backlog／PPG Gateとappend queue化が残る。
 - P1-01／P1-02はPPS周期異常108回、UTC不一致84回、最短周期1.777 msを確認した。
 - P1-06は初回smokeのOLED lock timeout 9回に加え、Web試験画面でI²C lock timeout 284、communication error 0を確認した。
 - P0-05は約117秒の短時間Gateを通過し、StorageTask最小stack残量は3,200 bytesだった。負荷・長時間Gateは未完了。
@@ -22,7 +22,7 @@
 優先順は次のとおり。
 
 1. P0-03 保存処理の長時間排他
-2. P0-06 `/api/files`による`async_tcp` Watchdog再起動
+2. P0-06 Webアクセス時の`async_tcp` Watchdog再起動（発火route分離中）
 3. P1-01／P1-02 PPS入力とClock反映
 4. P1-06 I²C lock timeout増加
 5. 実装済み22件の機能別Gate
@@ -31,6 +31,11 @@
 P0-03とP0-06はStorageManagerのI/O・mutex設計を共有するため、別々に場当たり修正せず、R01/R02の結果をD01で統合する。
 
 ## Stage R: 調査
+
+2026-09-10追記: 計測実装、静的ownership調査、実機手順は
+[R01/R02 I/O調査](2026-09-10_r01_r02_io_probe.md)を参照。
+2026-09-18追記: 180件の実機計測、R02因果判定、D01決定は
+[R02実機計測とD01](2026-09-18_r02_measurement_d01_decision.md)を参照。
 
 ### R01 `/api/files`停止段階の特定
 
@@ -120,14 +125,14 @@ P0-03とP0-06はStorageManagerのI/O・mutex設計を共有するため、別々
 
 ### D01 Storage実行モデル
 
-入力: R01、R02  
+入力: R01（継続）、R02（2026-09-18完了）
 対象: P0-03、P0-06を中心にStorage関連項目
 
-第一候補:
+確定方針:
 
 - 遅いSD処理を優先度付きStorage workerへ集約し、main loopとAsyncTCP callbackは要求をqueueへ入れるだけにする。
 - 環境record／PPG継続性を高優先、flushを中優先、file index／Archiveを低優先とする。
-- flushは1回の件数または時間budgetで中断し、record境界ごとにdata-integrity contractを完了してから次へ進む。
+- 通常flushは1回1 recordとし、record境界ごとにdata-integrity contractを完了してmutexを解放する。backlog中は100 ms後に次を試行する。
 - Web callbackでは`portMAX_DELAY`を使わず、cache取得またはjob受付だけを行う。
 
 判断項目:

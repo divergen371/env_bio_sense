@@ -1,5 +1,6 @@
 #include "storage/storage_manager.h"
 #include "services/logger.h"
+#include "services/io_probe.h"
 #include "hal/pins.h"
 #include "hal/clock.h"
 #include "storage/csv_v7.h"
@@ -9,6 +10,7 @@
 #include <cstring>
 
 namespace storage {
+using services::IoProbe;
 
 StorageManager::StorageManager()
     : wal_(fram_), sdTransaction_(fram_), ppgJournal_(fram_),
@@ -18,6 +20,7 @@ StorageManager::StorageManager()
 }
 
 void StorageManager::forceFlush() {
+    IoProbe probe("storage.force_flush");
     if (!framAvailable_) return;
     
     lock();
@@ -26,21 +29,30 @@ void StorageManager::forceFlush() {
     unlock();
     
     // フラッシュ処理（内部でロックとローテーション、SD書き込みが行われる）
-    flushPendingToSd();
+    // Keep the existing manual-flush contract for now. Web-triggered flushes
+    // are moved off the AsyncTCP callback in M03; normal StorageTask draining
+    // is bounded to one record per call.
+    flushPendingToSd(UINT16_MAX);
     
     lock();
     wifiActive_ = wasWifiActive;
     unlock();
 }
 
-void StorageManager::lock() const {
+void StorageManager::lock(const char* caller) const {
     if (mutex_) {
+        IoProbe probe("storage.lock", 500000);
+        probe.stage(IoProbe::Stage::Wait);
         xSemaphoreTakeRecursive(mutex_, portMAX_DELAY);
+        IoProbe::storageAcquired(caller);
     }
 }
 
 void StorageManager::unlock() const {
     if (mutex_) {
+        // Clear diagnostics before giving the mutex: a new owner must not be
+        // erased by this task after it has acquired the real lock.
+        IoProbe::storageReleasing();
         xSemaphoreGiveRecursive(mutex_);
     }
 }
@@ -532,7 +544,10 @@ size_t StorageManager::readRecentEvents(EventRecord* out, size_t maxCount) {
 }
 
 bool StorageManager::appendRecord(const core::SensorSnapshot& snapshot, uint32_t uptimeMs) {
+    IoProbe probe("storage.append");
+    probe.stage(IoProbe::Stage::Wait);
     lock();
+    probe.stage(IoProbe::Stage::Prepare);
     if (!framAvailable_) {
         unlock();
         return false;
@@ -647,6 +662,7 @@ bool StorageManager::appendRecord(const core::SensorSnapshot& snapshot, uint32_t
         }
         rec.bme690GasIndex = snapshot.bme690.gasIndex;
         rec.bme690Status = snapshot.bme690.status;
+        probe.stage(IoProbe::Stage::Write);
         status = wal_.appendLegacy(rec, superblock_, walStats_);
     } else if (superblock_.formatVersion == FRAM_FORMAT_VERSION) {
         SensorRecordV6 rec {};
@@ -804,6 +820,7 @@ bool StorageManager::appendRecord(const core::SensorSnapshot& snapshot, uint32_t
             snapshot.telemetry.i2c.communicationErrors);
         rec.droppedRecords = codec::count16(walStats_.droppedRecords);
         rec.formatTag = codec::SENSOR_RECORD_V6_TAG;
+        probe.stage(IoProbe::Stage::Write);
         status = wal_.append(rec, superblock_, walStats_);
     }
 
@@ -1009,6 +1026,8 @@ void StorageManager::formatCsvLineV5(char* buffer, size_t size, const SensorReco
 }
 
 bool StorageManager::appendAndVerifyCsvLine(const char* line, size_t lineLength) {
+    IoProbe probe("sd.csv_row", 0);
+    probe.add(IoProbe::Metric::Bytes, lineLength);
     if (line == nullptr || lineLength == 0 ||
         lineLength >= MAX_CSV_LINE_LENGTH) return false;
 
@@ -1016,6 +1035,7 @@ bool StorageManager::appendAndVerifyCsvLine(const char* line, size_t lineLength)
     uint32_t expectedStart = 0;
     size_t prefixLength = 0;
 
+    probe.stage(IoProbe::Stage::Inspect);
     File inspect = SD.open(currentFilename_.c_str(), FILE_READ);
     if (!inspect) return false;
     originalSize = inspect.size();
@@ -1026,12 +1046,15 @@ bool StorageManager::appendAndVerifyCsvLine(const char* line, size_t lineLength)
     const uint32_t readStart = originalSize > MAX_CSV_LINE_LENGTH
         ? originalSize - MAX_CSV_LINE_LENGTH : 0;
     const size_t requested = originalSize - readStart;
+    probe.stage(IoProbe::Stage::Read);
     if (!inspect.seek(readStart) || inspect.read(
             reinterpret_cast<uint8_t*>(verifyBuffer), requested) != requested) {
         inspect.close();
         return false;
     }
+    probe.stage(IoProbe::Stage::Close);
     inspect.close();
+    probe.stage(IoProbe::Stage::Prepare);
 
     if (requested > 0 && verifyBuffer[requested - 1] == '\n') {
         size_t lastStart = requested - 1;
@@ -1041,6 +1064,7 @@ bool StorageManager::appendAndVerifyCsvLine(const char* line, size_t lineLength)
         const size_t lastLength = requested - 1 - lastStart;
         if (lastLength == lineLength &&
             memcmp(verifyBuffer + lastStart, line, lineLength) == 0) {
+            probe.finish("already_verified");
             return true; // SD append completed before a reset; consume only.
         }
         expectedStart = originalSize;
@@ -1060,17 +1084,22 @@ bool StorageManager::appendAndVerifyCsvLine(const char* line, size_t lineLength)
         expectedStart = originalSize - prefixLength;
     }
 
+    probe.stage(IoProbe::Stage::Open);
     File output = SD.open(currentFilename_.c_str(), FILE_APPEND);
     if (!output) return false;
     const size_t remainder = lineLength - prefixLength;
+    probe.stage(IoProbe::Stage::Write);
     const size_t wroteData = output.write(
         reinterpret_cast<const uint8_t*>(line + prefixLength), remainder);
     const size_t wroteNewline = wroteData == remainder
         ? output.write(reinterpret_cast<const uint8_t*>("\n"), 1) : 0;
+    probe.stage(IoProbe::Stage::Flush);
     output.flush();
+    probe.stage(IoProbe::Stage::Close);
     output.close();
     if (wroteData != remainder || wroteNewline != 1) return false;
 
+    probe.stage(IoProbe::Stage::Reopen);
     File verify = SD.open(currentFilename_.c_str(), FILE_READ);
     if (!verify || verify.size() != expectedStart + lineLength + 1 ||
         !verify.seek(expectedStart)) {
@@ -1079,11 +1108,15 @@ bool StorageManager::appendAndVerifyCsvLine(const char* line, size_t lineLength)
     }
     std::memset(verifyBuffer, 0, sizeof(verifyBuffer));
     const size_t expectedBytes = lineLength + 1;
+    probe.stage(IoProbe::Stage::Verify);
     const size_t actualBytes = verify.read(
         reinterpret_cast<uint8_t*>(verifyBuffer), expectedBytes);
+    probe.stage(IoProbe::Stage::Close);
     verify.close();
-    return actualBytes == expectedBytes && verifyBuffer[lineLength] == '\n' &&
-           memcmp(verifyBuffer, line, lineLength) == 0;
+    const bool ok = actualBytes == expectedBytes && verifyBuffer[lineLength] == '\n' &&
+                    memcmp(verifyBuffer, line, lineLength) == 0;
+    probe.finish(ok ? "verified" : "verify_failed");
+    return ok;
 }
 
 bool StorageManager::appendAndVerifyQuarantine(const FramQuarantineRecord& record) {
@@ -1202,8 +1235,11 @@ bool StorageManager::quarantineCorruptTail(uint16_t slotIndex, uint32_t uptimeMs
     return true;
 }
 
-void StorageManager::flushPendingToSd() {
+void StorageManager::flushPendingToSd(uint16_t maxRecords) {
+    IoProbe probe("storage.flush");
+    probe.stage(IoProbe::Stage::Wait);
     lock();
+    probe.stage(IoProbe::Stage::Prepare);
     if (!framAvailable_) {
         unlock();
         return;
@@ -1216,11 +1252,14 @@ void StorageManager::flushPendingToSd() {
         return;
     }
 
-    uint16_t pendingCount = getPendingCount();
-    if (pendingCount == 0) {
+    const uint16_t pendingCount =
+        FramWal<FramStorage>::pendingCount(superblock_);
+    if (pendingCount == 0 || maxRecords == 0) {
         unlock();
         return;
     }
+    const uint16_t recordBudget =
+        pendingCount < maxRecords ? pendingCount : maxRecords;
 
     // ローテーションチェック
     if (hal::Clock::isTimeSet() && !sdTransaction_.active()) {
@@ -1261,6 +1300,7 @@ void StorageManager::flushPendingToSd() {
         }
     }
 
+    probe.stage(IoProbe::Stage::Mount);
     if (!initSdCard()) {
         services::Logger::warn("StorageMgr", "SD offline. Buffering %u records in FRAM.", pendingCount);
         unlock();
@@ -1270,7 +1310,8 @@ void StorageManager::flushPendingToSd() {
     uint16_t handledCount = 0;
     uint16_t flushedCount = 0;
     uint16_t quarantinedCount = 0;
-    while (handledCount < pendingCount) {
+    while (handledCount < recordBudget) {
+        probe.stage(IoProbe::Stage::WalRead);
         const bool resumedTransaction = sdTransaction_.active();
         char line[MAX_CSV_LINE_LENGTH] {};
         uint32_t sequence = 0;
@@ -1325,6 +1366,7 @@ void StorageManager::flushPendingToSd() {
             break;
         }
         const size_t lineLength = strlen(line);
+        probe.stage(IoProbe::Stage::TxStart);
         if (sdTransaction_.active()) {
             if (sdTransaction_.current().sequence != sequence ||
                 sdTransaction_.current().lineLength != lineLength ||
@@ -1348,6 +1390,7 @@ void StorageManager::flushPendingToSd() {
             break;
         }
 
+        probe.stage(IoProbe::Stage::Write);
         if (lineLength == 0 || !appendAndVerifyCsvLine(line, lineLength)) {
             services::Logger::error("StorageMgr",
                 "SD append verification failed at sequence %lu; FRAM record retained",
@@ -1358,6 +1401,7 @@ void StorageManager::flushPendingToSd() {
             break;
         }
 
+        probe.stage(IoProbe::Stage::Consume);
         walStatus = wal_.consume(sequence, superblock_, walStats_);
         if (walStatus != FramWalStatus::Ready) {
             services::Logger::error("StorageMgr",
@@ -1367,6 +1411,7 @@ void StorageManager::flushPendingToSd() {
             framReadOnly_ = true;
             break;
         }
+        probe.stage(IoProbe::Stage::TxFinish);
         if (sdTransaction_.finish(sequence) != FramWalStatus::Ready) {
             services::Logger::error("StorageMgr",
                 "FRAM consumed but SD transaction cleanup failed at sequence %lu",
@@ -1377,6 +1422,7 @@ void StorageManager::flushPendingToSd() {
         }
         ++handledCount;
         ++flushedCount;
+        probe.add(IoProbe::Metric::Records);
         if (resumedTransaction) break; // Rotate/select the normal target on the next flush.
     }
 
