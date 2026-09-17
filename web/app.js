@@ -279,6 +279,9 @@ async function loadFiles(resetPage = false, refresh = false) {
       return;
     }
     renderFiles(data);
+    if (data.refreshing) {
+      window.setTimeout(() => loadFiles(false, false), 750);
+    }
   } catch (error) {
     $('fileRows').replaceChildren();
     const row = document.createElement('tr');

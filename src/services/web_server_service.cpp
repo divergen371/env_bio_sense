@@ -148,19 +148,32 @@ void sendAsset(AsyncWebServerRequest* request, const char* contentType,
 }
 
 void collectVisibleFiles(File& directory, std::vector<ListedFile>& output,
-                         bool& truncated, uint8_t depth, IoProbe& probe) {
+                         bool& truncated, uint8_t depth, IoProbe& probe,
+                         storage::StorageManager& storageManager) {
     if (!directory || depth > 5 || output.size() >= MAX_LISTED_FILES) {
         truncated = output.size() >= MAX_LISTED_FILES;
         return;
     }
     probe.add(IoProbe::Metric::Directories);
-    File child = directory.openNextFile();
-    while (child) {
+    while (true) {
+        File child;
+        storageManager.lock("FileIndexTask.entry");
+        child = directory.openNextFile();
+        if (!child) {
+            storageManager.unlock();
+            break;
+        }
+        const bool isDirectory = child.isDirectory();
+        const String rawPath = child.path();
+        const size_t size = isDirectory ? 0 : child.size();
+        const time_t modified = isDirectory ? 0 : child.getLastWrite();
+        storageManager.unlock();
+
         probe.add(IoProbe::Metric::Entries);
-        if (child.isDirectory()) {
-            collectVisibleFiles(child, output, truncated, depth + 1, probe);
+        if (isDirectory) {
+            collectVisibleFiles(child, output, truncated, depth + 1, probe,
+                                storageManager);
         } else {
-            const String rawPath = child.path();
             char normalized[web_security::MAX_DATA_PATH + 1] {};
             if (web_security::normalizeVisibleDataPath(
                     rawPath.c_str(), normalized, sizeof(normalized))) {
@@ -168,16 +181,18 @@ void collectVisibleFiles(File& directory, std::vector<ListedFile>& output,
                 item.path = normalized;
                 item.name = baseName(item.path);
                 item.type = classifyFile(item.path, item.name);
-                item.size = child.size();
-                item.modified = child.getLastWrite();
+                item.size = size;
+                item.modified = modified;
                 output.push_back(item);
                 probe.add(IoProbe::Metric::Files);
                 if (output.size() >= MAX_LISTED_FILES) truncated = true;
             }
         }
+        storageManager.lock("FileIndexTask.close");
         child.close();
+        storageManager.unlock();
         if (truncated) return;
-        child = directory.openNextFile();
+        vTaskDelay(1);
     }
 }
 
@@ -259,21 +274,28 @@ void WebServerService::runFileIndexTask() {
         files.reserve(96);
         bool truncated = false;
         probe.stage(IoProbe::Stage::Wait);
-        storageManager_.lock("FileIndexTask.scan");
         probe.stage(IoProbe::Stage::Open);
+        storageManager_.lock("FileIndexTask.open");
         File root = SD.open("/");
         const bool opened = static_cast<bool>(root);
+        storageManager_.unlock();
         probe.stage(IoProbe::Stage::Scan);
-        if (opened) collectVisibleFiles(root, files, truncated, 0, probe);
+        if (opened) {
+            collectVisibleFiles(root, files, truncated, 0, probe,
+                                storageManager_);
+        }
         probe.stage(IoProbe::Stage::Close);
+        storageManager_.lock("FileIndexTask.close_root");
         if (root) root.close();
         storageManager_.unlock();
 
         xSemaphoreTake(fileIndex_->mutex, portMAX_DELAY);
-        if (opened) fileIndex_->files.swap(files);
-        fileIndex_->ready = opened;
+        if (opened) {
+            fileIndex_->files.swap(files);
+            fileIndex_->ready = true;
+            fileIndex_->truncated = truncated;
+        }
         fileIndex_->failed = !opened;
-        fileIndex_->truncated = truncated;
         fileIndex_->busy = false;
         ++fileIndex_->generation;
         xSemaphoreGive(fileIndex_->mutex);

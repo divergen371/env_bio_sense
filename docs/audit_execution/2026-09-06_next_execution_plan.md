@@ -2,14 +2,14 @@
 
 日付: 2026-09-06  
 対象: 監査中の全27件  
-状態: 2026-09-18にR02実機計測とD01を完了。M02のrecord単位flush分割は実装・自動確認PASS、実機backlog Gate待ち。R01のWeb発火route分離計測は継続する。
+状態: 2026-09-18にR01/R02実機計測とD01を完了。M02のrecord単位flush分割とM03のfile index worker/cache化は実装・自動確認PASS、実機Gate待ち。
 原則: 調査結果を固定する前に設計を確定せず、設計判断を記録する前に本修正へ入らない。
 
 ## 現在地
 
 - 再修正または追加調査が必要: P0-03、P0-06、P1-01、P1-02、P1-06。
 - 実装済みで実機Gate待ち: 上記以外の22件。
-- P0-06は二つの経路を確認した。第一にNTP fallbackがAP稼働を認識せず`WIFI_STA`、続いて`WIFI_OFF`へ切り替えるため、Web操作中に見かけ上APが強制解除される。AP稼働中はNTPのradio操作を停止する修正を実装した。第二に`GET /api/files`の同期SD走査／AsyncTCP Watchdog候補は残っており、worker/cache化と分離Gateが必要。
+- P0-06は二つの経路を確認した。第一のNTP fallbackによるAP radio上書きは修正済み。第二は`GET /api/files`が`async_tcp`上でSDを同期走査し、約10秒後にTask Watchdog再起動する経路と確定した。Core 0の低優先度worker、RAM cache、`202`/poll契約へ変更済みで実機Gate待ち。
 - P0-03は旧実装でFRAM 180件flushがStorage mutexを107.154秒保持し、main loopを107.220秒停止させた。M02書込み後の通常記録では1件ずつ処理され、loop gapは最大0.893秒まで改善したが、1 recordのmutex保持は最大1.186秒。backlog／PPG Gateとappend queue化が残る。
 - P1-01／P1-02はPPS周期異常108回、UTC不一致84回、最短周期1.777 msを確認した。
 - P1-06は初回smokeのOLED lock timeout 9回に加え、Web試験画面でI²C lock timeout 284、communication error 0を確認した。
@@ -22,7 +22,7 @@
 優先順は次のとおり。
 
 1. P0-03 保存処理の長時間排他
-2. P0-06 Webアクセス時の`async_tcp` Watchdog再起動（発火route分離中）
+2. P0-06 Webアクセス時の`async_tcp` Watchdog再起動（M03実装済み・実機Gate待ち）
 3. P1-01／P1-02 PPS入力とClock反映
 4. P1-06 I²C lock timeout増加
 5. 実装済み22件の機能別Gate

@@ -4,7 +4,18 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 
 const source = readFileSync(new URL('../web/app.js', import.meta.url), 'utf8');
+const webServiceSource = readFileSync(
+  new URL('../src/services/web_server_service.cpp', import.meta.url), 'utf8');
 const statusRoutes = ['/api/status', '/api/location', '/api/weather', '/api/altitude', '/api/ppg'];
+
+const filesRoute = webServiceSource.slice(
+  webServiceSource.indexOf('server_->on("/api/files"'),
+  webServiceSource.indexOf('server_->on("/download"'));
+assert.ok(filesRoute.includes('requestFileIndexRefresh()'));
+assert.ok(filesRoute.includes('fileIndex_->files'));
+assert.ok(!filesRoute.includes('SD.open('),
+  '/api/files callback must not perform SD I/O');
+assert.match(source, /if \(data\.refreshing\)[\s\S]*loadFiles\(false, false\)/);
 
 async function run(search) {
   const calls = [];

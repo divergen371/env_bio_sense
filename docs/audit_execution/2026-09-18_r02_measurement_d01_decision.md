@@ -89,4 +89,23 @@ P0-03の直接原因は、`flushPendingToSd()`がbacklog全件について、FRA
 - ESP32-S3 build: PASS。RAM 104,128 bytes / 31.8%、Flash 1,329,017 bytes / 39.8%。
 - firmware.bin SHA-256: `bcf7f1aa40e6457d144ec710808dd2df64b81b54acdfd706045277002db0309c`。
 
-残件: `/api/files`自体は依然としてAsyncTCP callback内で同期SD走査を行う。AP ownership修正の実機Gateとは分け、一覧worker/cache化までP0-06をcloseしない。
+## P0-06 `/api/files`発火route確定とM03実装
+
+2026-09-18の「一覧更新」再現ログ（702行、SHA-256 `5e83d6f0e312dccfb4b079697e209f93449cfcd17d6eed75ebdf87a20b0d3be6`）により、残っていた再起動経路を確定した。
+
+- 静的asset、session、status、location、weather、altitude、PPG応答はおおむね2～3 msで完了した。
+- `web.files id=898`は`async_tcp`上でSD走査へ入り、0.64秒時点37 entry、1.64秒時点66、2.64秒時点87、3.89秒時点108まで進行した。
+- その間にAsyncTCPのthrottlingが発生し、要求開始約10秒後にTask Watchdogが`async_tcp (CPU 1)`をabort、`RTC_SW_CPU_RST`で再起動した。
+- したがって、この再現におけるAP消失はAP modeの解除ではなく、`/api/files`がAsyncTCP callback内で同期SD全件走査したことによる装置全体の再起動である。
+
+M03修正:
+
+- SD走査をCore 0の低優先度`FileIndexTask`へ移し、AsyncTCP callbackはworker起動とRAM cacheのsnapshotだけを行う。
+- cache未生成時は`202 Accepted`と再試行間隔を返し、更新時は旧cacheを提供したまま`refreshing=true`を返す。
+- SD mutexは全走査中保持せず、directory entry取得・metadata取得・close単位で解放し、entry間にyieldを入れる。
+- UIは`202`または`refreshing=true`の間だけpollし、完了世代を自動表示する。
+- 走査失敗時は既存cacheがあれば保持し、初回失敗だけ`503`とする。
+
+自動確認はnative 104/104、Web request isolation、JavaScript構文、ESP32-S3 buildがPASS。RAM 104,128 bytes / 31.8%、Flash 1,331,473 bytes / 39.8%。firmware.bin SHA-256は`b7135f3d6ef42740bfaf29c650d77ccd71551e838267c1170e5c8ff1e042b477`、ELF SHA-256は`26250c04a2bba13de1d03753f38f6211316dc0fbac66a6c343ca8e6a96f02301`。
+
+残件: P0-06はM03実装済み・実機Gate待ちとする。新firmwareで初回ファイルtab、一覧更新、F5を各10回実施し、resetなし、状態API継続、計測・保存継続、一覧世代更新を確認するまでcloseしない。
