@@ -10,6 +10,8 @@ const app = {
   listTruncated: false,
   selected: new Map(),
   archiveTimer: null,
+  filePollTimer: null,
+  filesLoading: false,
   autoDownloadArchive: false,
   chart: null
 };
@@ -268,19 +270,24 @@ function renderFiles(data) {
 }
 
 async function loadFiles(resetPage = false, refresh = false) {
+  if (app.filesLoading) return;
+  app.filesLoading = true;
+  window.clearTimeout(app.filePollTimer);
+  app.filePollTimer = null;
   if (resetPage) app.page = 1;
   try {
     const suffix = refresh ? `${queryString()}&refresh=1` : queryString();
     const response = await api(`/api/files?${suffix}`);
     const data = await response.json();
     if (response.status === 202 || data.status === 'building') {
-      $('fileRows').innerHTML = '<tr><td colspan="6" class="empty">一覧を作成中…</td></tr>';
-      window.setTimeout(() => loadFiles(false, false), data.retry_after_ms || 750);
+      $('fileRows').innerHTML = '<tr><td colspan="6" class="empty">一覧を作成中… ファイルが多い場合は約1分かかります。</td></tr>';
+      app.filePollTimer = window.setTimeout(
+        () => loadFiles(false, false), data.retry_after_ms || 1500);
       return;
     }
     renderFiles(data);
     if (data.refreshing) {
-      window.setTimeout(() => loadFiles(false, false), 750);
+      app.filePollTimer = window.setTimeout(() => loadFiles(false, false), 1500);
     }
   } catch (error) {
     $('fileRows').replaceChildren();
@@ -289,6 +296,8 @@ async function loadFiles(resetPage = false, refresh = false) {
     empty.colSpan = 6;
     row.appendChild(empty);
     $('fileRows').appendChild(row);
+  } finally {
+    app.filesLoading = false;
   }
 }
 
@@ -461,6 +470,23 @@ async function postMaintenance(path, body, resultId) {
   }
 }
 
+async function loadTaskStacks() {
+  const result = $('taskStackResult');
+  result.textContent = '測定中…';
+  try {
+    const response = await api('/api/tasks');
+    const data = await response.json();
+    const tasks = data.tasks.map((task) =>
+      `${task.name}: 最小残量 ${task.minimum_free_stack_bytes} B · 優先度 ${task.priority}`);
+    result.textContent = [
+      `Heap: 現在 ${formatBytes(data.free_heap_bytes)} · 最小 ${formatBytes(data.minimum_free_heap_bytes)}`,
+      ...tasks
+    ].join('\n');
+  } catch (error) {
+    result.textContent = `測定失敗: ${error.message}`;
+  }
+}
+
 function setupActions() {
   $('refreshStatus').addEventListener('click', loadStatus);
   $('refreshFiles').addEventListener('click', () => loadFiles(false, true));
@@ -484,6 +510,7 @@ function setupActions() {
   });
   $('deleteSelected').addEventListener('click', deleteSelected);
   $('syncTime').addEventListener('click', () => syncTime(false));
+  $('taskStacks').addEventListener('click', loadTaskStacks);
   $('flushStorage').addEventListener('click', async () => {
     try {
       await api('/api/flush', { method: 'POST' });

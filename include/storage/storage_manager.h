@@ -44,6 +44,7 @@ public:
 
     // Wi-Fiモード中はSDへの書き出しを一時停止するためのフラグ
     void setWifiActive(bool active) { wifiActive_.store(active); }
+    bool isWifiActive() const { return wifiActive_.load(); }
     
     // 手動でFRAMの内容をSDに強制フラッシュする（Wi-Fi稼働中の最新データ取得用）
     void forceFlush();

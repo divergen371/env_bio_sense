@@ -1,0 +1,1435 @@
+[050081][INFO ][IoProbe] done id=793 op=storage.append task=loopTask cpu=1 pri=1 start_us=50005083 total_us=65711 result=returned
+[050081][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=745703 loop_age_us=2771 lost_active=0 lost_done=0 heap_low=182860 stack_free=1496
+[050082][INFO ][TaskStack] task=loopTask free_min_bytes=4180 priority=1
+[050083][INFO ][TaskStack] task=IoProbeTask free_min_bytes=1496 priority=1
+[050833][WARN ][IoProbe] active id=795 op=storage.flush task=StorageTask stage=write age_us=748539 stage_us=681993 entries=0 records=0
+[050833][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=748486
+[050833][WARN ][IoProbe] active id=797 op=sd.csv_row task=StorageTask stage=reopen age_us=682344 stage_us=7080 entries=0 records=0
+[050833][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=748850
+[051333][INFO ][IoProbe] done id=797 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=50151303 total_us=1012245 result=verified
+[051334][INFO ][IoProbe] done id=795 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=50084744 total_us=1184420 result=returned
+[055084][INFO ][IoProbe] done id=874 op=storage.append task=loopTask cpu=1 pri=1 start_us=55005222 total_us=65806 result=returned
+[055084][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=745703 loop_age_us=7774 lost_active=0 lost_done=0 heap_low=182560 stack_free=1496
+[055086][INFO ][TaskStack] task=DisplayTask free_min_bytes=1552 priority=1
+[055836][WARN ][IoProbe] active id=876 op=storage.flush task=StorageTask stage=write age_us=740615 stage_us=686911 entries=0 records=0
+[055836][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=740574
+[055836][WARN ][IoProbe] active id=878 op=sd.csv_row task=StorageTask stage=reopen age_us=687257 stage_us=19457 entries=0 records=0
+[055836][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=740934
+[056336][INFO ][IoProbe] done id=878 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=55149387 total_us=1009064 result=verified
+[056336][INFO ][IoProbe] done id=876 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=55095669 total_us=1217704 result=returned
+[060087][INFO ][IoProbe] done id=953 op=storage.append task=loopTask cpu=1 pri=1 start_us=60004987 total_us=65731 result=returned
+[060087][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=745703 loop_age_us=6548 lost_active=0 lost_done=0 heap_low=182560 stack_free=1428
+[060089][INFO ][TaskStack] task=IoProbeTask free_min_bytes=1428 priority=1
+[060589][WARN ][IoProbe] active id=955 op=storage.flush task=StorageTask stage=write age_us=548507 stage_us=473142 entries=0 records=0
+[060589][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=518520
+[060839][WARN ][IoProbe] active id=957 op=sd.csv_row task=StorageTask stage=reopen age_us=723113 stage_us=64142 entries=0 records=0
+[060839][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=768505
+[061339][INFO ][IoProbe] done id=957 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=60116169 total_us=1004915 result=verified
+[061340][INFO ][IoProbe] done id=955 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=60040790 total_us=1143693 result=returned
+[065091][INFO ][IoProbe] done id=1036 op=storage.append task=loopTask cpu=1 pri=1 start_us=65005084 total_us=65754 result=returned
+[065091][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=745703 loop_age_us=3197 lost_active=0 lost_done=0 heap_low=182560 stack_free=1428
+[065593][WARN ][IoProbe] active id=1038 op=storage.flush task=StorageTask stage=write age_us=580954 stage_us=470834 entries=0 records=0
+[065593][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=522342
+[065843][WARN ][IoProbe] active id=1040 op=sd.csv_row task=StorageTask stage=reopen age_us=720812 stage_us=183577 entries=0 records=0
+[065843][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=772333
+[065843][WARN ][IoProbe] active id=1041 op=storage.lock task=loopTask stage=wait age_us=583589 stage_us=583568 entries=0 records=0
+[065843][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=772655
+[066093][INFO ][IoProbe] done id=1040 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=65122475 total_us=793772 result=verified
+[066094][INFO ][IoProbe] done id=1038 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=] time_us id=1038 enter=9 wait=58610 prepare=210 wal_read=22259 tx_start=29011 write=793807 consume=21
+[066094][INFO ][IoProbe] done id=1041 op=storage.lock task=loopTask cpu=1 pri=1 start_us=65260020 total_us=743609 result=returned
+[070094][INFO ][IoProbe] done id=1122 op=storage.append task=loopTask cpu=1 pri=1 start_us=70004751 total_us=65719 result=returned
+[070094][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=748260 loop_age_us=4739 lost_active=0 lost_done=0 heap_low=182560 stack_free=1272
+[070096][INFO ][TaskStack] task=IoProbeTask free_min_bytes=1272 priority=1
+[070596][WARN ][IoProbe] active id=1124 op=storage.flush task=StorageTask stage=write age_us=566514 stage_us=468166 entries=0 records=0
+[070596][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=525717
+[070846][WARN ][IoProbe] active id=1126 op=sd.csv_row task=StorageTask stage=reopen age_us=718136 stage_us=40153 entries=0 records=0
+[070846][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=775701
+[071346][INFO ][IoProbe] done id=1126 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=70128151 total_us=1020314 result=verified
+[071346][INFO ][IoProbe] done id=1124 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=70029789 total_us=1244617 result=returned
+[075096][INFO ][IoProbe] done id=1203 op=storage.append task=loopTask cpu=1 pri=1 start_us=75004569 total_us=90645 result=returned
+[075096][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=748260 loop_age_us=1559 lost_active=0 lost_done=0 heap_low=182560 stack_free=1272
+[075848][WARN ][IoProbe] active id=1205 op=storage.flush task=StorageTask stage=write age_us=746522 stage_us=700110 entries=0 records=0
+[075848][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=746460
+[075848][WARN ][IoProbe] active id=1207 op=sd.csv_row task=StorageTask stage=reopen age_us=700460 stage_us=29596 entries=0 records=0
+[075848][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=746824
+[076348][INFO ][IoProbe] done id=1207 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=75148187 total_us=1015100 result=verified
+[076349][INFO ][IoProbe] done id=1205 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=75101761 total_us=1226106 result=returned
+[080099][INFO ][IoProbe] done id=1282 op=storage.append task=loopTask cpu=1 pri=1 start_us=80005086 total_us=65712 result=returned
+[080099][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=748260 loop_age_us=2781 lost_active=0 lost_done=0 heap_low=182560 stack_free=1272
+[080601][WARN ][IoProbe] active id=1284 op=storage.flush task=StorageTask stage=write age_us=544507 stage_us=480098 entries=0 records=0
+[080601][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=530384
+[080851][WARN ][IoProbe] active id=1286 op=sd.csv_row task=StorageTask stage=reopen age_us=730076 stage_us=63116 entries=0 records=0
+[080851][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=780375
+[081351][INFO ][IoProbe] done id=1286 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=80121210 total_us=1013500 result=verified
+[081352][INFO ][IoProbe] done id=1284 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=80056788 total_us=1169464 result=returned
+[085102][INFO ][IoProbe] done id=1363 op=storage.append task=loopTask cpu=1 pri=1 start_us=85004316 total_us=65708 result=returned
+[085102][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=748260 loop_age_us=4732 lost_active=0 lost_done=0 heap_low=182560 stack_free=1272
+[085604][WARN ][IoProbe] active id=1365 op=storage.flush task=StorageTask stage=write age_us=548506 stage_us=482092 entries=0 records=0
+[085604][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=534146
+[085854][WARN ][IoProbe] active id=1367 op=sd.csv_row task=StorageTask stage=reopen age_us=732066 stage_us=60144 entries=0 records=0
+[085854][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=784134
+[086354][INFO ][IoProbe] done id=1367 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=85122217 total_us=1013224 result=verified
+[086355][INFO ][IoProbe] done id=1365 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=85055789 total_us=1208498 result=returned
+[090105][INFO ][IoProbe] done id=1444 op=storage.append task=loopTask cpu=1 pri=1 start_us=90004634 total_us=65703 result=returned
+[090106][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=748260 loop_age_us=631 lost_active=0 lost_done=0 heap_low=182560 stack_free=1272
+[090607][WARN ][IoProbe] active id=1446 op=stok=StorageTask stage=write age_us=519896 stage_us=476118 entries=0 records=0
+[090607][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=519844
+[090857][WARN ][IoProbe] active id=1448 op=sd.csv_row task=StorageTask stage=reopen age_us=726111 stage_us=52391 entries=0 records=0
+[090857][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=769850
+[091357][INFO ][IoProbe] done id=1448 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=90131183 total_us=1007700 result=verified
+[091359][INFO ][IoProbe] done id=1446 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=90087392 total_us=1119597 result=returned
+[095109][INFO ][IoProbe] done id=1525 op=storage.append task=loopTask cpu=1 pri=1 start_us=95005354 total_us=65684 result=returned
+[095109][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=748260 loop_age_us=2747 lost_active=0 lost_done=0 heap_low=182560 stack_free=1272
+[095611][WARN ][IoProbe] active id=1527 op=storage.flush task=StorageTask stage=write age_us=580503 stage_us=490030 entries=0 records=0
+[095611][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=540139
+[095861][WARN ][IoProbe] active id=1529 op=sd.csv_row task=StorageTask stage=reopen age_us=740002 stage_us=69606 entries=0 records=0
+[095861][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=790125
+[096361][INFO ][IoProbe] done id=1529 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=95121281 total_us=1011242 result=verified
+[096362][INFO ][IoProbe] done id=1527 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=95030794 total_us=1166372 result=returned
+[100112][INFO ][IoProbe] done id=1606 op=storage.append task=loopTask cpu=1 pri=1 start_us=100006441 total_us=65683 result=returned
+[100112][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=748260 loop_age_us=4765 lost_active=0 lost_done=0 heap_low=182560 stack_free=1272
+[100614][WARN ][IoProbe] active id=1608 op=storage.flush task=StorageTask stage=write age_us=576969 stage_us=491988 entries=0 records=0
+[100614][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=542045
+[100864][WARN ][IoProbe] active id=1610 op=sd.csv_row task=StorageTask stage=reopen age_us=741961 stage_us=66313 entries=0 records=0
+[100864][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=792032
+[101364][INFO ][IoProbe] done id=1610 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=100122321 total_us=1018547 result=verified
+[101364][INFO ][IoProbe] done id=1608 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=100037326 total_us=1174777 result=returned
+[105114][INFO ][IoProbe] done id=1687 op=storage.append task=loopTask cpu=1 pri=1 start_us=105007006 total_us=65702 result=returned
+[105114][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=748260 loop_age_us=6617 lost_active=0 lost_done=0 heap_low=182560 stack_free=1272
+[105616][WARN ][IoProbe] active id=1689 op=storage.flush task=StorageTask stage=write age_us=578506 stage_us=494715 entries=0 records=0
+[105616][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=543518
+[105866][WARN ][IoProbe] active id=1691 op=sd.csv_row task=StorageTask stage=reopen age_us=744690 stage_us=97157 entries=0 records=0
+[105866][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=793506
+[106366][INFO ][IoProbe] done id=1691 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=105121593 total_us=998521 result=verified
+[106367][INFO ][IoProbe] counts id=1691 entries=0 dirs=0 files=0 bytes=326 records=0 he[106367][INFO ][IoProbe] done id=1689 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=105037789 total_us=1156395 result=returned
+[110118][INFO ][IoProbe] done id=1768 op=storage.append task=loopTask cpu=1 pri=1 start_us=110007138 total_us=90419 result=returned
+[110118][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=748260 loop_age_us=1742 lost_active=0 lost_done=0 heap_low=182560 stack_free=1272
+[110620][WARN ][IoProbe] active id=1770 op=storage.flush task=StorageTask stage=write age_us=599618 stage_us=469109 entries=0 records=0
+[110620][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=522609
+[110870][WARN ][IoProbe] active id=1772 op=sd.csv_row task=StorageTask stage=reopen age_us=719087 stage_us=51279 entries=0 records=0
+[110870][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=772601
+[111370][INFO ][IoProbe] done id=1772 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=110151196 total_us=1012477 result=verified
+[111371][INFO ][IoProbe] done id=1770 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=110020673 total_us=1297730 result=returned
+[115121][INFO ][IoProbe] done id=1847 op=storage.append task=loopTask cpu=1 pri=1 start_us=115006430 total_us=65687 result=returned
+[115121][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=748260 loop_age_us=4184 lost_active=0 lost_done=0 heap_low=182428 stack_free=1272
+[115122][INFO ][TaskStack] task=loopTask free_min_bytes=4148 priority=1
+[115623][WARN ][IoProbe] active id=1851 op=sd.csv_row task=StorageTask stage=open age_us=501050 stage_us=184413 entries=0 records=0
+[115623][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=551046
+[115623][WARN ][IoProbe] active id=1849 op=storage.flush task=Strite age_us=577856 stage_us=501427 entries=0 records=0
+[115623][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=551408
+[116373][INFO ][IoProbe] done id=1851 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=115122232 total_us=1005743 result=verified
+[116374][INFO ][IoProbe] done id=1849 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=115045788 total_us=1152560 1 wait=26446 prepare=234 wal_read=20209 tx_start=29511 write=1005783 consume=45934 tx_finish=24414 mount=18
+[120124][INFO ][IoProbe] done id=1928 op=storage.append task=loopTask cpu=1 pri=1 start_us=120007326 total_us=65705 result=returned
+[120124][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=748260 loop_age_us=6161 lost_active=0 lost_done=0 heap_low=182428 stack_free=1272
+[120126][INFO ][TaskStack] task=DisplayTask free_min_bytes=1468 priority=1
+[120626][WARN ][IoProbe] active id=1932 op=sd.csv_row task=StorageTask stage=open age_us=503087 stage_us=189970 entries=0 records=0
+[120626][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=553132
+[120626][WARN ][IoProbe] active id=1930 op=storage.flush task=StorageTask stage=write age_us=605189 stage_us=503461 entries=0 records=0
+[120626][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=553492
+[121376][INFO ][IoProbe] done id=1932 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=120123195 total_us=1009325 result=verified
+[121376][INFO ][IoProbe] done id=1930 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=120021453 total_us=1175709 result=returned
+[125127][INFO ][IoProbe] done id=2010 op=storage.append task=loopTask cpu=1 pri=1 start_us=125007719 total_us=65718 result=returned
+[125127][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=748260 loop_age_us=6162 lost_active=0 lost_done=0 heap_low=182272 stack_free=1272
+[125629][WARN ][IoProbe] active id=2014 op=sd.csv_row task=StorageTask stage=open age_us=503090 stage_us=219083 entries=0 records=0
+[125629][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=555721
+[125629][WARN ][IoProbe] active id=2012 op=storage.flush task=StorageTask stage=write age_us=608795 stage_us=503416 entries=0 records=0
+[125629][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=556033
+[125879][WARN ][IoProbe] active id=2015 op=storage.lock task=loopTask stage=wait age_us=570245 stage_us=570225 entries=0 records=0
+[125879][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=805736
+[126129][INFO ][IoProbe] done id=2014 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=125126194 total_us=811969 result=verified
+[126130][INFO ][IoProbe] done id=2012 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=125020801 total_us=979831 result=returned
+[130130][INFO ][IoProbe] done id=2096 op=storage.append task=loopTask cpu=1 pri=1 start_us=130007874 total_us=65679 result=returned
+[130130][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=748260 loop_age_us=10183 lost_active=0 lost_done=0 heap_low=182272 stack_free=1272
+[130632][WARN ][IoProbe] active id=2100 op=sd.csv_row task=StorageTask stage=open age_us=507103 stage_us=198554 entries=0 records=0
+[130632][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=558615
+[130632][WARN ][IoProbe] active id=2098 op=storage.flush task=StorageTask stage=write age_us=609853 stage_us=507489 entries=0 records=0
+[130632][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=558987
+[131382][INFO ][IoProbe] done id=2100 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=130125184 total_us=1016921 result=verified
+[131384][INFO ][IoProbe] done id=2098 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=130022806 total_us=1194380 result=returned
+[135134][INFO ][IoProbe] done id=2177 op=storage.append task=loopTask cpu=1 pri=1 start_us=135008701 total_us=90435 result=returned
+[135134][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=748260 loop_age_us=5736 lost_active=0 lost_done=0 heap_low=182272 stack_free=1272
+[135636][WARN ][IoProbe] active id=2179 op=storage.flush task=StorageTask stage=write age_us=571940 stage_us=483083 entries=0 records=0
+[135636][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=537046
+[135886][WARN ][IoProbe] active id=2181 op=sd.csv_row task=StorageTask stage=reopen age_us=733064 stage_us=60154 entries=0 records=0
+[135886][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=787040
+[136386][INFO ][IoProbe] done id=2181 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=135153224 total_us=1016844 result=verified
+[136387][INFO ][IoProbe] done id=2179 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=135064354 total_us=1194287 result=returned
+[140137][INFO ][IoProbe] done id=2258 op=storage.append task=loopTask cpu=1 pri=1 start_us=140008775 total_us=65694 result=returned
+[140137][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=748260 loop_age_us=7748 lost_active=0 lost_done=0 heap_low=182272 stack_free=1272
+[140639][WARN ][IoProbe] active id=2260 op=storage.flush task=StorageTask stage=write age_us=550967 stage_us=495835 entries=0 records=0
+[140639][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=550927
+[140889][WARN ][IoProbe] active id=2262 op=sd.csv_row task=StorageTask stage=reopen age_us=745831 stage_us=67104 entries=0 records=0
+[140889][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=800937
+[141389][INFO ][IoProbe] done id=2262 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=140143462 total_us=1014691 result=verified
+[141391][INFO ][IoProbe] done id=2260 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=140088316 total_us=1133864 result=returned
+[145141][INFO ][IoProbe] done id=2339 op=storage.append task=loopTask cpu=1 pri=1 start_us=145009429 total_us=65709 result=returned
+[145142][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=748260 loop_age_us=1781 lost_active=0 lost_done=0 heap_low=182272 stack_free=1272
+[145643][WARN ][IoProbe] active id=2343 op=sd.csv_row task=StorageTask stage=open age_us=518092 stage_us=206245 entries=0 records=0
+[145643][WARN ][IoProbe] owner task=StoraushPendingToSd depth=1 held_us=568024
+[145643][WARN ][IoProbe] active id=2341 op=storage.flush task=StorageTask stage=write age_us=596371 stage_us=518494 entries=0 records=0
+[145643][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=568412
+[146143][INFO ][IoProbe] done id=2343 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=145125191 total_us=1003188 result=verified
+[146394][INFO ][IoProbe] done id=2341 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=145047300 total_us=1155064 result=returned
+[150144][INFO ][IoProbe] done id=2420 op=storage.append task=loopTask cpu=1 pri=1 start_us=150010154 total_us=65718 result=returned
+[150144][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=748260 loop_age_us=716 lost_active=0 lost_done=0 heap_low=182272 stack_free=1272
+[150646][WARN ][IoProbe] active id=242geTask stage=open age_us=520093 stage_us=209834 entries=0 records=0
+[150646][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=570297
+[150646][WARN ][IoProbe] active id=2422 op=storage.flush task=StorageTask stage=write age_us=617835 stage_us=520469 entries=0 records=0
+[150646][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=570659
+[151146][INFO ][IoProbe] done id=2424 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=150126190 total_us=1011318 result=verified
+[151396][INFO ][IoProbe] done id=2422 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=150028810 total_us=1178553 result=returned
+[155147][INFO ][IoProbe] done id=2501 op=storage.append task=looned
+[155147][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=748260 loop_age_us=686 lost_active=0 lost_done=0 heap_low=182272 stack_free=1272
+[155649][WARN ][IoProbe] active id=2503 op=storage.flush task=StorageTask stage=write age_us=572953 stage_us=524119 entries=0 records=0
+[155649][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=572919
+[155649][WARN ][IoProbe] active id=2505 op=sd.csv_row task=StorageTask stage=open age_us=524479 stage_us=212694 entries=0 records=0
+[155650][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=573293
+[156150][INFO ][IoProbe] done id=2505 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=155125183 total_us=1013524 result=verified
+[156400][INFO ][IoProbe] done id=2503 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=155076335 total_us=1133026 result=returned
+[160150][INFO ][IoProbe] done id=2582 op=storage.append task=loopTask cpu=1 pri=1 start_us=160009749 total_us=65709 result=returned
+[160652][WARN ][IoProbe] active id=2584 op=storage.flush task=StorageTask stage=write age_us=617507 stage_us=486099 entries=0 records=0
+[160652][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=576716
+[160902][WARN ][IoProbe] active id=2586 op=sd.csv_row task=StorageTask stage=reopen ag
+[160902][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=826707
+[161402][INFO ][IoProbe] done id=2586 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=160166212 total_us=1009338 result=verified
+[161402][INFO ][IoProbe] done id=2584 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=160034789 total_us=1210941 result=returned
+[165153][INFO ][IoProbe] done id=2663 op=storage.append task=loopTask cpu=1 pri=1 start_us=165015356 total_us=65704 result=returned
+[165153][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=748260 loop_age_us=1700 lost_active=0 lost_done=0 heap_low=182272 stack_free=1272
+[165655][WARN ][IoProbe] active id=2667 op=sd.csv_row task=StorageTask stage=open age_us=523099 stage_us=207838 entries=0 records=0
+[165655][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=574098
+[165655][WARN ][IoProbe] active id=2665 op=storage.flush task=StorageTask stage=write age_us=580907 stage_us=523520 entries=0 records=0
+[165655][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=574506
+[166155][INFO ][IoProbe] done id=2667 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=165132185 total_us=1017169 result=verified
+[166405][INFO ][IoProbe] done id=2665 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=165074785 total_us=1166101 result=returned
+[170155][INFO ][IoProbe] done id=2745 op=storage.append task=loopTask cpu=1 pri=1 start_us=170009525 total_us=65708 result=returned
+[170156][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=748260 loop_age_us=1433 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[170658][WARN ][IoProbe] active id=2747 op=storage.flush task=StorageTask stage=write age_us=582934 stage_us=533111 entries=0 records=0
+[170658][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=582901
+[170659][WARN ][IoProbe] active id=2749 op=sd.csv_row task=StorageTask stage=open age_us=534101 stage_us=240825 entries=0 records=0
+[170659][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=583905
+[170909][WARN ][IoProbe] active id=2750 op=storage.lock task=loopTask stage=wait age_us=587244 stage_us=587222 entries=0 records=0
+[170909][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=833911
+[171159][INFO ][IoProbe] done id=2749 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=170125190 total_us=816273 result=verified
+[171159][INFO ][IoProbe] done id=2747 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=170075353 total_us=928946 result=returned
+[171160][INFO ][IoProbe] done id=2750 op=storage.lock task=loopTask cpu=1 pri=1 start_us=170322053 total_us=682277 result=returned
+[175160][INFO ][IoProbe] done id=2831 op=storage.append task=loopTask cpu=1 pri=1 start_us=175009547 total_us=65725 result=returned
+[175161][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1780 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[175662][WARN ][IoProbe] active id=2835 op=sd.csv_row task=StorageTask stage=open age_us=533456 stage_us=224364 entries=0 records=0
+[175662][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=586891
+[175662][WARN ][IoProbe] active id=2833 op=storage.flush task=StorageTask stage=write age_us=622314 stage_us=533944 entries=0 records=0
+[175662][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=587366
+[176162][INFO ][IoProbe] done id=2835 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=175128831 total_us=1020221 result=verified
+[176412][INFO ][IoProbe] done id=2833 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=175040448 total_us=1177922 result=returned
+[180162][INFO ][IoProbe] done id=2912 op=storage.append task=loopTask cpu=1 pri=1 start_us=180009869 total_us=65695 result=returned
+[180162][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=16035 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[180664][WARN ][IoProbe] active id=2916 op=sd.csv_row task=StorageTask stage=open age_us=508168 stage_us=194563 entries=0 records=0
+[180664][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=588597[180664][WARN ][IoProbe] active id=2914 op=storage.flush task=StorageTask stage=write age_us=621852 stage_us=508537 entries=0 records=0
+[180664][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=588953
+[181414][INFO ][IoProbe] done id=2916 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=180156120 total_us=1021949 result=verified
+[181414][INFO ][IoProbe] done id=2914 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=180042792 total_us=1199519 result=returned
+[185165][INFO ][IoProbe] done id=2994 op=storage.append task=loopTask cpu=1 pri=1 start_us=185019289 total_us=65764 result=returned
+[185165][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=2701 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[185667][WARN ][IoProbe] active id=2998 op=sd.csv_row task=StorageTask stage=open age_us=531443 stage_us=238601 entries=0 records=0
+[185667][WARN ][IoProbe] owner task=StorageTask site=flushPeARN ][IoProbe] active id=2996 op=storage.flush task=StorageTask stage=write age_us=600224 stage_us=531758 entries=0 records[185667][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=582413
+[185917][WARN ][IoProbe] active id=2999 op=storage.lock task=loopTask stage=wait age_us=623428 stage_us=623406 entries=0 records=0
+[185917][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=832122
+[186167][INFO ][IoProbe] done id=2998 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=185135844 total_us=818072 result=verified
+[186167][INFO ][IoProbe] done id=2996 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=185067364 total_us=948818 result=returned
+[190168][INFO ][IoProbe] done id=3081 op=storage.append task=loopTask cpu=1 pri=1 start_us=190011734 total_us=65745 result=returned
+[190168][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1657 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[190670][WARN ][IoProbe] active id=3085 op=sd.csv_row task=StorageTask stage=open age_us=539906 stage_us=229001 entries=0 records=0
+[190670][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=592695
+[190670][WARN ][IoProbe] active id=3083 op=storage.flush task=StorageTask stage=write age_us=631333 stage_us=540336 entries=0 records=0
+[190670][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=593112
+[191170][INFO ][IoProbe] done id=3085 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=190130384 total_us=1018118 result=verified
+[191420][INFO ][IoProbe] done id=3083 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=190039374 total_us=1174830 result=returned
+[195170][INFO ][IoProbe] done id=3162 op=storage.append task=loopTask cpu=1 pri=1 start_us=195012347 total_us=65698 result=returned
+[195170][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=723 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[195672][WARN ][IoProbe] active id=3166 op=sd.csv_row task=StorageTask stage=open age_us=544089 stage_us=233375 entries=0 records=0
+[195672][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=594115
+[195672][WARN ][IoProbe] active id=3164 op=storage.flush task=StorageTask stage=write age_us=634868 stage_us=544479 entries=0 records=0
+[195672][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=594491
+[196172][INFO ][IoProbe] done id=3166 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=195128195 total_us=1010505 result=verified
+[196422][INFO ][IoProbe] done id=3164 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=195037792 total_us=1178825 result=returned
+[200172][INFO ][IoProbe] done id=3243 op=storage.append task=loopTask cpu=1 pri=1 start_us=200012341 total_us=65690 result=returned
+[200173][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=715 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[200674][WARN ][IoProbe] active id=3247 op=sd.csv_row task=StorageTask stage=open age_us=546095 stage_us=238414 entries=0 records=0
+[200674][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=596131
+[200674][WARN ][IoProbe] active id=3245 op=storage.flush task=StorageTask stage=write age_us=617385 stage_us=546535 entries=0 records=0
+[200674][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=596557
+[201174][INFO ][IoProbe] done id=3247 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=200128189 total_us=1012834 result=verified
+[201424][INFO ][IoProbe] done id=3245 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=200057325 total_us=1154277 result=returned
+[205174][INFO ][IoProbe] done id=3324 op=storage.append task=loopTask cpu=1 pri=1 start_us=205012594 total_us=66631 result=returned
+[205174][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=718 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[205676][WARN ][IoProbe] active id=3328 op=sd.csv_row task=StorageTask stage=open age_us=521010 stage_us=206844 entries=0 records=0
+[205676][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=597032
+[205676][WARN ][IoProbe] active id=3326 op=storage.flush task=StorageTaskstage_us=521386 entries=0 records=0
+[205676][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=597394
+[206176][INFO ][IoProbe] done id=3328 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=205155274 total_us=1019244 result=verified
+[206426][INFO ][IoProbe] done id=3326 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=205032793 total_us=1236725 result=returned
+[210176][INFO ][IoProbe] done id=3405 op=storage.append task=loopTask cpu=1 pri=1 start_us=210012373 total_us=65671 result=returned
+[210176][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=2710 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[210678][WARN ][IoProbe] active id=3407 op=storage.flush task=StorageTask stage=write age_us=586909 stage_us=531108 entries=0 records=0
+[210678][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=586870
+[210678][WARN ][IoProbe] active id=3409 op=sd.csv_row task=StorageTask stage=open age_us=531556 stage_us=216598 entries=0 records=0
+[210678][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=587332
+[211178][INFO ][IoProbe] done id=3409 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=210147191 total_us=1012517 result=verified
+[211428][INFO ][IoProbe] done id=3407 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=210091376 total_us=1159502 result=returned
+[215178][INFO ][IoProbe] done id=3486 op=storage.append task=loopTask cpu=1 pri=1 start_us=215012443 total_us=65703 result=returned
+[215178][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=3724 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[215680][WARN ][IoProbe] active id=3490 op=sd.csv_row task=StorageTask stage=open age_us=552102 stage_us=236135 entries=0 records=0
+[215680][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=602019
+[215680][WARN ][IoProbe] active id=3488 op=storage.flush task=StorageTask stage=write age_us=608900 stage_us=552515 entries=0 records=0
+[215680][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=602418
+[216180][INFO ][IoProbe] done id=3490 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=215128188 total_us=1004913 result=verified
+[216430][INFO ][IoProbe] done id=3488 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=215071789 total_us=1125211 result=returned
+[220181][INFO ][IoProbe] done id=3567 op=storage.append task=loopTask cpu=1 pri=1 start_us=220012219 total_us=65684 result=returned
+[220181][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=709 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[220183][INFO ][TaskStack] task=DisplayTask free_min_bytes=1420 priority=1
+[220683][WARN ][IoProbe] active id=3571 op=sd.csv_row task=StorageTask stage=open age_us=555088 stage_us=242854 entries=0 records=0
+[220683][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=605256
+[220683][WARN ][IoProbe] active id=3569 op=storage.flush task=StorageTask stage=write age_us=667247 stage_us=555462 entries=0 records=0
+[220683][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=605616
+[221183][INFO ][IoProbe] done id=3571 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=220128197 total_us=1016550 result=verified
+[221433][INFO ][IoProbe] done id=3569 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=220016398 total_us=1198042 result=returned
+[225183][INFO ][IoProbe] done id=3648 op=storage.append task=loopTask cpu=1 pri=1 start_us=225013037 total_us=65684 result=returned
+[225184][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=39 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[225686][WARN ][IoProbe] active id=3652 op=sd.csv_row task=StorageTask stage=open age_us=558903 stage_us=247613 entries=0 records=0
+[225686][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=607508
+[225686][WARN ][IoProbe] active id=3650 op=storage.flush task=StorageTask stage=write age_us=647856 stage_us=559277 entries=0 records=0
+[225686][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=607869
+[226186][INFO ][IoProbe] done id=3652 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=225127382 total_us=1013508 result=verified
+[226436][INFO ][IoProbe] done id=3650 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=225038790 total_us=1180673 result=returned
+[230186][INFO ][IoProbe] done id=3729 op=storage.append task=loopTask cpu=1 pri=1 start_us=230012940 total_us=65718 result=returned
+[230186][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=702 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[230688][WARN ][IoProbe] active id=3733 op=sd.csv_row task=StorageTask 0688][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=609514
+[230688][WARN ][IoProbe] active id=3731 op=storage.flush task=StorageTask stage=write age_us=644856 stage_us=559004 entries=0 records=0
+[230688][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=609872
+[231188][INFO ][IoProbe] done id=3733 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=230129659 total_us=1017346 result=verified
+[231438][INFO ][IoProbe] done id=3731 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=230043793 total_us=1177663 result=returned
+[235189][INFO ][IoProbe] done id=3810 op=storage.append task=loopTask cpu=1 pri=1 start_us=235013097 total_us=662r=15 wait=31 prepare=97 write=66086
+[235189][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=3714 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[235691][WARN ][IoProbe] active id=3814 op=sd.csv_row task=StorageTask stage=open age_us=535431 stage_us=219548 entries=0 records=0
+[235691][WARN ][IoProbe] owner task=StorageTask site=flushPeus=611942
+[235691][WARN ][IoProbe] active id=3812 op=storage.flush task=StorageTask stage=write age_us=tries=0 records=0
+[235691][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=612243
+[236191][INFO ][IoProbe] done id=3814 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=235155861 total_us=1015022 result=verified
+[236441][INFO ][IoProbe] done id=3812 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=235045794 total_us=1218405 result=returned
+[240191][INFO ][IoProbe] done id=3891 op=storage.append task=loopTask cpu=1 pri=1 start_us=240013047 total_us=65732 result=returned
+[240191][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1654 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[240693][WARN ][IoProbe] active id=3893 op=storage.flush task=StorageTask stage=write age_us=609500 stage_us=564379 entries=0 records=0
+[240693][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=609469
+[240693][WARN ][IoProbe] active id=3895 op=sd.csv_row task=StorageTask stage=open ae_us=564731 stage_us=248903 entries=0 records=0
+[240693][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=609834
+[241193][INFO ][IoProbe] done id=3895 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=240128924 total_us=1009988 result=verified
+[241443][INFO ][IoProbe] done id=3893 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=240083790 total_us=1143857 result=returned
+[245193][INFO ][IoProbe] done id=3973 op=storage.append task=loopTask cpu=1 pri=1 start_us=245012883 total_us=65689 result=returned
+[245193][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=698 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[245695][WARN ][IoProbe] active id=3977 op=sd.csv_row task=StorageTask stage=open age_us=565096 stage_us=249727 entries=0 records=0
+[245695][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=616600
+[245695][WARN ][IoProbe] active id=3975 op=storage.flush task=StorageTask stage=write age_us=639878 stage_us=565487 entries=0 records=0
+[245695][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=616977
+[246195][INFO ][IoProbe] done id=3977 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=245130194 total_us=1002197 result=verified
+[246445][INFO ][IoProbe] done id=3975 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=245055789 total_us=1142219 result=returned
+[250195][INFO ][IoProbe] done id=4055 op=storage.append task=loopTask cpu=1 pri=1 start_us=250012494 total_us=65713 result=returned
+[250196][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=738 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[250697][WARN ][IoProbe] active id=4059 op=sd.csv_row task=StorageTask stage=open age_us=569096 stage_us=258700 entries=0 records=0
+[250697][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=618950
+[250697][WARN ][IoProbe] active id=4057 op=storage.flush task=StorageTask stage=write age_us=672912 stage_us=569543 entries=0 records=0
+[250697][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=619383
+[251197][INFO ][IoProbe] done id=4059 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=250128188 total_us=1015697 result=verified
+[251448][INFO ][IoProbe] done id=4057 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=250024805 total_us=1184106 result=returned
+[255198][INFO ][IoProbe] done id=4136 op=storage.append task=loopTask cpu=1 pri=1 start_us=255013082 total_us=65698 result=returned
+[255198][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=3725 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[255700][WARN ][IoProbe] active id=4140 op=sd.csv_row task=StorageTask stage=open age_us=574297 stage_us=266590 entries=0 records=0
+[255700][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=621391
+[255700][WARN ][IoProbe] active id=4138 op=storage.flush task=StorageTask stage=write age_us=668836 stage_us=574673 entries=0 records=0
+[255700][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=621754
+[256200][INFO ][IoProbe] done id=4140 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=255125987 total_us=1013512 result=verified
+[256450][INFO ][IoProbe] done id=4138 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=255031811 total_us=1173472 result=returned
+[260200][INFO ][IoProbe] done id=4217 op=storage.append task=loopTask cpu=1 pri=1 start_us=260012364 total_us=65696 result=returned
+[260200][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1655 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[260702][WARN ][IoProbe] active id=4221 op=sd.csv_row task=StorageTask stage=open age_us=542657 stage_us=229539be] owner task=StorageTask site=flushPendingToSd depth=1 held_us=624102
+[260702][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=624461
+[261202][INFO ][IoProbe] done id=4221 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=260159628 total_us=1020103 result=verified
+[261452][INFO ][IoProbe] done id=4219 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=260025804 total_us=1227639 result=returned
+[265204][INFO ][IoProbe] done id=4298 op=storage.append task=loopTask cpu=1 pri=1 start_us=265020489 total_us=65755 result=returned
+[265204][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1700 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[265706][WARN ][IoProbe] active id=4302 op=sd.csv_row task=StorageTask stage=open age_us=570103 stage_us=254905 entries=0 records=0
+[265706][WARN ][IoProbe] owner task=StorageTask site=flushPendingToS[265706][WARN ][IoProbe] active id=4300 op=storage.flush task=StorageTask stage=write age_us=630282 stage_us=570481 entries=0 records=0
+[265706][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=620283
+[266206][INFO ][IoProbe] done id=4302 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=265136182 total_us=1018936 result=verified
+[266456][INFO ][IoProbe] done id=4300 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=265076367 total_us=1167585 result=returned
+[270206][INFO ][IoProbe] done id=4379 op=storage.append task=loopTask cpu=1 pri=1 start_us=270020846 total_us=65687 result=returned
+[270207][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1747 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[270708][WARN ][IoProbe] active id=4383 op=sd.csv_row task=StorageTask stage=open age_us=570093 stage_us=253569 entries=0 records=0
+[270708][WARN ][IoProbe] owner task=StorageTask site=flushPeactive id=4381 op=storage.flush task=StorageTask stage=write age_us=640857 stage_us=570466 entries=0 records=0
+[270708][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=621994
+[271209][INFO ][IoProbe] done id=4383 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=270138192 total_us=1015690 result=verified
+[271460][INFO ][IoProbe] done id=4381 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=270067787 total_us=1169393 result=returned
+[275210][INFO ][IoProbe] done id=4460 op=storage.append task=loopTask cpu=1 pri=1 start_us=275021026 total_us=65708 result=returned
+[275211][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=766 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[275712][WARN ][IoProbe] active id=4464 op=sd.csv_row task=StorageTask stage=open age_us=576904 stage_us=264141 entries=0 records=0
+[275712][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=625510
+[275712][WARN ][IoProbe] active id=4462 op=storage.flush task=StorageTask stage=write age_us=648867 stage_us=577284 entries=0 records=0
+[275712][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=625877
+[276213][INFO ][IoProbe] done id=4464 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=275135384 total_us=1022071 result=verified
+[276463][INFO ][IoProbe] done id=4462 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=275063788 total_us=1163653 result=returned
+[280213][INFO ][IoProbe] done id=4541 op=storage.append task=loopTask cpu=1 pri=1 start_us=280021367 total_us=65753 result=returned
+[280213][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1699 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[280715][WARN ][IoProbe] active id=4545 op=sd.csv_row task=StorageTask stage=open age_us=578094 stage_us=269535 entries=0 records=0
+[280715][WARN ][IoProbe] ownerTask site=flushPendingToSd depth=1 held_us=628040
+[280715][WARN ][IoProbe] active id=4543 op=storage.flush task=StorageTask stage=write age_us=663323 stage_us=578484 entries=0 records=0
+[280715][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=628416
+[281216][INFO ][IoProbe] done id=4545 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=280137195 total_us=1021810 result=verified
+[281466][INFO ][IoProbe] done id=4543 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=280052342 total_us=1178817 result=returned
+[285216][INFO ][IoProbe] done id=4622 op=storage.append task=loopTask cpu=1 pri=1 start_us=285022060 total_us=65749 result=returned
+[285217][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=748 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[285718][WARN ][IoProbe] active id=4626 op=sd.csv_row task=StorageTask stage=open age_us=583165 stage_us=278246 entries=0 records=0
+[285718][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=630362
+[285718][WARN ][IoProbe] active id=4624 op=storage.flush task=StorageTask stage=write age_us=662856 stage_us=583541 entries=0 records=0
+[285718][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=630725
+[286218][INFO ][IoProbe] done id=4626 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=285135120 total_us=1001838 result=verified
+[286219][INFO ][IoProbe] done id=4624 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=285055792 total_us=1146387 result=returned
+[290219][INFO ][IoProbe] done id=4705 op=storage.append task=loopTask cpu=1 pri=1 start_us=290036211 total_us=65704 result=returned
+[290219][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=3714 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[290721][WARN ][IoProbe] active id=4707 op=storage.flush task=StorageTask stage=write age_us=595952 stage_us=544105 entries=0 records=0
+[290721][WARN ][IoProbe] owner task=StorageTask site=flushPendingWARN ][IoProbe] active id=4709 op=sd.csv_row task=StorageTask stage=open age_us=544451 stage_us=227751 entries=0 records=0
+[290721][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=596262
+[291221][INFO ][IoProbe] done id=4709 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=290177194 total_us=1018043 result=verified
+[291471][INFO ][IoProbe] done id=4707 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=290125333 total_us=1175916 result=returned
+[295221][INFO ][IoProbe] done id=4784 op=storage.append task=loopTask cpu=1 pri=1 start_us=295021831 total_us=65698 result=returned
+[295221][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1666 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[295723][WARN ][IoProbe] active id=4788 op=sd.csv_row task=StorageTask stage=open age_us=584090 stage_us=269649 entries=0 records=0
+[295723][WARN ][IoProbe] owner task=StorageTask site=flushPendioProbe] active id=4786 op=storage.flush task=StorageTask stage=write age_us=701306 stage_us=584462 entries=0 records=0
+[295723][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=635990
+[296223][INFO ][IoProbe] done id=4788 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=295139195 total_us=1007928 result=verified
+[296473][INFO ][IoProbe] done id=4786 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=295022337 total_us=1222100 result=returned
+[300223][INFO ][IoProbe] done id=4865 op=storage.append task=loopTask cpu=1 pri=1 start_us=300022304 total_us=65718 result=returned
+[300223][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=702 lost_active=0 lost_done=0 heap_low=182184 stack_free=1272
+[300725][WARN ][IoProbe] active id=4869 op=sd.csv_row task=StorageTask stage=open age_us=587096 stage_us=270314 entries=0 records=0
+[300725][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=637141
+[300725][WARN ][IoProbe] active id=4867 op=storage.flush task=Storagecords=0
+[300725][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=637540
+[301225][INFO ][IoProbe] done id=4869 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=300138193 total_us=1020568 result=verified
+[301225][INFO ][IoProbe] done id=4867 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=300066788 total_us=1157951 result=returned
+[303012][D][WiFiGeneric.cpp:1040] _eventCallback(): Arduino Event: 0 - WIFI_READY
+[303014][V][WiFiGeneric.cpp:341] _arduino_event_cb(): STA Started
+[303026][D][WiFiGeneric.cpp:1040] _eventCallback(): Arduino Event: 2 - STA_START
+[303054][V][WiFiGeneric.cpp:97] set_esp_interface_ip(): Configuring Station static IP: 0.0.0.0, MASK: 0.0.0.0, GW: 0.0.0.0
+[303539][V][WiFiGeneric.cpp:356] _arduino_event_cb(): STA Connected: SSID: HG8045-2C9D-bg, BSSID: e4:7e:66:40:56:74, Channel: 7, Auth: WPA2_PSK
+[303552][D][WiFiGeneric.cpp:1040] _eventCallback(): Arduino Event: 4 - STA_CONNECTED
+[305212][V][WiFiGeneric.cpp:370] _arduino_event_cb(): STA Got New IP:192.168.1.10
+[305220][D][WiFiGeneric.cpp:1040] _eventCallback(): Arduino Event: 7 - STA_GOT_IP
+[305227][D][WiFiGeneric.cpp:1103] _eventCallback(): STA IP: 192.168.1.10, MASK: 255.255.255.0, GW: 192.168.1.1
+[305251][INFO ][IoProbe] done id=4947 op=storage.append task=loopTask cpu=1 pri=1 start_us=305022472 total_us=65927 result=returned
+[305251][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=8595 lost_active=0 lost_done=0 heap_low=163056 stack_free=1272
+[305253][INFO ][TaskStack] task=WeatherTask free_min_bytes=4600 priority=1
+[305754][WARN ][IoProbe] active id=4949 op=storage.flush task=StorageTask stage=write age_us=650941 stage_us=605122 entries=0 records=0
+[305754][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=650890
+[305754][WARN ][IoProbe] active id=4951 op=sd.csv_row task=Sto81 stage_us=278614 entries=0 records=0
+[305754][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=651263
+[306255][INFO ][IoProbe] done id=4951 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=305149177 total_us=1032246 result=verified
+[306257][INFO ][IoProbe] done id=4949 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=305103344 total_us=1141046 result=returned
+[310216][V][HTTPClient.cpp:1264] handleHeaderResponse(): RX: 'Content-Security-Policy: script-src 'self' 'unsafe-inline' 'unsafe-eval' www.jma.go.jp www.jma-net.go.jp js.jma.go.jp www.data.jma.go.jp ds.data.jma.go.jp www.google.com www.gstatic.com jma.genieesspv.jp pagead2.googlesyndication.com code.jquery.com ajaxzip3.github.io cdn.jsdelivr.net ajax.aspnetcdn.com code.createjs.com unpkg.com cdnjs.cloudflare.com ajax.googleapis.com platform.twitter.com github.githubassets.com maps.gsi.go.jp img.gsspat.jp; frame-ancestors 'self' www.mlit.go.jp www.data.jma.go.jp ds.data.jma.go.jp www.jma-net.go.jp www.pref.tokushima.lg.j[310260][INFO ][IoProbe] done id=5029 op=storage.append task=loopTask cpu=1 pri=1 start_us=310024215 total_us=68038 result=returned
+[310260][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=3680 lost_active=0 lost_done=0 heap_low=102340 stack_free=1272
+p www.cgr.mlit.go.jp river-bosai.ktr.mlit.go.j[310264][INFO ][TaskStack] task=WeatherTask free_min_bytes=2580 priority=1
+[310766][WARN ][IoProbe] active id=5033 op=sd.csv_row task=StorageTask stage=open age_us=617829 sr task=StorageTask site=flushPendingToSd depth=1 held_us=673886
+[310766][WARN ][IoProbe] active id=5031 op=storage.flush task=StorageTask stage=write age_us=695898 stage_us=618207 entries=0 records=0
+[310768][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=674249
+[311269][INFO ][IoProbe] done id=5033 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=310148455 total_us=1049295 result=ver122 close=848 prepare=32 inspect=307011 read=7544 write=74 flush=15908 reopen=359020 verify=716
+[311269][INFO ][IoProbe] done id=5031 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=310070749 total_us=1193909 result=returned
+[312281][INFO ][IoProbe] done id=5043 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=311684346 total_us=487492 result=returned
+[312288][V][WiFiGeneric.cpp:363] _arduino_event_cb(): STA Disconnected: SSID: , BSSID: e4:7e:66:40:56:74, Reason: 8
+[312299][D][WiFiGeneric.cpp:1040] _eventCallback(): Arduino Event: 5 - STA_DISCONNECTED
+[312300][V][WiFiGeneric.cpp:344] _arduino_event_cb(): STA Stopped
+[312313][W][WiFiGeneric.cpp:1062] _eventCallback(): Reason: 8 - ASSOC_LEAVE
+[312320][D][WiFiGeneric.cpp:1040] _eventCallback(): Arduino Event: 3 - STA_STOP
+[315281][INFO ][IoProbe] done id=5103 op=storage.append task=loopTask cpu=1 pri=1 start_us=315023410 total_us=65694 result=returned
+[315281][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=709 lost_active=0 lost_done=0 heap_low=102340 stack_free=1188
+[315283][INFO ][TaskStack] task=WeatherTask free_min_bytes=2500 priority=1
+[315283][INFO ][TaskStack] task=IoProbeTask free_min_bytes=1188 priority=1
+[315533][WARN ][IoProbe] active id=5105 op=storage.flush task=StorageTask stage=write age_us=501495 stage_us=393939 entries=0 records=0
+[315533][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=444079
+[315783][WARN ][IoProbe] active id=5107 op=sd.csv_row task=StorageTask stage=flush age_us=643917 stage_us=10694 entries=0 records=0
+[315783][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=694070
+[316283][INFO ][IoProbe] done id=5107 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=315139370 total_us=1008227 result=verified
+[316283][INFO ][IoProbe] done id=5105 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=315031801 total_us=1180388 result=returned
+[320283][INFO ][IoProbe] done id=5186 op=storage.append task=loopTask cpu=1 pri=1 start_us=320048306 total_us=65691 result=returned
+[320284][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=744 lost_active=0 lost_done=0 heap_low=102340 stack_free=1188
+[320785][WARN ][IoProbe] active id=5188 op=storage.flush task=StorageTask stage=write age_us=650686 stage_us=605105 entries=0 records=0
+[320785][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=650649
+[320785][WARN ][IoProbe] active id=5190 op=sd.csv_row task=StorageTask stage=open age_us=605484 stage_us=288917 entries=0 records=0
+[320786][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=651042
+[321286][INFO ][IoProbe] done id=5190 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=320180193 total_us=1020721 result=verified
+[321536][INFO ][IoProbe] done id=5188 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=320134598 total_us=1153568 result=returned
+[325286][INFO ][IoProbe] done id=5267 op=storage.append task=loopTask cpu=1 pri=1 start_us=325025462 total_us=65698 result=returned
+[325287][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1742 lost_active=0 lost_done=0 heap_low=102340 stack_free=1188
+[325788][WARN ][IoProbe] active id=5269 op=storage.flush task=StorageTask stage=write age_us=675920 stage_us=631103 entries=0 records=0
+[325788][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=675869
+[325788][WARN ][IoProbe] active id=5271 op=sd.csv_row task=StorageTask stage=open age_us=631450 stage_us=314923 entries=0 records=0
+[325788][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=676230
+[326288][INFO ][IoProbe] done id=5271 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=325157196 total_us=1006110 result=verified
+[326289][INFO ][IoProbe] done id=5269 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=325112365 total_us=1139575 result=returned
+[330289][INFO ][IoProbe] done id=5348 op=storage.append task=loopTask cpu=1 pri=1 start_us=330025586 total_us=66054 result=returned
+[330289][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=2704 lost_active=0 lost_done=0 heap_low=102340 stack_free=1188
+[330791][WARN ][IoProbe] active id=5352 op=sd.csv_row task=StorageTask stage=open ags=0
+[330791][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=699977
+[330791][WARN ][IoProbe] active id=5350 op=storage.flush task=StorageTask stage=write age_us=715958 stage_us=651581 entries=0 records=0
+[330791][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=700436
+[331291][INFO ][IoProbe] done id=5352 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=330140179 total_us=1012716 result=verified
+[331291][INFO ][IoProbe] done id=5350 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=330075788 total_us=1147915 re[331292][INFO ][IoProbe] time_us id=5350 enter=12 wait=15519 prepare=195 wal_read=15067 tx_start=33567 write=1012754 consume=39833 tx_finish=30951 mount=17
+[335291][INFO ][IoProbe] done id=5429 op=storage.append task=loopTask cpu=1 pri=1 start_us=335025758 total_us=65724 result=returned
+[335291][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=685 lost_active=0 lost_done=0 heap_low=102340 stack_free=1188
+[335793][WARN ][IoProbe] active id=5433 op=sd.csv_row task=StorageTask stage=open age_us=648900 stage_us=339361 entries=0 records=0
+[335793][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=701680
+[335793][WARN ][IoProbe] active id=5431 op=storage.flush task=StorageTask stage=write age_us=735860 stage_us=649278 entries=0 records=0
+[335793][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=702044
+[336293][INFO ][IoProbe] done id=5433 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=335144385 total_us=1012746 result=verified
+[336294][INFO ][IoProbe] done id=5431 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=335057789 total_us=1169399 result=returned
+[340294][INFO ][IoProbe] done id=5510 op=storage.append task=loopTask cpu=1 pri=1 start_us=340025452 total_us=65710 result=returned
+[340294][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1696 lost_active=0 lost_done=0 heap_low=102340 stack_free=1188
+[340796][WARN ][IoProbe] active id=5514 op=sd.csv_row task=StorageTask stage=flush age_us=655093 stage_us=4678 entries=0 records=0
+[340796][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=705001
+[340796][WARN ][IoProbe] active id=5512 op=storage.flush task=StorageTask stage=write age_us=744085 stage_us=655463 entries=0 records=0
+[340796][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=705358
+[341296][INFO ][IoProbe] done id=5514 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=340141189 total_us=1012191 result=verified
+[341296][INFO ][IoProbe] done id=5512 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=340052554 total_us=1164622 result=returned
+[345297][INFO ][IoProbe] done id=5591 op=storage.append task=loopTask cpu=1 pri=1 start_us=345025713 total_us=65727 result=returned
+[345298][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1716 lost_active=0 lost_done=0 heap_low=102340 stack_free=1188
+[345549][WARN ][IoProbe] active id=5593 op=storage.flush task=StorageTask stage=write age_us=501506 stage_us=376870 entries=0 records=0
+[345549][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=457734
+[345799][WARN ][IoProbe] active id=5595 op=sd.csv_row task=StorageTask stage=open age_us=626847 stage_us=311871 entries=0 records=0
+[345799][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=707724
+[346299][INFO ][IoProbe] done id=5595 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=345172438 total_us=1016993 result=verified
+[346300][INFO ][IoProbe] done id=5593 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=345047789 total_us=1205473 result=returned
+[350300][INFO ][IoProbe] done id=5672 op=storage.append task=loopTask cpu=1 pri=1 start_us=350025428 total_us=65730 result=returned
+[350300][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=3708 lost_active=0 lost_done=0 heap_low=102340 stack_free=1188
+[350802][WARN ][IoProbe] active id=5676 op=sd.csv_row task=StorageTask stage=flush age_us=661258 stage_us=13921 entries=0 records=0
+[350802][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=711173
+[350802][WARN ][IoProbe] active id=5674 op=storage.flush task=StorageTask stage=write age_us=723027 stage_us=661630 entries=0 records=0
+[350802][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=711532
+[351302][INFO ][IoProbe] done id=5676 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=350141196 total_us=1017560 result=verified
+[351303][INFO ][IoProbe] done id=5674 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=350079786 total_us=1175505 result=returned
+[355303][INFO ][IoProbe] done id=5753 op=storage.append task=loopTask cpu=1 pri=1 start_us=355025653 total_us=65742 result=returned
+[355303][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1660 lost_active=0 lost_done=0 heap_low=102340 stack_free=1188
+[355805][WARN ][IoProbe] active id=5757 op=sd.csv_row task=StorageTask stage=flush age_us=659897 stage_us=3041 entries=0 records=0
+[355805][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=713760
+[355805][WARN ][IoProbe] active id=5755 op=storage.flush task=StorageTask stage=write age_us=727259 stage_us=660214 entries=0 records=0
+[355805][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=714064
+[356305][INFO ][IoProbe] done id=5757 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=355145385 total_us=1015563 result=verified
+[356306][INFO ][IoProbe] done id=5755 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=355078327 total_us=1153106 result=returned
+[360306][INFO ][IoProbe] done id=5834 op=storage.append task=loopTask cpu=1 pri=1 start_us=360026396 total_us=65729 result=returned
+[360307][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1430 lost_active=0 lost_done=0 heap_low=102340 stack_free=1188
+[360559][WARN ][IoProbe] active id=5836 op=storage.flush task=StorageTask stage=write age_us=503503 stage_us=416122 entries=0 records=0
+[360559][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=467045
+[360809][WARN ][IoProbe] active id=5838 op=sd.csv_row task=StorageTask stage=flush age_us=666096 stage_us=17646 entries=0 records=0
+[360809][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=717032
+[361309][INFO ][IoProbe] done id=5838 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=360143186 total_us=1017270 result=verified
+[361310][INFO ][IoProbe] done id=5836 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=360055792 total_us=1168374 result=returned
+[365310][INFO ][IoProbe] done id=5916 op=storage.append task=loopTask cpu=1 pri=1 start_us=365026306 total_us=65701 result=returned
+[365310][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=3728 lost_active=0 lost_done=0 heap_low=102340 stack_free=1188
+[365562][WARN ][IoProbe] active id=5918 op=storage.flush task=StorageTask stage=write age_us=511986 stage_us=419133 entries=0 records=0
+[365562][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=470177
+[365812][WARN ][IoProbe] active id=5920 op=sd.csv_row task=StorageTask stage=reopen age_us=669096 stage_us=189 entries=0 records=0
+[365812][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=720154
+[366312][INFO ][IoProbe] done id=5920 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=365143187 total_us=1005604 result=verified
+[366312][INFO ][IoProbe] done id=5918 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=365050320 total_us=1160762 result=returned
+[370313][INFO ][IoProbe] done id=5998 op=storage.append task=loopTask cpu=1 pri=1 start_us=370026649 total_us=65706 result=returned
+[370314][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=738 lost_active=0 lost_done=0 heap_low=102340 stack_free=1188
+[370565][WARN ][IoProbe] active id=6000 op=storage.flush task=Storageords=0
+[370565][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=472827
+[370815][WARN ][IoProbe] active id=6002 op=sd.csv_row task=StorageTask stage=open age_us=636146 stage_us=319552 entries=0 records=0
+[370815][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=722811
+[371315][INFO ][IoProbe] done id=6002 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=370179137 total_us=1009564 result=verified
+[371315][INFO ][IoProbe] done id=6000 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=370039801 total_us=1222642 result=returned
+[375316][INFO ][IoProbe] done id=6079 op=storage.append task=loopTask cpu=1 pri=1 start_us=375034273 total_us=65746 result=returned
+[375317][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=873 lost_active=0 lost_done=0 heap_low=102340 stack_free=1188
+[375818][WARN ][IoProbe] active id=6083 op=sd.csv_row task=StorageTask stage=reopen age_us=668088 stage_us=7130 entries=0 records=0
+[375818][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=718141
+[375818][WARN ][IoProbe] active id=6081 op=storage.flush task=StorageTask stage=write age_us=731747 stage_us=668351 entries=0 records=0
+[375818][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=718390
+[376318][INFO ][IoProbe] done id=6083 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=375150196 total_us=1017044 result=verified
+[376318][INFO ][IoProbe] done id=6081 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=375086786 total_us=1178116 result=returned
+[380318][INFO ][IoProbe] done id=6160 op=storage.append task=loopTask cpu=1 pri=1 start_us=380026814 total_us=65755 result=returned
+[380319][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=735 lost_active=0 lost_done=0 heap_low=102340 stack_free=1188
+[380820][WARN ][IoProbe] active id=6164 op=sd.csv_row task=StorageTask stage=reopen age_us=674899 stage_us=7581 entries=0 records=0
+[380820][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=727587
+[380820][WARN ][IoProbe] active id=6162 op=storage.flush task=StorageTask stage=write age_us=732741 stage_us=675150 entries=0 records=0
+[380820][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=727825
+[381320][INFO ][IoProbe] done id=6164 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=380145387 total_us=1014093 result=verified
+[381320][INFO ][IoProbe] done id=6162 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=380087783 total_us=1144269 result=returned
+[385320][INFO ][IoProbe] done id=6241 op=storage.append task=loopTask cpu=1 pri=1 start_us=385026251 total_us=65688 result=returned
+[385320][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=2694 lost_active=0 lost_done=0 heap_low=102340 stack_free=1188
+[385572][WARN ][IoProbe] active id=6243 op=storage.flush task=StorageTask stage=write age_us=513504 stage_us=430121 entries=0 records=0
+[385572][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=480238
+[385822][WARN ][IoProbe] active id=6245 op=sd.csv_row task=StorageTask stage=reopen age_us=680094 stage_us=15140 entries=0 records=0
+[385822][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=730225
+[386322][INFO ][IoProbe] done id=6245 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=385142188 total_us=1009510 result=verified
+[386322][INFO ][IoProbe] done id=6243 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=385058791 total_us=1163874 result=returned
+[390323][INFO ][IoProbe] done id=6322 op=storage.append task=loopTask cpu=1 pri=1 start_us=390026431 total_us=65724 result=returned
+[390324][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=808 lost_active=0 lost_done=0 heap_low=102340 stack_free=1188
+[390575][WARN ][IoProbe] active id=6324 op=storage.flush task=StorageTask stage=write age_us=519509 stage_us=433114 entries=0 records=0
+[390576][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=483022
+[390826][WARN ][IoProbe] active id=6326 op=sd.csv_row task=StorageTask stage=reopen age_us=684084 stage_us=22541 entries=0 records=0
+[390826][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=734006
+[391326][INFO ][IoProbe] done id=6326 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=390142198 total_us=1017767 result=verified
+[391326][INFO ][IoProbe] done id=6324 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=390055789 total_us=1171407 result=returned
+[395327][INFO ][IoProbe] done id=6403 op=storage.append task=loopTask cpu=1 pri=1 start_us=395026ned
+[395327][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1701 lost_active=0 lost_done=0 heap_low=102340 stack_free=1188
+[395579][WARN ][IoProbe] active id=6405 op=storage.flush task=StorageTask stage=write age_us=532490 stage_us=436129 entries=0 records=0
+[395579][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=487021
+[395651][D][WiFiGeneric.cpp:1040] _eventCallback(): Arduino Event: 0 - WIFI_READY
+[395667][V][WiFiGeneric.cpp:393] _arduino_event_cb(): AP Started
+[395668][V][WiFiGeneric.cpp:97] set_esp_interface_ip(): Configuring SoftAP static IP: 192.168.4.1, MASK: 255.255.255.0, GW: 192.168.4.1
+[395684][D][WiFiGeneric.cpp:1040] _eventCallback(): Arduino Event: 10 - AP_START
+[395696][V][WiFiGeneric.cpp:143] set_esp_interface_ip(): SoftAP: 192.168.4.1 | Gateway: 192.168.4.1 | DHCP Start: 0.0.0.0 | Netmask: 255.255.255.0
+[395710][V][WiFiGeneric.cpp:190] set_esp_interface_ip(): DHCP Server Range: 192.168.4.2 to 192.168.4.12
+[395729][INFO ][WiFi] mDNS responder started. You can access http://env.local
+[395730][INFO ][WiFi] Protected AP ENV_SENSE_AP started. IP: 192.168.4.1
+[395730][INFO ][WiFi] Wi-Fi AP turned ON
+[395829][WARN ][IoProbe] active id=6407 op=sd.csv_row task=StorageTask stage=reopen age_us=686106 stage_us=3069 entries=0 records=0
+[395829][WARN ][IoProbe] owner task=StorageTask site=flushPendingToSd depth=1 held_us=737012
+[396329][INFO ][IoProbe] done id=6407 op=sd.csv_row task=StorageTask cpu=1 pri=1 start_us=395143180 total_us=1034714 result=verified
+[396329][INFO ][IoProbe] done id=6405 op=storage.flush task=StorageTask cpu=1 pri=1 start_us=395046805 total_us=1200594 result=[396330][INFO ][IoProbe] time_us id=6405 enter=9 wait=45470 prepare=236 wal_read=20224 tx_start=30405 write=1034755 consume=44793 tx_finish=24685 mount=17
+[400157][V][WiFiGeneric.cpp:408] _arduino_event_cb(): AP Station Connected: MAC: 96:e6:1b:68:58:c2, AID: 1
+[400167][D][WiFiGeneric.cpp:1040] _eventCallback(): Arduino Event: 12 - AP_STACONNECTED
+[400329][INFO ][IoProbe] done id=6408 op=storage.append task=loopTask cpu=1 pri=1 start_us=400026848 total_us=66836 result=returned
+[400329][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1755 lost_active=0 lost_done=0 heap_low=102340 stack_free=1188
+[401426][V][WiFiGeneric.cpp:422] _arduino_event_cb(): AP Station IP Assigned:192.168.4.2
+[401435][D][WiFiGeneric.cpp:1040] _eventCallback(): Arduino Event: 14 - AP_STAIPASSIGNED
+[403331][INFO ][IoProbe] done id=6410 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=403124368 total_us=2905 result=returned
+[403331][INFO ][IoProbe] time_us id=6410 enter[403331][INFO ][IoProbe] counts id=6410 entries=0 dirs=0 files=0 bytene id=6412 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=403130436 total_us=2806 result=returned
+[403332][INFO ][IoProbe] done id=6413 op=web.status task=async_tcp cpu=1 pri=10 start_us=403135677 total_us=2610 result=returned
+[403332][INFO ][IoProbe] done id=6417 op=web.location task=async_tcp cpu=1 pri=10 start_us=403140664 total_us=2404 result=returned
+[403582][INFO ][IoProbe] done id=6418 op=web.weather task=async_tcp cpu=1 pri=10 start_us=403145847 total_us=2934 result=returned
+[403583][INFO ][IoProbe] done id=6419 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=403232687 total_us=2558 result=returned
+[403583][INFO ][IoProbe] done idcpu=1 pri=10 start_us=403238682 total_us=2985 result=returned
+[403583][INFO ][IoProbe] done idus task=async_tcp cpu=1 pri=10 start_us=403244743 total_us=2753 result=returned
+[405333][INFO ][IoProbe] done id=6427 op=storage.append task=loopTask cpu=1 pri=1 start_us=405026365 total_7 enter=20 wait=38 prepare=99 write=65642
+[405333][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=632 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[405334][INFO ][TaskStack] task=async_tcp free_min_bytes=12884 priority=10
+[410335][INFO ][IoProbe] done id=6429 op=storage.append task=loopTask cpu=1 pri=1 start_us=410027455 total_us=65949 result=returned
+[410336][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=374 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[410837][INFO ][IoProbe] done id=6431 op=web.status task=async_tcp cpu=1 pri=10 start_us=410690734 total_us=2638 result=returned
+[410837][INFO ][IoProbe] done id=6435 op=web.location task=async_tcp cpu=1 pri=10 start_us=410697952 total_us=2900 result=returned
+[410838][INFO ][IoProbe] done id=6436 op=web.weather task=async_tcp cpu=1 pri=10 start_us=410703939 total_us=3655 result=returned
+[410838][INFO ][IoProbe] done id=6437 ask=async_tcp cpu=1 pri=10 start_us=410711066 total_us=3288 result=returned
+[411088][INFO ][IoProbe] done id=6439 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=410718183 total_us=3226 result=returned
+[412338][INFO ][IoProbe] done id=6440 op=web.asset.index task=async_tcp cpu=1 pri=10 start_us=412303292 total_us=1869 result=returned
+[412588][INFO ][IoProbe] done id=6441 op=web.asset.css task=async_tcp cpu=1 pri=10 start_us=412399763 total_us=1911 result=returned
+[412588][INFO ][IoProbe] done id=6442 op=web.asset.js task=async_tcp cpu=1 pri=10 start_us=412405263 total_us=2228 result=returned
+[412589][INFO ][IoProbe] done id=6443 op=web.session task=async_tcp cpu=1 pri=10 start_us=412445210 total_us=2254 result=returned
+[412589][INFO ][IoProbe] done id=6444 op=web.status task=async_tcp cpu=1 pri=10 start_us=412472289 total_us=2882 result=returned
+[412840][INFO ][IoProbe] done id=6448 op=web.location task=async=2596 result=returned
+[412840][INFO ][IoProbe] done id=6449 op=web.weather task=async_tcp cpu=1 pri=10 start_us=412484644 total_us=3715 result=returned
+[412841][INFO ][IoProbe] done id=6450 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=412491908 total_us=2758 result=returned
+[412841][INFO ][IoProbe] counts id=6450 entries=0 dirs=0 files=0 ] done id=6452 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=412498259 total_us=2866 result=returned
+[415341][INFO ][IoProbe] done id=6453 op=storage.append task=loopTask cpu=1 pri=1 start_us=415048462 total_us=65690 result=returned
+[415341][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=720 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[415342][INFO ][TaskStack] task=async_tcp free_min_bytes=12836 priority=10
+[418593][INFO ][IoProbe] done id=6455 op=web.asset.index task=async_tcp cpu=1 pri=10 start_us=418457260 total_us=1881 result=returned
+[418593][INFO ][IoProbe] done id=6456 op=web.asset.css task=async_tcp cpu=1 pri=10 start_us=418518403 total_us=2062 result=returned
+[418594][INFO ][IoProbe] done id=6457 op=web.asset.js task=async_tcp cpu=1 pri=10 start_us=418523992 total_us=2105 result=returned
+[418594][INFO ][IoProbe] done id=6458 op=web.session task=async_tcp cpu=1 pri=10 start_us=418550987 total_us=2249 result=returned
+[418845][INFO ][IoProbe] done id=6459 op=web.status task=async_tcp cpu=1 pri=10 start_us=418671274 total_us=2755 result=
+[418845][INFO ][IoProbe] done id=6463 op=web.location task=async_tcp cpu=1 pri=10 start_us=418676849 total_us=2351 result=returned
+[418846][INFO ][IoProbe] done id=6464 op=web.weather task=async_tcp cpu=1 pri=10 start_us=418682868 total_us=3102 result=returned
+[418846][INFO ][IoProbe] done id=6465 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=418693950 total_us=3063 result=returned
+[419096][INFO ][IoProbe] done id=6467 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=418699800 total_us=2531 result=returned
+[420346][INFO ][IoProbe] done id=6468 op=storage.append task=loopTask cpu=1 pri=1 start_us=420035306 total_us=65758 result=returned
+[420347][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=290 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[425348][INFO ][IoProbe] done id=6471 op=storage.append task=loopTask cpu=1 pri=1 start_us=425035902 total_us=67044 result=returned
+[425348][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1647 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[428850][INFO ][IoProbe] done id=6474 op=web.status task=async_tcp cpu=1 pri=10 start_us=428743001 total_us=2918 result=returned
+[428850][INFO ][IoProbe] done id=6478 op=web.location task=async_tcp cpu=1 pri=10 start_us=428749794 total_us=2385 result=returned
+[428851][INFO ][IoProbe] done id=6479 op=web.weather task=async_tcp cpu=1 pri=10 start_us=428757014 total_us=3706 result=returned
+[428851][INFO ][IoProbe] done id=6480 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=428764014 total_us=2748 result=returned
+[429101][INFO ][IoProbe] done id=6482 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=428770246 total_us=2950 result=return[429101][INFO ][IoProbe] time_us id=6482 enter=2950
+[430351][INFO ][IoProbe] done id=6483 op=storage.append task=loopTask cpu=1 pri=1 start_us=430035780 total_us=65791 result=returned
+[430352][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=286 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[432299][V][WiFiGeneric.cpp:375] _arduino_event_cb(): STA IP Lost
+[432305][D][WiFiGeneric.cpp:1040] _eventCallback(): Arduino Event: 9 - STA_LOST_IP
+[435103][INFO ][IoProbe] done id=6485 op=storage.append task=loopTask cpu=1 pri=1 start_us=435036001 total_us=65866 result=returned
+[435353][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1212 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[438854][INFO ][IoProbe] done id=6487 op=web.status task=async_tcp cpu=1 pri=10 start_us=438735524 total_us=2728 result=returned
+[438854][INFO ][IoProbe] done id=6491 op=web.location task=async_tcp cpu=1 pri=10 start_us=438741173 total_us=2778 result=returned
+[438855][Itask=async_tcp cpu=1 pri=10 start_us=438747292 total_us=3661 result=returned
+[438855][INFO ][IoProbe] done id=6493 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=438753840 total_us=3026 result=returned
+[439105][INFO ][IoProbe] done id=6495 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=438760792 total_us=2787 result=returned
+[440355][INFO ][IoProbe] done id=6496 op=storage.append task=loopTask cpu=1 pri=1 start_us=440057083 total_us=65869 result=returned
+[440356][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=368 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[440357][INFO ][TaskStack] task=async_tcp free_min_bytes=12820 priority=10
+[445357][INFO ][IoProbe] done id=6498 op=storage.append task=loopTask cpu=1 pri=1 start_us=445043017 total_us=65700 result=returned
+[445357][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=771 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[448859][INFO ][IoProbe] done id=6500 op=web.status task=async_tcp cpu=1 pri=10 start_us=448737853 total_us=2571 result=returned
+[448859][INFO ][IoProbe] done id=6504 op=web.location task=async_tcp cpu=1 pri=10 start_us=448743577 total_us=2343 result=returned
+[448860][INFO ][IoProbe] done id=6505 op=web.weather task=async_tcp cpu=1 pri=10 start_us=448749029 total_ustime_us id=6505 enter=2922
+[448860][INFO ][IoProbe] done id=6506 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=448754823 total_us=2574 result=returned
+[449110][INFO ][IoProbe] done id=6508 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=448767060 total_us=2468 result=returned
+[450110][INFO ][IoProbe] done id=6509 op=storage.append task=loopTask cpu=1 pri=1 start_us=450043030 total_us=65779 result=returned
+[450360][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=458 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[455111][INFO ][IoProbe] done id=6511 op=storage.append task=loopTask cpu=1 pri=1 start_us=455042805 total_us=65784 result=returned
+[455361][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=70 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[458862][INFO ][IoProbe] done id=6513 op=web.status task=async_tcp cpu=1 pri=10 start_us=4587387
+[458862][INFO ][IoProbe] done id=6517 op=web.location task=async_tcp cpu=1 pri=10 start_us=458744796 total_us=2719 result=returned
+[458863][INFO ][IoProbe] done id=6518 op=web.weather task=async_tcp cpu=1 pri=10 start_us=458751964 total_us=2884 result=returned
+[458863][INFO ][IoProbe] done id=6519 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=458759760 total_us=2749 result=returned
+[459113][INFO ][IoProbe] done id=6521 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=458767128 total_us=3102 result=returned
+[460113][INFO ][IoProbe] done id=6522 op=storage.append task=loopTask cpu=1 pri=1 start_us=460043358 total_us=65839 result=returned
+[460363][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=792 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[465114][INFO ][IoProbe] done id=6524 op=storage.append task=loopTask cpu=1 pri=1 start_us=465043230 total_us=66961 result=returned
+[465364][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1143 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[469115][INFO ][IoProbe] done id=6526 op=web.status task=async_tcp cpu=1 pri=10 start_us=469034251 total_us=2940 result=returned
+[469116][INFO ][IoProbe] done id=6530 op=web.location task=async_tcp cpu=1 pri=10 start_us=469040212 total_us=2759 result=returned
+[469116][INFO ][IoProbe] done id=6531 op=web.weather task=async_tcp cpu=1 pri=10 start_us=469045859 total_us=3731 result=returned
+[4d=6532 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=469053254 total_us=3384 result=returned
+[469366][INFO ][IoProbe] done id=6534 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=469060163 total_us=3044 result=returned
+[470116][INFO ][IoProbe] done id=6535 op=storage.append task=loopTask cpu=1 pri=1 start_us=470043637 total_us=65774 result=returned
+[470366][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=468 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[475117][INFO ][IoProbe] done id=6539 op=storage.append task=loopTask cpu=1 pri=1 start_us=475043611 total_us=65706 result=returned
+[475367][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1488 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[479118][INFO ][IoProbe] done id=6541 op=web.status task=async_tcp cpu=1 pri=10 start_us=479042334 total_us=2664 result=returned
+[479119][INFO ][IoProbe] done id=6545 op=web.location task=async_tcp cpu=1 pri=10 start_us=479048723 total_us=2730 result=returned
+[479119][INFO ][IoProbe] done id=6546 op=web.weather task=async_tcp cpu=1 pri=10 start_us=479055124 total_us=3500 result=returned
+[479120][INFO ][IoProbe] done id=6547 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=479061585 total_us=3064 result=returned
+[479370][INFO ][IoProbe] done id=6549 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=479068155 total_us=3035 result=returned
+[480120][INFO ][IoProbe] done id=6550 op=storage.append task=loopTask cpu=1 pri=1 start_us=480045181 total_us=66051 result=returned
+[480370][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=92 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[485121][INFO ][IoProbe] done id=6553 op=storage.append task=loopTask cpu=1 pri=1 start_us=485043922 total_us=65813 result=returned
+[485371][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=687 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[489122][INFO ][IoProbe] done id=6556 op=web.status task=async_tcp cpu=1 pri=10 start_us=489035833 total_us=3193 result=returned
+[4891web.location task=async_tcp cpu=1 pri=10 start_us=489042287 total_us=2709 result=returned
+[489123][INFO ][IoProbe] done id=6561 op=web.weather task=async_tcp cpu=1 pri=10 start_us=489048882 total_us=3365 result=returned
+[489123][INFO ][IoProbe] done id=6562 op=web.altitude52 result=returned
+[489373][INFO ][IoProbe] done id=6564 op=web.ppg task=as=returned
+[490123][INFO ][IoProbe] done id=6565 op=storage.append task=loopTask cpu=1 pri=1 start_us=490043965 total_us=65896 result=returned
+[490373][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=74 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[495374][INFO ][IoProbe] done id=6567 op=storage.append task=loopTask cpu=1 pri=1 start_us=495044034 total_us=90891 0 wait=38 prepare=100 write=90733
+[495375][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1324 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[499126][INFO ][IoProbe] done id=6569 op=web.status task=async_tcp cpu=1 pri=10 start_us=499025848 total_us=2709 result=returned
+[499126][INFO ][IoProbe] done id=6573 op=web.location task=async_tcp cpu=1 pri=10 start_us=499031573 total_us=3033 result=returned
+[499127][INFO ][IoProbe] done id=6574 op=web.weather task=async_tcp cpu=1 pri=10 start_us=499037540 total_us=3627 result=returned
+[499127][INFO ][IoProbe] done id=6575 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=499044936 total_us=3401 result=returned
+[499378][INFO ][IoProbe] done id=6577 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=499051796 total_us=3170 result=returned
+[500128][INFO ][IoProbe] done id=6578 op=storage.append task=loopTask cpu=1 pri=1 start_us=50004e_us id=6578 enter=20 wait=38 prepare=99 write=65537
+[500378][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=6280 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[505129][INFO ][IoProbe] done id=6580 op=storage.append task=loopTask cpu=1 pri=1 start_us=505043990 total_us=65722 result=returned
+[505379][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=860 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[509130][INFO ][IoProbe] done id=6582 op=web.status task=async_tcp cpu=1 pri=10 start_usturned
+[509130][INFO ][IoProbe] done id=6586 op=web.location task=async_tcp cpu=1 pri=10 start_us=509039851 total_us=2722 result=returned
+[509131][INFO ][IoProbe] done id=6587 op=web.weather task=async_tcp cpu=1 pri=10 start_us=509045572 total_us=3671 result=returned
+[509131][INFO ][IoProbe] done id=6588 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=509052190 total_us=2783 result=returned
+[509381][INFO ][IoProbe] done id=6590 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=509059631 total_us=3272 result=returned
+[510131][INFO ][IoProbe] done id=6591 op=storage.append task=loopTask cpu=1 pri=1 start_us=510043619 total_us=65852 result=returned
+[510382][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=362 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[515133][INFO ][IoProbe] done id=6593 op=storage.append task=loopTask cpu=1 pri=1 start_us=515043583 total_us=65874 result=returned
+[515383][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1215 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[519134][INFO ][IoProbe] done id=6595 op=web.status task=async_tcp cpu=1 pri=10 start_us=519035540 total_us=2668 result=returned
+[519135][INFO ][IoProbe] done id=6599 op=web.location task=async_tcp cpu=1 pri=10 start_us=519042630 total_us=3082 result=returned
+[519135][INFO ][IoProbe] done id=6600 op=web.weather task=async_tcp cpu=1 pri=10 start_us=5190e_us id=6600 enter=3147
+[519135][INFO ][IoProbe] done id=6601 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=519056008 total_us=3242 result=returned
+[519385][INFO ][IoProbe] done id=6603 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=519062203 total_us=2654 result=returned
+[520135][INFO ][IoProbe] done id=6604 op=storage.append task=loopTask cpu=1 pri=1 start_us=520043360 total_us=65845 result=returned
+[520385][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=960 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[525136][INFO ][IoProbe] done id=6606 op=storage.append task=loopTask cpu=1 pri=1 start_us=525043576 total_us=65882 result=returned
+[525386][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1053 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[529137][INFO ][IoProbe] done id=6608 op=web.status task=async_tcp cpu=1 pri=10 start_us=529032391 total_us=2825 result=returned
+[529137][INFO ][IoProbe] done id=6612 op=web.location task=async_tcp cpu=1 pri=10 start_us=529038271 total_us=2841 result=returned
+[529138][INFO ][IoProbe] done id=6613 op=web.weather task=async_tcp cpu=1 pri=10 start_us=529044142 total_us=3677 result=returned
+[529138][INFO ][IoProbe] counts id=6613 entries=0 dirs=0 files=0 bytes=0 record[529138][INFO ][IoProbe] done id=6614 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=529051532 total_us=3247 result=returned
+[529388][INFO ][IoProbe] done id=6616 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=529057790 total_us=2869 result=returned
+[530138][INFO ][IoProbe] done id=6617 op=storage.append task=loopTask cpu=1 pri=1 start_us=530043333 total_us=66191 result=returned
+[530388][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=2243 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[535139][INFO ][IoProbe] done id=6619 op=storage.append task=loopTask cpu=1 pri=1 start_us=535044013 total_us=65728 result=returned
+[535389][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=298 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[540140][INFO ][IoProbe] done id=6621 op=storage.append task=loopTask cpu=1 pri=1 start_us=540043685 total_us=65799 result=returned
+[540390][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=785 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[545141][INFO ][IoProbe] done id=6624 op=storage.append task=loopTask cpu=1 pri=1 start_us=545043479 total_us=65880 result=returned
+[545391][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=913 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[550142][INFO ][IoProbe] done id=6626 op=storage.append task=loopTask cpu=1 pri=1 start_us=550043240 total_us=65826 result=returned
+[550392][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=963 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[555143][INFO ][IoProbe] done id=6628 op=storage.append task=loopTask cpu=1 pri=1 start_us=555044207 total_us=66451 result=returned
+[555393][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=797 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[560144][INFO ][IoProbe] done id=6630 op=storage.append task=loopTask cpu=1 pri=1 start_us=560043724 total_us=65761 result=returned
+[560394][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=272 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[565145][INFO ][IoProbe] done id=6632 op=storage.append task=loopTask cpu=1 pri=1 start_us=565043369 total_us=65681 result=returned
+[565395][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=587 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[570146][INFO ][IoProbe] done id=6634 op=storage.append task=loopTask cpu=1 pri=1 start_us=570044319 total_us=65861 result=returned
+[570396][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=922 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[572147][INFO ][IoProbe] done id=6636 op=web.status task=async_tcp cpu=1 pri=10 start_us=572059972 total_us=2878 result=returned
+[572147][INFO ][IoProbe] done id=6640 op=web.location task=async_tcp cpu=1 pri=[INFO ][IoProbe] time_us id=6640 enter=3119
+[572148][INFO ][IoProbe] done id=6641 op=web.weather task=async_tcp cpu=1 pri=10 start_us=572072738 total_us=3742 result=returned
+[572148][INFO ][IoProbe] done id=6642 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=572080089 total_us=2602 result=returned
+[572398][INFO ][IoProbe] done id=6644 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=572086302 total_us=2584 result=returned
+[575148][INFO ][IoProbe] done id=6645 op=storage.append task=loopTask cpu=1 pri=1 start_us=575044494 total_us=65855 result=returned
+[575398][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=170 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[580149][INFO ][IoProbe] done id=6647 op=storage.append task=loopTask cpu=1 pri=1 start_us=580044511 total_us=65826 result=returned
+[580399][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=557 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[585150][INFO ][IoProbe] done id=6649 op=storage.append task=loopTned
+[585400][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1287 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[590151][INFO ][IoProbe] done id=6651 op=storage.append task=loopTask cpu=1 pri=1 start_us=590044433 total_us=65729 result=returned
+[590401][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=975 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[595152][INFO ][IoProbe] done id=6653 op=storage.append task=loopTask cpu=1 pri=1 start_us=595045302 total_us=65694 result=returned
+[595402][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=118 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[600153][INFO ][IoProbe] done id=6655 op=storage.append task=loopTask cpu=1 pri=1 start_us=600044239 total_u[600153][INFO ][IoProbe] time_us id=6655 enter=20 wait=41 prepare=100 write=65692
+[600403][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=915 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[605154][INFO ][IoProbe] done id=6658 op=storage.append task=loopTask cpu=1 pri=1 start_us=605045262 total_us=65977 result=returned
+[605404][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1295 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[610155][INFO ][IoProbe] done id=6660 op=storage.append task=loopTask cpu=1 pri=1 start_us=610045736 total_us=65846 result=returned
+[610405][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1326 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[615156][INFO ][IoProbe] done id=6662 op=storage.append task=loopTask cpu=1 pri=1 start_us=615046347 total_us=65724 result=returned
+[615406][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=872 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[620157][INFO ][IoProbe] done id=6664 op=storage.append task=loopTask cpu=1 pri=1 start_us=620046989 total_us=65728 result=returned
+[620407][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1277 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[625158][INFO ][IoProbe] done id=6666 op=storage.append task=loopTask cpu=1 pri=1 start_us=625046969 total_us=65727 result=returned
+[625408][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=7 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[630159][INFO ][IoProbe] done id=6668 op=storage.append task=loopTask cpu=1 pri=1 start_us=630046264 total_us=65861 result=returned
+[630409][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=907 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[632160][INFO ][IoProbe] done id=6670 op=web.status task=async_tcp cpu=1 pri=10 start_us=632051434 total_us=3059 result=returned
+[632160][INFO ][IoProbe] done id=6674 op=web.location task=async_tcp cpu=1 pri=10 start_us=632057689 total_us=2496 res
+[632161][INFO ][IoProbe] done id=6675 op=web.weather task=async_tcp cpu=1 pri=10 start_us=632064892 total_us=3759 result=returned
+[632161][INFO ][IoProbe] done id=6676 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=632072182 total_us=2975 result=returned
+[632411][INFO ][IoProbe] done id=6678 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=632078155 total_us=2940 result=returned
+[635161][INFO ][IoProbe] done id=6679 op=storage.append task=loopTask cpu=1 pri=1 start_us=635047079 total_us=65806 result=returned
+[635413][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=245 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[640164][INFO ][IoProbe] done id=6681 op=storage.append task=loopTask cpu=1 pri=1 start_us=640047118 total_us=65869 result=returned
+[640414][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=119 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[645165][INFO ][IoProbe] done id=6683 op=storage.append task=loopTask cpu=1 pri=1 start_us=645046217 total_us=65709 result=returned
+[645415][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=882 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[650166][INFO ][IoProbe] done id=6685 op=storage.append task=loopTask cpu=1 pri=1 start_us=650046883 total_us=65729 result=returned
+[650416][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=983 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[655167][INFO ][IoProbe] done id=6687 op=storage.append task=loopTask cpu=1 pri=1 start_us=655053697 total_us=65719 result=returned
+[655417][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=406 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[660168][INFO ][IoProbe] done id=6689 op=storage.append task=loopTask cpu=1 pri=1 start_us=660053368 total_us=65805 result=returned
+[660418][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1421 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[665169][INFO ][IoProbe] done id=6692 op=storage.append task=loopTask cpu=1 pri=1 start_us=665054362 total_us=65844 result=returned
+[665419][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=209 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[670170][INFO ][IoProbe] done id=6694 op=storage.append task=loopTask cpu=1 pri=1 start_us=670055148 total_us=65833 result=returned
+[670420][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1060 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[675171][INFO ][IoProbe] done id=6696 op=storage.append task=loopTask cpu=1 pri=1 start_us=675054793 total_us=65783 result=returned
+[675421][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=178 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[680172][INFO ][IoProbe] done id=6698 op=storage.append task=loopTask cpu=1 pri=1 start_us=680054424 total_us=65729 result=returned
+[680422][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=123 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[685173][INFO ][IoProbe] done id=6700 op=storage.append task=loopTask cpu=1 pri=1 start_us=685055377 total_us=65751 result=returned
+[685423][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=473 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[690174][INFO ][IoProbe] done id=6703 op=storage.append task=loopTask cpu=1 pri=1 start_us=690058589 total_us=65836 result=returned
+[690424][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=876 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[692175][INFO ][IoProbe] done id=6705 op=web.status task=async_tcp cpu=1 pri=10 start_us=692054326 total_us=2765 result=returned
+[692175][INFO ][IoProbe] done id=6709 op=web.location task=async_tcp cpu=1 pri=10 start_us=692060112 total_us=2346 result=returned
+[692176][INFO ][IoProbe] done id=6710 op=web.weather task=async_tcp cpu=1 pri=10 start_us=692067547 total_us=2912 result=returned
+[692176][INFO ][IoProbe] done id=6711 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=692073183 total_us=2570 result=returned
+[692427][INFO ][IoProbe] done id=6713 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=692078403 total_us=2420 result=returned
+[695177][INFO ][IoProbe] done id=6714 op=storage.append task=loopTask cpu=1 pri=1 start_us=695058552 total_us=65844 result=returned
+[695427][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=187 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[700178][INFO ][IoProbe] done id=6716 op=storage.append task=loopTask cpu=1 pri=1 start_us=700060015 total_us=65836 result=returned
+[700428][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1688 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[702429][INFO ][IoProbe] done id=6718 op=web.status task=async_tcp cpu=1 pri=10 start_us=702230390 total_us=2823 result=returned
+[702429][INFO ][IoProbe] done id=6722 op=w_us=2683 result=returned
+[702430][INFO ][IoProbe] done id=6723 op=web.weather task=async_tcp cpu=1 pri=10 start_us=702243702 total_us=3686 result=returned
+[702430][INFO ][IoProbe] done id=6724 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=702250555 total_us=3404 result=returned
+[702680][INFO ][IoProbe] done id=6726 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=702257210 total_us=2849 result=returned
+[704181][INFO ][IoProbe] done id=6727 op=web.files task=async_tcp cpu=1 pri=10 start_us=704177017 total_us=2560 result=returned
+[704682][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=503781 stage_us=503144 entris=23 records=0
+[704682][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=7949
+[705182][INFO ][IoProbe] done id=6794 op=storage.append task=loopTask cpu=1 pri=1 star
+[705432][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=355 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[705434][INFO ][TaskStack] task=FileIndexTask free_min_bytes=4464 priority=1
+[705687][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=1508782 stage_us=1508145 entries=45 records=0
+[705687][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=24962
+[705938][INFO ][IoProbe] done id=6820 op=web.files task=async_tcp cpu=1 pri=10 start_us=705703215 total_us=2594 result=returned
+[706688][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=2509783 stage_us=2509146 entries=62 records=0
+[706688][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=23951
+[707439][INFO ][IoProbe] done id=6871 op=web.files task=async_tcp cpu=1 pri=10 start_us=707238277 total_us=2571 result=returned
+[707690][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=3511788 stage_us=3511151 entries=77 records=0
+[707690][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=29047
+[708691][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=4512781 stage_us=4512144 entries=91 records=0
+[708691][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=30972
+[708941][INFO ][IoProbe] done id=6925 op=web.status task=async_tcp cpu=1 pri=10 start_us=708742956 total_us=23078 result=returned
+[708941][INFO ][IoProbe] done id=6931 op=web.location task=async_tcp cpu=1 pri=10 start_us=708769457 total_us=2838 result=returned
+[708942][INFO ][IoProbe] done id=6932 op=web.weather task=async_tcp cpu=1 pri=10 start_us=708776019 total_us=3672 result=returned
+[709194][INFO ][IoProbe] done id=6937 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=708871443 total_us=2989 result=returned
+[709195][INFO ][IoProbe] done id=6938 op=web.files task=async_tcp cpu=1 pri=10 start_us=708879327 total_us=3057 result=returned
+[709698][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=5519786 stage_us=5519149 entries=101 records=0
+[709698][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=54987
+[710450][INFO ][IoProbe] done id=6963 op=storage.append task=loopTask cpu=1 pri=1 start_us=710058925 total_us=149631 result=returned
+[710450][INFO ][IoProbe] done id=6969 op=web.files task=async_tcp cpu=1 pri=10 start_us=710417146 total_us=2544 result=returned
+[710452][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1703 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[710454][INFO ][TaskStack] task=FileIndexTask free_min_bytes=4176 priority=1
+[710705][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=6526791 stage_us=6526154 entries=110 records=0
+[710705][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=65942
+[711706][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=7527782 stage_us=7527145 eies=119 records=0
+[711706][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=92982
+[711959][INFO ][IoProbe] done id=6999 op=web.files task=async_tcp cpu=1 pri=10 start_us=711947279 total_us=2597 result=returned
+[712712][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=8533782 stage_us=8533145 entries=127 records=0
+[712712][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=66983
+[713712][INFO ][IoProbe] done id=7102 op=web.files task=async_tcp cpu=1 pri=10 start_us=713481110 total_us=2674 result=returned
+[713962][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_ries=189 records=0
+[713962][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=27957
+[714966][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=10787783 stage_us=10787146 entries=215 records=0
+[714966][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=29960
+[715217][INFO ][IoProbe] done id=7217 op=web.files task=async_tcp cpu=1 pri=10 start_us=715050650 total_us=2564 result=returned
+[715218][INFO ][IoProbe] done id=7218 op=storage.append task=loopTask cpu=1 pri=1 start_us=715058944 total_us=74029 result=returned
+[715470][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=835 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[715472][INFO ][TaskStack] task=async_tcp free_min_bytes=12740 priority=10
+[715473][INFO ][TaskStack] task=FileIndexTask free_min_bytes=4144 priority=1
+[715974][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=11795781 stage_us=11795144 entries=239 records=0
+[715974][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=24978
+[716975][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=12796784 stage_us=12796147 entries=257 records=0
+[716975][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=4959
+[717225][INFO ][IoProbe] done id=7298 op=web.files task=async_tcp cpu=1 pri=10 start_us=717030136 total_us=2544 result=returned
+[717977][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=13798781 stage_us=13798144 entries=271 records=0
+[717977][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=2948
+[718978][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=14799781 stage_us=14799144 entries=283 records=0
+[718978][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=25958
+[719228][INFO ][IoProbe] done id=7351 op=web.files task=async_tcp cpu=1 pri=10 start_us=719035700 total_us=2526 result=returned
+[719228][INFO ][IoProbe] done id=7352 op=web.status task=async_tcp cpu=1 pri=10 start_us=719041359 total_us=17368 result=returned
+[719228][INFO ][IoProbe] counts id=7352 entries=0 dirs=0 files=0 bytes=0 records=0 he id=7358 op=web.location task=async_tcp cpu=1 pri=10 start_us=719061797 total_us=2835 result=returned
+[719230][INFO ][IoProbe] done id=7359 op=web.weather task=async_tcp cpu=1 pri=10 start_us=719068777 total_us=3690 result=returned
+[719480][INFO ][IoProbe] done id=7360 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=719076003 total_us=84957 result=returned
+[719480][INFO ][IoProbe] done id=7366 op=web.ppg task=async_tcp cpu=19481][INFO ][IoProbe] time_us id=7366 enter=2619
+[719984][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=15805783 stage_us=15805146 entries=293 records=0
+[719984][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=85968
+[720235][INFO ][IoProbe] done id=7383 op=storage.append task=loopTask cpu=1 pri=1 stned
+[720485][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=936 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[720987][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=16808780 stage_us=16808143 entries=303 records=0
+[720987][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=36978
+[721238][INFO ][IoProbe] done id=7403 op=web.files task=async_tcp cpu=1 pri=10 start_us=721017025 total_us=2618 result=returned
+[721990][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=17811781 stage_us=17811144 entries=312 records=0
+[721990][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=77959
+[722742][INFO ][IoProbe] done id=7432 op=web.files task=async_tcp cpu=1 pri=10 start_us=722543629 total_us=2511 result=returned
+[722993][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=18814781 stage_us=18814144 entries=321 records=0
+[722993][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=46974
+[723997][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_tries=329 records=0
+[723997][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=88980
+[724247][INFO ][IoProbe] done id=7460 op=web.files task=async_tcp cpu=1 pri=10 start_us=724070217 total_us=2526 result=returned
+[724999][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=20820781 stage_us=20820144 entries=337 records=0
+[724999][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=62940
+[725249][INFO ][IoProbe] done id=7475 op=storage.append task=loopTask cpu=1 pri=1 start_us=725060505 total_us=73010 result=returned
+[725499][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=435 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[726001][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=21822783 stage_us=21822146 entries=344 records=0
+[726001][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=60974
+[726252][INFO ][IoProbe] done id=7491 op=web.files task=async_tcp cpu=1 pri=10 start_us=726026448 total_us=2549 result=returned
+[727003][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=22824782 stage_us=22824145 entries=351 records=0
+[727003][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=77981
+[728005][WARN ][IoProb=FileIndexTask stage=scan age_us=23826782 stage_us=23826145 entries=358 records=0
+[728005][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=56981
+[728256][INFO ][IoProbe] done id=7520 op=web.files task=async_tcp cpu=1 pri=10 start_us=728023251 total_us=2535 result=returned
+[729007][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=24828783 stage_us=24828146 entries=364 records=0
+[729007][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=131931
+[729257][INFO ][IoProbe] done id=7533 op=web.status task=async_t
+[729257][INFO ][IoProbe] done id=7539 op=web.location task=async_tcp cpu=1 pri=10 start_us=729047514 tos id=7539 enter=2860
+[729258][INFO ][IoProbe] done id=7540 op=web.weather task=async_tcp cpu=1 pri=10 start_us=729053922 total_us=3841 result=returned
+[729259][INFO ][IoProbe] done id=7541 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=729061702 total_us=151513 result=returned
+[729509][INFO ][IoProbe] done id=7545 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=729216458 total_us=3081 result=returned
+[730010][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=25831786 stage_us=25831149 entries=370 records=0
+[730010][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=153966
+[730260][INFO ][IoProbe] done id=7556 op=web.files task=async_tcp cpu=1 pri=10 start_us=730023498 total_us=2517 result=returned
+[730261][INFO ][IoProbe] done id=7557 op=storage.append task=loopTask cpu=1 pri=1 start_us=730060425 total_us=179780 result=returned
+[730513][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=706 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[731017][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=26838784 stage_us=26838147 entries=376 records=0
+[731017][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=121980
+[732019][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=27839797 stage_us=27839160 entries=382 records=0
+[732019][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=120981
+[732270][INFO ][IoProbe] done id=7581 op=web.files task=async_tcp cpu=1 pri=10 start_us=732023663 total_us=2502 result=returned
+[733021][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=28842784 stage_us=28842147 entries=388 records=0
+[733021][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=83981
+[734023][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=29844785 stage_us=29844148 entries=394 records=0
+[734025][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=21982
+[734025][INFO ][IoProbe] done id=7606 op=web.files task=async_tcp cpu=1 pri=10 start_us=734020522 total_us=2540 result=returned
+[735026][WARN ][IoProbe] active id=6728 op=file_index.refresh task=Fs=399 records=0
+[735026][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=101957
+[735277][INFO ][IoProbe] done id=7617 op=storage.append task=loopTask cpu=1 pri=1 start_us=735060917 total_us=108963 result=returned
+[735528][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1047 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[735782][INFO ][IoProbe] done id=7623 op=web.files task=async_tcp cpu=1 pri=10 start_us=735550957 total_us=2611 result=returned
+[736032][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=31853781 tries=404 records=0
+[736032][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=102981
+[737034][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=32855782 stage_us=32855145 entries=409 records=0
+[737034][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=148943
+[737284][INFO ][IoProbe] done id=7642 op=web.files task=async_tcp cpu=1 pri=10 start_us=737097900 total_us=2494 result=returned
+[738035][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=33856781 stage_us=33856144 entries=414 records=0
+[738035][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=160952
+[738896][INFO ][IoProbe] done id=7657 op=web.files task=async_tcp cpu=1 pri=10 start_us=738626298 total_us=252ed
+[739146][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=34967782 stage_us=34967145 entries=420 records=0
+[739146][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=34977
+[739146][INFO ][IoProbe] done id=7660 op=web.status task=async_tcp cpu=1 pri=10 start_us=738772337 total_us=125542 result=returned
+[739146][INFO ][IoProbe] done id=7666 op=web.location task=async_tcp cpu=1 pri=10 start_us=738901239 total_us=2723 result=returned
+[739147][INFO ][IoProbe] done id=7667 op=web.weather task=async_tcp cpu=1 pri=10 start_us=738906976 total_us=3399 result=returned
+[739147][INFO ][IoProbe] counts id=7667 entries=0 dirs=0 files=0 bytes=0 records=0 heap_sample_min[739147][INFO ][IoProbe] done id=7668 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=738913536 total_us=197936 result=returned
+[739397][INFO ][IoProbe] done id=7672 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=739114438 total_us=2930 result=returned
+[740147][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=35tries=425 records=0
+[740147][WARN ][IoProbe] owner task=loopTask site=appendRecord depth=1 held_us=6739
+[740397][INFO ][IoProbe] done id=7684 op=web.files task=async_tcp cpu=1 pri=10 start_us=740158308 total_us=2325 result=returned
+[740397][INFO ][IoProbe] done id=7681 op=storage.append task=loopTask cpu=1 pri=1 start_us=740061186 total_us=149928 result=returned
+[740647][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=54937 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[741150][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=36971788 stage_us=36971151 entries=429 records=0
+[741150][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=102988
+[741900][INFO ][IoProbe] done id=7700 op=web.files task=async_tcp cpu=1 pri=10 start_us=741734035 total_us=2500 result=returned
+[742401][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=38222785 stage_us=38222148 entries=435 records=0
+[742401][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=66959
+[743402][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=39223780 stage_us=39223143 entries=439 records=0
+[743402][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=199933
+[743402][INFO ][IoProbe] done id=7715 op=web.files task=async_tcp cpu=1 pri=10 start_us=743254711 total_us=2555 result=returned
+[744403][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=40224782 stage_us=40224145 entries=444 records=0
+[744403][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=81972
+[744905][INFO ][IoProbe] done id=7730 op=web.files task=async_tcp cpu=1 pri=10 start_us=744786866 total_us=2543 result=returned
+[745406][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=41227793 stage_us=41227156 entries=448 records=0
+[745406][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=123977
+[745406][INFO ][IoProbe] done id=7733 op=storage.append task=loopTask cpu=1 pri=1 start_us=745061176 total_us=220567 result=returned
+[745656][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=64237 lost_active=0 lost_done=1 heap_low=102340 stack_free=1188
+[746408][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=42229782 stage_us=42229145 entries=452 records=0
+[746408][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=208971
+[746408][INFO ][IoProbe] done id=7745 op=web.files task=async_tcp cpu=1 pri=10 starned
+[747410][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=43231782 stage_us=43231145 entries=457 records=0
+[747410][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=38961
+[748161][INFO ][IoProbe] done id=7760 op=web.files task=async_tcp cpu=1 pri=10 start_us=747922829 total_us=2699 result=returned
+[748412][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=44233785 stage_us=44233148 entries=461 records=0
+[748412][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=84985
+[749064][INFO ][IoProbe] done id=7767 op=web.status task=async_tcp cpu=1 pri=10 start_us=748745245 total_us=66216 result=returned
+[749064][INFO ][IoProbe] done id=7773 op=web.location task=async_tcp cpu=1 pri=10 start_us=748814790 total_us=3033 result=returned
+[749064][INFO ][IoProbe] done id=7774 op=web.weather task=async_tcp cpu=1 pri=10 start_us=748820849 total_us=3708 result=returned
+[749067][INFO ][IoProbe] done id=7775 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=748827290 total_us=237717 result=returned
+[749317][INFO ][IoProbe] done id=7779 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=749068328 total_us=2703 result=returned
+[749567][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=45388783 stage_us=45388146 entries=465 records=0
+[749567][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=247957
+[749567][INFO ][IoProbe] done id=7782 op=web.files task=async_tcp cpu=1 pri=10 start_us=749525620 total_us=2499 result=returned
+[750569][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=46390780 stage_us=46390143 entries=469 records=0
+[750569][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=221926
+[750569][INFO ][IoProbe] done id=7789 op=storage.append task=loopTask cpu=1 pri=1 start_us=750060582 total_us=286001 result=returned
+[750820][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1023 lost_active=0 lost_done=1 heap_low=101836 stack_free=1188
+[751075][INFO ][IoProbe] done id=7797 op=web.files task=async_tcp cpu=1 pri=10 start_us=751046686 total_us=2544 result=returned
+[751577][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=47398783 stage_us=47398146 entries=473 records=0
+[751577][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=231965
+[752578][WARN ][IoProbe] active idFileIndexTask stage=scan age_us=48398783 stage_us=48398146 entries=477 records=0
+[752578][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=221961
+[752578][INFO ][IoProbe] done id=7810 op=web.files task=async_tcp cpu=1 pri=10 start_us=752566336 total_us=2567 result=returned
+[753580][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=49401780 stage_tries=481 records=0
+[753580][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=202959
+[754333][INFO ][IoProbe] done id=7823 op=web.files task=async_tcp cpu=1 pri=10 start_us=754091996 total_us=2497 result=returned
+[754584][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=50405783 stage_us=50405146 entries=485 records=0
+[754584][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=173952
+[755336][INFO ][IoProbe] done id=7832 op=storage.append task=loopTask cpu=1 pri=1 start_us=755061324 total_us=186243 result=returned
+[755587][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=51408788 stage_us=51408151 entries=489 records=0
+[755587][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=77968
+[755837][INFO ][IoProbe] done id=7838 op=web.files task=async_tcp cpu=1 pri=10 start_us=755614314 total_us=2536 result=returned
+[755837][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=1183 lost_active=0 lost_done=1 heap_low=101836 stack_free=1188
+[756593][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=52414791 stage_us=52414154 entries=493 records=0
+[756593][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=14965
+[757345][INFO ][IoProbe] done id=7851 op=web.files task=async_tcp cpu=1 pri=10 start_us=757166357 total_us=2494 result=returned
+[757595][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=53416783 stage_us=53416146 entries=496 records=0
+[757595][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=210956
+[758597][WARN ][IoProbe] active id=6728 op=file_index.refresh task=FileIndexTask stage=scan age_us=54418783 stage_us=54418146 entries=500 records=0
+[758597][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=135980
+[758847][INFO ][IoProbe] done id=7862 op=web.files task=async_tcp cpu=1 pri=10 start_us=758689882 total_us=2533 result=returned
+[758848][INFO ][IoProbe] done id=6728 op=file_index.refresh task=FileIndexTask cpu=0 pri=1 start_us=704178510 total_us=54578160 result=returned
+[758848][INFO ][IoProbe] done id=7870 op=web.location task=async_tcp cpu=1 pri=10 start_us=758757382 total_us=3122 result=returned
+[759098][INFO ][IoProbe] done id=7871 op=web.weather task=async_tcp cpu=1 pri=10 start_us=758763462 total_us=3720 result=returned
+[759098][INFO ][IoProbe] done id=7872 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=7587098][INFO ][IoProbe] time_us id=7872 enter=3361
+[759099][INFO ][IoProbe] done id=7874 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=758777794 total_us=2747 result=returned
+[760349][INFO ][IoProbe] done id=7875 op=storage.append task=loopTask cpu=1 pri=1 start_us=760064464 total_us=65886 result=returned
+[760349][INFO ][IoProbe] done id=7877 op=web.files task=async_tcp cpu=1 pri=10 start_us=760225808 total_us=49711 result=returned
+[761768][D][AsyncTCP.cpp:187] _get_async_event(): coalescing pol[760849][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=829703 loop_age_us=626147 lost_active=0 lost_done=1 heap_low=59428 stack_free=1188
+[765350][INFO ][IoProbe] done id=7879 op=storage.append task=loopTask cpu=1 pri=1 start_us=765064241 total_us=65798 result=returned
+[765850][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1580529 loop_age_us=44559 lost_active=0 lost_done=1 heap_low=59428 stack_free=1188
+[768851][INFO ][IoProbe] done id=7881 op=web.status task=async_tcp cpu=1 pri=10 start_us=768784259 total_us=3850 result=returned
+[768853][INFO ][IoProbe] done id=7885 op=web.location task=async_tcp cpu=1 pri=10 start_us=768795005 total_us=2743 result=returned
+[768853][INFO ][IoProbe] counts id=7885 entries=0 dirs=0 files=e] done id=7886 op=web.weather task=async_tcp cpu=1 pri=10 start_us=768800790 total_us=3130 result=returned
+[768853][INFO ][IoProbe] done id=7887 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=768806662 total_us=3785 result=returned
+[769103][INFO ][IoProbe] done id=7889 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=768813554 total_us=2700 result=returned
+[770353][INFO ][IoProbe] done id=7890 op=storage.append task=loopTask cpu=1 pri=1 start_us=770064370 total_us=65786 result=returned
+[770853][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1580529 loop_age_us=25092 lost_active=0 lost_done=1 heap_low=59428 stack_free=1188
+[775354][INFO ][IoProbe] done id=7895 op=storage.append task=loopTask cpu=1 pri=1 start_us=775065540 total_us=65754 result=returned
+[775855][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1580529 loop_age_us=21610 lost_active=0 lost_done=1 heap_low=59428 stack_free=1188
+[778856][INFO ][IoProbe] done id=7898 op=web.status task=async_tcp cpu=1 pri=10 start_us=778737863 total_us=2816t=returned
+[778857][INFO ][IoProbe] done id=7903 op=web.weather task=async_tcp cpu=1 pri=10 start_us=778748904 total_us=3532 result=returned
+[778857][INFO ][IoProbe] done id=7904 op=web.altitude tas84 total_us=2945 result=returned
+[779107][INFO ][IoProbe] done id=7906 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=778761639 total_us=2413 result=returned
+[780358][INFO ][IoProbe] done id=7907 op=storage.append task=loopTask cpu=1 pri=1 start_us=780065856 total_us=65871 result=returned
+[780859][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1580529 loop_age_us=20983 lost_active=0 lost_done=1 heap_low=59428 stack_free=1188
+[785360][INFO ][IoProbe] done id=7910 op=storage.append task=loopTask cpu=1 pri=1 start_us=785066340 total_us=65856 result=returned
+[785861][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1580529 loop_age_us=17773 lost_active=0 lost_done=1 heap_low=59428 stack_free=1188
+[788862][INFO ][IoProbe] done id=7912 op=web.status task=async_t
+[788862][INFO ][IoProbe] done id=7916 op=web.location task=async_tcp cpu=1 pri=10 start_us=788761079 total_us=2453 result=returned
+[788863][INFO ][IoProbe] done id=7917 op=web.weather task=async_tcp cpu=1 pri=10 start_us=788768363 total_us=3101 result=returned
+[788863][INFO ][IoProbe] done id=7918 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=788775220 total_us=3073 result=returned
+[789113][INFO ][IoProbe] done id=7920 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=788781990 total_us=2897 result=returned
+[790363][INFO ][IoProbe] done id=7921 op=storage.append task=loopTask 90363][INFO ][IoProbe] time_us id=7921 enter=21 wait=38 prepare=100 write=65699
+[790863][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1580529 loop_age_us=14285 lost_active=0 lost_done=1 heap_low=59428 stack_free=1188
+[795364][INFO ][IoProbe] done id=7924 op=storage.append task=loopTask cpu=1 pri=1 start_us=795066514 total_us=65837 result=returned
+[795864][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1580529 loop_age_us=12797 lost_active=0 lost_done=1 heap_low=59428 stack_free=1188
+[798865][INFO ][IoProbe] done id=7926 op=web.status task=async_tcp cpu=1 pri=10 start_us=798769520 total_us=2984 result=returned
+[798865][INFO ][IoProbe] done id=79_tcp cpu=1 pri=10 start_us=798775912 total_us=2645 result=returned
+[798866][INFO ][IoProbe] done id=7931 op=web.weather task=async_tcp cpu=1 pri=10 start_us=798781367 total_us=3228 result=returned
+[798866][INFO ][IoProbe] done id=7932 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=798789215 total_us=2782 result=returned
+[799116][INFO ][IoProbe] done id=7934 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=798794681 total_us=2536 result=returned
+[800366][INFO ][IoProbe] done id=7935 op=storage.append task=loopTask cpu=1 pri=1 start_us=800067245 total_us=65763 result=returned
+[800866][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1580529 loop_age_us=14143 lost_active=0 lost_done=1 heap_low=59428 stack_free=1188
+[805367][INFO ][IoProbe] done id=7937 op=storage.append task=loopTask cpu=1 pri=1 start_us=805068623 total_us=65747 result=returned
+[805867][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1580529 loop_age_us=14331 lost_active=0 lost_done=1 heap_low=59428 stack_free=1188
+[807868][INFO ][IoProbe] done id=7939 op=web.files task=async_tcp cpu=1 pri=10 start_us=807761228 total_us=62432 result=returned
+[808370][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=607563 stage_us=607055 entries=28 records=0
+[808370][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=7990
+[809409][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=1646429 stage_us=1645921 entries=52 records=0
+[809409][INFO ][IoProbe] done id=8041 op=web.status task=async_tcp cpu=1 pri=10 start_us=809336692 td
+[809409][INFO ][IoProbe] counts id=8041 entries=0 dirs=0 files=0 bytes=0 records=0 healocation task=async_tcp cpu=1 pri=10 start_us=809356333 total_us=2545 result=returned
+[809410][INFO ][IoProbe] done id=8048 op=web.weather task=async_tcp cpu=1 pri=10 start_us=809361374 total_us=3312 result=returned
+[809412][INFO ][IoProbe] done id=8049 op=web.altitude task=async_tresult=returned
+[809663][INFO ][IoProbe] done id=8053 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=809413286 total_us=2707 result=returned
+[810164][INFO ][IoProbe] done id=8074 op=storage.append task=loopTask cpu=1 pri=1 start_us=810069544 total_us=85806 result=returned
+[810415][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=2652566 stage_us=2652058 entries=66 records=0
+[810415][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=60983
+[810916][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1580529 loop_age_us=1318 lost_active=0 lost_done=1 heap_low=54876 stack_free=1188
+[811420][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=3657569 stage_us=3657061 entries=82 records=0
+[811420][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=40996
+[811420][INFO ][IoProbe] done id=8112 op=web.files task=async_tcp cpu=1 pri=10 start_us=811212702 total_us=101640 result=returned
+[812424][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=4661568 stage_us=4661060 entries=95 records=0
+[812424][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=60991
+[813427][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=5664565 stage_us=5664057 entries=106 records=0
+[813427][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=40958
+[814429][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=6666566 stage_us=6666058 entries=115 records=0
+[814431][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=104979
+[814933][INFO ][IoProbe] done id=8202 op=web.files task=async_tcp cpu=1 pri=10 start_us=814682184 total_us=147573 result=returned
+[815435][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=7672569 stage_us=7672061 entries=124 records=0
+[815435][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=62991
+[815937][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1842181 loop_age_us=1152699 lost_active=0 lost_done=1 heap_low=54876 stack_free=1188
+[816441][WARN ][IoProbe] ac0 op=file_index.refresh task=FileIndexTask stage=scan age_us=8677870 stage_us=8677362 entries=160 records=0
+[816441][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=20290
+[816944][INFO ][IoProbe] done id=8342 op=storage.append task=loopTask cpu=1 pri=1 start_us=816678000 total_us=84801 result=returned
+[817445][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=9682563 stage_us=9682055 entries=200 records=0
+[817445][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=7982
+[818448][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=10685564 stage_us=10685056 entries=228 records=0
+[818448][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=14986
+[818448][INFO ][IoProbe] done id=8438 op=web.files task=async_tcp cpu=1 pri=10 start_us=818266221 total_us=66044 result=returned
+[819452][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=11689564 stage_us=11689056 entries=250 records=0
+[819452][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=7990
+[819954][INFO ][IoProbe] done id=8506 op=web.status task=async_tcp cpu=1 pri=10 start_us=819834669 total_us=10380 result=returned
+[819954][INFO ][IoProbe] time_us id=8506 enter=[819954][INFO ][IoProbe] counts id=8506 entries=0 dirs=0 files=0 bytene id=8512 op=web.location task=async_tcp cpu=1 pri=10 start_us=819847676 total_us=2544 result=returned
+[819956][INFO ][IoProbe] done id=8514 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=819858616 total_us=52831 result=returne6][INFO ][IoProbe] counts id=8514 entries=0 dirs=0 files=0 bytes=0 records=0 heap_sample_min=0
+[820206][INFO ][IoProbe] done id=8518 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=819914136 total[820206][INFO ][IoProbe] time_us id=8518 enter=2868
+[820457][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=12694565 stage_us=12694057 entries=266 records=0
+[820457][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=2965
+[820958][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1945351 loop_age_us=361 lost_active=0 lost_done=1 heap_low=51516 stack_free=1188
+[821461][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=13698565 stage_us=13698057 entries=279 records=0
+[821462][WARN ][IoProbe] owner task=loopTask site=appendRecord depth=1 held_us=3917
+[821716][INFO ][IoProbe] done id=8559 op=storage.append task=loopTask cpu=1 pri=1 start_4269 total_us=156903 result=returned
+[821967][INFO ][IoProbe] done id=8565 op=web.files task=async_tcp cpu=1 pri=10 start_us=821668935 total_us=91660 result=returned
+[822469][WARN ][IoProbe] active id=7940 op=file_index.refresh task=es=290 records=0
+[822469][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=9987
+[823473][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=15710565 stage_us=15710057 entries=301 records=0
+[823473][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=25988
+[824476][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=16713565 stage_us=16713057 entries=310 records=0
+[824476][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=96798
+[825228][INFO ][IoProbe] done id=8639 op=web.files task=async_tcp cpu=1 pri=10 start_us=825126348 total_us=75655 result=returned
+[825479][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=17716564 stage_us=17716056 entries=320 records=0
+[825981][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1945351 loop_age_us=824200 lost_active=0 lost_done=1 heap_low=46308 stack_free=1188
+[826487][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=18724569 stage_us=18724061 entries=328 records=0
+[826487][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=112990
+[827239][INFO ][IoProbe] done id=8675 op=storage.append task=loopTask cpu=1 pri=1 start_us=827042380 total_us=110111 result=returned
+[827490][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=19727565 stage_us=19727057 entries=336 records=0
+[827491][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=86964
+[828493][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=20730567 stage_us=20730059 entries=344 records=0
+[828493][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=18957
+[829016][INFO ][IoProbe] done id=8699 op=web.files task=async_tcp cpu=1 pri=10 start_us=828608837 total_us=200446 result=returned
+[829518][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=21755583 stage_us=21755075 entries=351 records=0
+[829518][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=94007
+[829632][D][AsyncTCP.cpp:391] _tcp_poll(): throttling
+[830137][D][AsyncTCP.cpp:391] _tcp_poll(): throttling
+[830551][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=22788346 stage_us=22787838 entries=359 records=0
+[830554][INFO ][IoProbe] done id=8727 op=web.status task=async_tcp cpu=1 pri=10 start_us=830308762 total_us=87663 result=returned
+[830555][INFO ][IoProbe] done id=8733 op=web.location task=async_tcp cpu=1 pri=10 start_us=830399215 total_us=2799 result=returned
+[830557][INFO ][IoProbe] counts id=8733 entries=0 dirs=0 files=0 bytes=0 records=0 heap_sample_m[830557][INFO ][IoProbe] done id=8734 op=web.weather task=async_tcp cpu=1 pri=10 start_us=830407171 total_us=3670 result=returned
+[830561][INFO ][IoProbe] done id=8735 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=830414785 total_us=137151 result=returned
+[830812][INFO ][IoProbe] done id=8739 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=830555170 total_us=3188 result=returned
+[831064][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1945351 loop_age_us=344 lost_active=0 lost_done=1 heap_low=40664 stack_free=1188
+[831567][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=23804565 stage_us=23804057 entries=365 records=0
+[831568][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=97988
+[832069][INFO ][IoProbe] done id=8754 op=storage.append task=loopTask cpu=1 pri=1 start_us=831751409 total_us=92610 result=returned
+[832570][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=24807565 stage_us=24807057 entries=371 records=0
+[832570][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=88986
+[832570][INFO ][IoProbe] done id=8764 op=web.files task=async_tcp cpu=1 pri=10 start_us=832430691 total_us=93315 result=returned
+[833574][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=25811564 stage_us=25811056 entries=378 records=0
+[833574][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=25985
+[834577][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stagetries=384 records=0
+[834577][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=70971
+[835828][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=28065222 stage_us=28064714 entries=391 records=0
+[835829][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=96628
+[836079][INFO ][IoProbe] done id=8809 op=web.files task=async_tcp cpu=1 pri=10 start_us=835876136 total_us=80012 result=returned
+[836079][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1945351 loop_age_us=168230 lost_active=0 lost_done=1 heap_low=39364 stack_free=1188
+[836836][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=29073569 stage_us=29073061 entries=397 records=0
+[836836][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=77989
+[837839][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=30076567 stage_us=30076059 entries=403 records=0
+[837839][WARN ][IoProbe] owner task=loopTask site=appendRecord depth=1 held_us=36724
+[838090][INFO ][IoProbe] done id=8833 op=storage.append task=loopTask cpu=1 pri=1 start_us=837787931 total_us=81260 result=returned
+[838841][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=31078574 stage_us=31078066 entries=408 records=0
+[838841][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=26960
+[839465][INFO ][IoProbe] done id=8849 op=web.status task=async_tcp cpu=1 pri=10 start_us=839040136 total_us=176551 result=returned
+[839465][INFO ][IoProbe] done id=8855 op=web.location task=async_tcp cpu=1 pri=10 start_us=839220012 total_us=2814 result=returned
+[839466][INFO ][IoProbe] done id=8856 op=web.weather task=async_tcp cpu=1 pri=10 start_us=839227224 total_us=3810 result=returned
+[839467][INFO ][IoProbe] done id=8857 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=839234596 total_us=193844 result=returned
+[839717][INFO ][IoProbe] done id=8861 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=839431524 total_us=2895 result=returned
+[839968][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=32205575 stage_us=32205067 entries=413 records=0
+[839968][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=138990
+[840477][INFO ][IoProbe] done id=8868 op=web.files task=async_tcp cpu=1 pri=10 start_us=840030499 total_us=239315 result=returned
+[840978][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=33215564 stage_us=33215056 entries=419 records=0
+[840978][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=3986
+[841767][D][AsyncTCP.cpp:187] _get_async_event(): coalescing pol[841229][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1945351 loop_age_us=1003939 lost_active=0 lost_done=1 heap_low=37080 stack_free=1188
+[841984][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=34221564 stage_us=34221056 entries=424 records=0
+[841984][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=48986
+[842735][INFO ][IoProbe] done id=8895 op=storage.append task=loopTask cpu=1 pri=1 start_us=842506075 total_us=119781 result=returned
+[842985][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=35222565 stage_us=35222057 entries=428 records=0
+[842987][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=155966
+[843990][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=36227569 stage_us=36227061 entries=433 records=0
+[843990][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=107990
+[843990][INFO ][IoProbe] done id=8910 op=web.files task=async_tcp cpu=1 pri=10 start_us=843760780 total_us=164529 result=returned
+[844994][WARN ][IoProbe] active id=7940 op=file_index.refresh task==scan age_us=37231569 stage_us=37231061 entries=438 records=0
+[844994][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=101991
+[845995][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=38232566 stage_us=38232058 entries=443 records=0
+[845995][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=48954
+[846246][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1945351 loop_age_us=1010 lost_active=0 lost_done=1 heap_low=35316 stack_free=1188
+[846998][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=39235565 stage_us=39235057 entries=447 records=0
+[846998][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=155749
+[847779][INFO ][IoProbe] done id=8946 op=web.files task=async_tcp cpu=1 pri=10 start_us=847355022 total_us=217302 result=returned
+[848030][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=40267569 stage_us=40267061 entries=452 records=0
+[848030][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=72991
+[849034][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=41271570 stage_us=41271062 entries=456 records=0
+[849034][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=198992
+[849745][INFO ][IoProbe] done id=8966 op=web.status task=async_tcp cpu=1 pri=10 start_us=849313395 total_us=199169 result=returned
+[849745][INFO ][IoProbe] done id=8974 op=web.location task=async_tcp cpu=1 pri=10 start_us=849515332 total_us=2577 re id=8974 enter=2577
+[849745][INFO ][IoProbe] done id=8975 op=web.weather task=async_tcp cpu=1 pri=10 start_us=849520628 total_us=3312 result=returned
+[849746][INFO ][IoProbe] done id=8976 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=849526796 total_us=218937 result=returned
+[849997][WARN ][IoProbe] owner task=loopTask site=appendRecord depth=1 held_us=22790
+[849997][INFO ][IoProbe] done id=8980 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=849748708 total_us=2617 resul17
+[849997][INFO ][IoProbe] done id=8969 op=storage.lock task=loopTask cpu=1 pri=1 start_us=849426147 total_us=548372 result=returned
+[850248][WARNndex.refresh task=FileIndexTask stage=scan age_us=42485565 stage_us=42485057 entries=461 records=0
+[850248][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=206943
+[850248][INFO ][IoProbe] done id=8968 op=storage.append task=loopTask cpu=1 pri=1 start_us=849426112 total_us=614501 result=returned
+[851252][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=43489568 stage_us=43489060 entries=466 records=0
+[851252][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=29990
+[851252][INFO ][IoProbe] done id=8989 op=web.files task=async_tcp cp1252][INFO ][IoProbe] time_us id=8989 enter=1702 snapshot=52718 filter=15442 sort=16313 json=6073 send=5542
+[851253][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1945351 loop_age_us=262405 lost_active=0 lost_done=1 heap_low=32208 stack_free=1188
+[852259][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=44496569 stage_us=44496061 entries=470 records=0
+[852259][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=123991
+[853263][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=4550tries=474 records=0
+[853263][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=180956
+[854264][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=46501567 stage_us=46501059 entries=478 records=0
+[854264][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=172967
+[854515][INFO ][IoProbe] done id=9022 op=web.files task=async_tcp cpu=1 prINFO ][IoProbe] time_us id=9022 enter=1494 snapshot=30447 filter=15638 sort=16328 json=6015 send=5527
+[855019][WARN ][IoProbe] active id=9019 op=storage.append task=loopTask stage=write age_us=686949 stage_us=675125 entries=0 records=0
+[855019][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=95981
+[855270][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=47507570 stage_us=47507062 entries=482 records=0
+[855270][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=106992
+[856022][INFO ][IoProbe] done id=9019 op=storage.append task=loopTask cpu=1 pri=1 start_us=854332338 total_us=1651610 result=returned
+[856273][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=48510569 stage_us=48510061 entries=486 records=0
+[856273][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=140991
+[856274][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1945351 loop_age_us=289666 lost_active=0 lost_done=1 heap_low=30868 stack_free=1188
+[857279][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=49516565 stage_tries=490 records=0
+[857279][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=108967
+[858031][INFO ][IoProbe] done id=9051 op=web.files task=async_tcp cpu=1 pri=10 start_ud
+[858284][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=50521564 stage_us=50521056 entries=494 records=0
+[858284][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=62986
+[859288][WARN ][IoProbe] active id=7940 op=file_index.refresh task=FileIndexTask stage=scan age_us=51525568 stage_us=51525060 entries=498 records=0
+[859288][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=55695
+[860010][INFO ][IoProbe] done id=9067 op=web.status task=async_tcp cpu=1 pri=10 start_us=859525922 total_us=216248 result=returned
+[860010][INFO ][IoProbe] done id=9075 op=web.location task=async_tcp cpu=1 pri=10 start_us=859744898 total_us=2845 result=returned
+[860010][INFO ][IoProbe] done id=9076 op=web.weather task=async_tcp cpu=1 pri=10 start_us=85973942 result=returned
+[860011][INFO ][IoProbe] done id=9077 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=859757867 total_us=252987 result=returned
+[860262][WARN ][IoProbe] active id=9069 op=storage.append task=loopTask stage=write age_us=603908 stage_us=245128 entries=0 records=0
+[860262][WARN ][IoProbe] owner task=loopTask site=appendRecord depth=1 held_us=245455
+[860262][INFO ][IoProbe] done id=9081 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=860013670 total_us=2683 result=returned
+[860262][INFO ][IoProbe] done id=7940 op=file_index.refresh task=FileIndexTask cpu=0 pri=1 start_us=807762727 total_us=52255737 result=returned
+[860513][INFO ][IoProbe] done id=9069 op=storage.append task=loopTask cpu=1 pri=1 start_us=859658389 total_us=666546 result=returned
+[861513][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1945351 loop_age_us=1160 lost_active=0 lost_done=1 heap_low=29520 stack_free=1188
+[862014][INFO ][IoProbe] done id=9083 op=web.files task=async_tcp cpu=1 pri=10 start_us=861746315 total_us=20672 result=returned
+[864765][INFO ][IoProbe] done id=9085 op=storage.append task=loopTask cpu=1 pri=1 start_us=864556420 total_us=65884 result=returned
+[865266][INFO ][IoProbe] done id=9087 op=web.files task=async_tcp cpu=1 pri=10 start_us=865135717 total_us=50279 result=returned
+[866517][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1945351 loop_age_us=1383943 lost_active=0 lost_done=1 heap_low=29520 stack_free=1188
+[868768][INFO ][IoProbe] done id=9090 op=web.status task=async_tcp cpu=1 pri=10 start_us=868741753 total_us=2821 result=returned
+[868769][INFO ][IoProbe] done id=9095 op=web.weather task=async_tcp cpu=1 pri=10 start_us=868754153 total_us=3821 result=returned
+[868770][INFO ][IoProbe] done id=9096 op=web.altitude tresult=returned
+[869020][INFO ][IoProbe] done id=9098 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=868767827 total_us=3256 result=returned
+[869770][INFO ][IoProbe] done id=9099 op=storage.append task=loopTask cpu=1 pri=1 start_us=869572107 total_us=65791 result=returned
+[870771][INFO ][IoProbe] done id=9101 op=web.files task=async_tcp cpu=1 pri=10 start_us=870703254 total_us=62118 result=returned
+[871273][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=568448 stage_us=567926 entries=26 records=0
+[871273][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=28992
+[871524][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1945351 loop_age_us=804699 lost_active=0 lost_done=1 heap_low=29520 stack_free=1188
+[872278][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=1573454 stage_us=1572932 entries=50 records=0
+[872278][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=47997
+[873280][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=2575448 stage_us=25ies=66 records=0
+[873280][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=69962
+[874283][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=3578448 stage_us=3577926 entries=82 records=0
+[874283][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=45973
+[874534][INFO ][IoProbe] done id=9275 op=web.files task=async_tcp cpu=1 pri=10 start_us=874280332 total_us=57908 result=returned
+[875287][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=4582449 stage_us=4581927 entries=95 records=0
+[875287][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=59988
+[876290][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=5585449 stage_us=5584927 entries=106 records=0
+[876290][WARN ][IoProbe] owner task=loopTask site=appendRecord depth=1 held_us=58438
+[876541][INFO ][IoProbe] done id=9326 op=storage.append task=loopTask cpu=1 pri=1 start_us=876219987 total_us=78510 result=returned
+[876541][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1945351 loop_age_us=902 lost_active=0 lost_done=1 heap_low=29520 stack_free=1188
+[877297][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=6592450 stage_us=ies=115 records=0
+[877297][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=68979
+[878309][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=7604446 stage_us=7603924 entries=124 records=0
+[878309][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=6985
+[878309][INFO ][IoProbe] done id=9361 op=web.files task=async_tcp cpu=1 pri=10 start_us=878026447 total_us=76083 result=returned
+[879313][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=8608452 stage_us=8607930 entries=157 records=0
+[879313][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=14991
+[879814][INFO ][IoProbe] done id=9495 op=web.status task=async_tcp cpu=1 pri=10 start_us=879616132 total_us=22598 result=returned
+[879815][INFO ][IoProbe] done id=9501 op=web.location task=async_tcp cpu=1 pri=10 start_us=879641496 total_us=2878 result=returned
+[879817][INFO ][IoProbe] done id=9502 op=web.weather task=async_tcp cpu=1 pri=10 start_us=879649032 total_us=3762 result=returned
+[879817][INFO ][IoProbe] done id=9503 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=879655783 total_us=14712 result=returned
+[880067][INFO ][IoProbe] done id=9507 op=web.ppg task=asyrned
+[880317][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=9612449 stage_us=9611927 entries=199 records=0
+[880317][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=41974
+[881068][INFO ][IoProbe] done id=9584 op=storage.append task=loopTask cpu=1 pri=1 start_us=880924436 total_us=69803 result=returned
+[881318][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=10613449 stage_us=10612927 entries=226 records=0
+[881318][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=14965
+[881569][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1945351 loop_age_us=484 lost_active=0 lost_done=1 heap_low=29520 stack_free=1188
+[881571][INFO ][TaskStack] task=FileIndexTask free_min_bytes=4128 priority=1
+[882328][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=11623124 stage_us=11622602 entries=247 records=0
+[882328][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=50663
+[882329][INFO ][IoProbe] done id=9638 op=web.files task=async_tcp cpu=1 pri=10 start_us=882025848 total_us=95766 result=returned
+[883332][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=12627452 stage_us=12626930 entries=264 records=0
+[883332][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=53989
+[884335][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=13630445 stage_utries=278 records=0
+[884335][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=26978
+[885337][WARN ][IoProbe] activask=FileIndexTask stage=scan age_us=14632449 stage_us=14631927 entries=289 records=0
+[885337][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=76973
+[886340][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=15635453 stage_us=15634931 entries=299 records=0
+[886340][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=73987
+[886340][INFO ][IoProbe] done id=9751 op=web.files task=async_tcp cpu=1 pri=10 start_us=886025687 total_us=100197 result=returned
+[886591][WARN ][IoProbe] active id=9748 op=storage.append task=loop=0
+[886591][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=39980
+[886591][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1945351 loop_age_us=669012 lost_active=0 lost_done=1 heap_low=29520 stack_free=1188
+[887346][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=16641449 stage_tries=310 records=0
+[887346][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=15988
+[887597][WARN ][IoProbe] active id=9748 op=storage.append task=loopTask stage=write age_us=1672281 stage_us=1593274 entries=0 records=0
+[887598][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=60980
+[887849][INFO ][IoProbe] done id=9748 op=storage.append task=loopTask cpu=1 pri=1 start_us=885925003 total_us=1696736 result=returned
+[888351][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=17646446 stage_us=17645924 entries=319 records=0
+[888351][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=55962
+[889381][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=18676462 stage_us=18675940 entries=327 records=0
+[889381][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=110991
+[889381][INFO ][IoProbe] done id=9810 op=web.status task=async_tcp cpu=1 pri=10 start_us=889036839 total_us=96610 result=returned
+[889382][INFO ][IoProbe] done id=9816 op=web.location task=async_tcp cpu=1 pri=10 start_us=889137162 total_us=2509 result=returned
+[889383][INFO ][IoProbe] done id=9817 op=web.weather task=async_tcp cpu=1 pri=10 start_us=8891rned
+[889383][INFO ][IoProbe] done id=9818 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=889151237 total_us=119133 result=returned
+[889633][INFO ][IoProbe] done id=9822 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=889276806 total_us=2788 result=returned
+[890134][INFO ][IoProbe] done id=9833 op=web.files task=async_tcp cpu=1 pri=10 start_us=890025084 total_us=54711 result=returned
+[890385][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=19680452 stage_us=19679930 entries=335 records=0
+[890385][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=107991
+[891389][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=20684452 stage_tries=343 records=0
+[891389][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=120895
+[891640][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1945351 loop_age_us=1618277 lost_active=0 lost_done=1 heap_low=29520 stack_free=1188
+[892143][INFO ][IoProbe] done id=9867 op=storage.append task=loopTask cpu=1 pri=1 start_us=891946828 total_us=173178 result=returned
+[892394][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=21689449 stage_us=21688927 entries=350 records=0
+[892394][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=132958
+[893396][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=22691447 stage_us=22690925 entries=357 records=0
+[893398][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=132956
+[894430][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=23725452 stage_us=23724930 entries=364 records=0
+[894430][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=101990
+[894430][INFO ][IoProbe] done id=9896 op=web.files task=async_tcp cpu=1 pri=10 start_us=894024881 total_us=197983 result=returned
+[895434][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=24729452 stage_us=24728930 entries=371 records=0
+[895434][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=80991
+[896436][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=25731448 stage_us=25730926 entries=377 records=0
+[896436][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=142983
+[896687][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1945351 loop_age_us=698 lost_active=0 lost_done=1 heap_low=29520 stack_free=1188
+[897190][INFO ][IoProbe] done id=9936 op=storage.append task=loopTask cpu=1 pri=1 start_us=896881947 total_us=135083 result=returned
+[897440][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=26735449 stage_us=26734927 entries=383 records=0
+[897440][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=82988
+[897953][INFO ][IoProbe] done id=9946 op=web.files task=async_tcp cpu=1 pri=10 start_us=897617286 total_us=129814 result=returned
+[898455][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=27750452 stage_us=27749930 entries=389 records=0
+[898455][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=100992
+[899560][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=28855449 stage_us=28854927 entries=396 records=0
+[899560][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.close depth=1 held_us=95
+[899560][INFO ][IoProbe] done id=9968 op=web.status task=async_tcp cpu=1 pri=10 start_us=899258304 totas=116418 result=returned
+[899561][INFO ][IoProbe] done id=9974 op=web.location task=async_tcp cpu=1 pri=10 start_us=899377643 total_us=2527 result=returned
+[899563][INFO ][IoProbe] done id=9975 op=web.weather task=async_tcp cpu=1 pri=10 start_us=899385560 total_us=3609 result=returned
+[899563][INFO ][IoProbe] done id=9976 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=899391957 total_us=169553 result=returned
+[899813][INFO ][IoProbe] done id=9980 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=899565022 total_us=2658 result=returned
+[900566][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=298 entries=401 records=0
+[900566][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=89942
+[901616][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=30911532 stage_us=30911010 entries=407 records=0
+[901867][INFO ][IoProbe] done id=10001 op=web.files task=async_tcp cpu=1 pri=10 start_us=901431914 total_us=228015 result=returned
+[901867][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1945351 loop_age_us=252577 lost_active=0 lost_done=1 heap_low=29520 stack_free=1188
+[902624][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=31919452 stage_us=31918930 entries=412 records=0
+[902624][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=97990
+[903627][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=32922447 stage_us=32921925 entries=417 records=0
+[903629][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=171985
+[904130][INFO ][IoProbe] done id=10029 op=storage.append task=loopTask cpu=1 pri=1 start_us=903652708 total_us=251994 result=ret[904130][INFO ][IoProbe] time_us id=10029 enter=22 wait=186032 prepare=195 write=65745
+[904632][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=33927448tries=422 records=0
+[904632][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=124980
+[905385][INFO ][IoProbe] done id=10043 op=web.files task=async_tcp cpu=1 pri=10 start_us=905032432 total_us=134869 result=returned
+[905636][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=34931452 stage_us=34930930 entries=427 records=0
+[905636][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=118722
+[906640][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=35935452 stage_us=35934930 entries=432 records=0
+[906640][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=142991
+[906891][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1945351 loop_age_us=175839 lost_active=0 lost_done=1 heap_low=29520 stack_free=1188
+[906893][INFO ][TaskStack] task=async_tcp free_min_bytes=12724 priority=10
+[907644][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=36939446 stage_us=36938924 entries=437 records=0
+[907644][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=92944
+[908646][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=37941450 stage_us=37940928 entries=442 records=0
+[908646][WARN ][IoProbe] owner task=loopTask site=appendRecord depth=1 held_us=5604
+[908898][INFO ][IoProbe] done id=10079 op=storage.append task=loopTask cpu=1 pri=1 start_us=908539400 total_us=167386 resu898][INFO ][IoProbe] time_us id=10079 enter=21 wait=101375 prepare=174 write=65816
+[909415][INFO ][IoProbe] done id=10085 op=web.files task=async_tcp cpu=1 pri=10 start_us=909041668 total_us=166395 result=returned
+[909666][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=38961452 stage_us=38960930 entries=446 records=0
+[909666][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=75990
+[910278][D][AsyncTCP.cpp:391] _tcp_poll(): throttling
+[910670][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan agege_us=39964925 entries=451 records=0
+[910670][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=11986
+[911125][INFO ][IoProbe] done id=10103 op=web.status task=async_tcp cpu=1 pri=10 start_us=910706811 total_us=174670 result=returned
+[911125][INFO ][IoProbe] done id=10109 op=web.location task=async_tcp cpu=1 pri=10 start_us=910884715 total_us=2871 result=eturned
+[911126][INFO ][IoProbe] done id=10110 op=web.weather task=async_tcp cpu=1 pri=10 start_us=910892741 total_us=3784 result=returned
+[911127][INFO ][IoProbe] done id=10111 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=910900042 total_us=226612 result=returned
+[911379][INFO ][IoProbe] done id=10115 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=911349549 total_us=3166 result=returned
+[911880][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=41175525 stage_us=41175003 entries=456 records=0
+[911880][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=56055
+[912130][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1945351 loop_age_us=603 lost_active=0 lost_done=1 heap_low=29520 stack_free=1188
+[912883][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=42178448 stage_us=42177926 entries=460 records=0
+[912883][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=113988
+[913497][INFO ][IoProbe] done id=10132 op=web.files task=async_tcp cpu=1 pri=10 start_us=913026684 total_us=263889 result=returned
+[913999][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=43294452 stage_us=43293930 entries=465 records=0
+[913999][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=77991
+[915003][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=44298452 stage_us=44297930 entries=469 records=0
+[915003][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=174991
+[915503][INFO ][IoProbe] done id=10152 op=storage.append task=loopTask cpu=1 pri=1 start_us=915158469 total_us=205929 result=returned
+[916004][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=45299446 stage_us=45298924 entries=473 records=0
+[916004][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=146986
+[917007][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=46302450 stage_us=46301928 entries=477 records=0
+[917007][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=145990
+[917258][INFO ][IoProbe] done id=10168 op=web.files task=async_tcp cpu=1 pri=10 start_us=917028676 total_us=129658 result=returned
+[917258][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1945351 loop_age_us=144842 lost_active=0 lost_done=1 heap_low=29520 stack_free=1188
+[918015][WARN ][IoProbe] active id=91sk=FileIndexTask stage=scan age_us=47310452 stage_us=47309930 entries=481 records=0
+[918015][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=185990
+[919018][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=48313448 stage_us=48312926 entries=485 records=0
+[919018][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=226986
+[919335][INFO ][IoProbe] done id=10186 op=web.status task=async_tcp ced
+[919335][INFO ][IoProbe] done id=10192 op=web.location task=async_tcp cpu=1 pri=10 start_us=919062233 total_us=2812 result=returned
+[919336][INFO ][IoProbe] done id=10193 op=web.weather task=async_tcp cpu=1 pri=10 start_us=919068779 total_us=3595 result=returned
+[919337][INFO ][IoProbe] done id=10194 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=919075971 total_us=260705 result=returned
+[919589][INFO ][IoProbe] done id=10198 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=919340194 total_us=2922 result=returned
+[920089][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=49384447 stage_us=49383925 entries=489 records=0
+[920089][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=159970
+[920089][INFO ][IoProbe] done id=10201 op=storage.append task=loopTask cpu=1 pri=1 start_us=919839211 total_us=89574 result=returned
+[921255][WARN ][IoProbe] active id=9102 op=file_index.refresh task=FileIndexTask stage=scan age_us=50550348 stage_us=50549826 entries=494 records=0
+[921505][INFO ][IoProbe] done id=10213 op=web.files task=async_tcp cpu=1 pri=10 start_us=921028159 total_us=270866 result=returned
+[922259][WARN ][IoProbe] active id=9102 op=file_index.refresh task=Fil498 records=0
+[922259][WARN ][IoProbe] owner task=FileIndexTask site=FileIndexTask.entry depth=1 held_us=1987
+[922259][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1945351 loop_age_us=1005879 lost_active=0 lost_done=1 heap_low=29520 stack_free=1188
+[923264][INFO ][IoProbe] done id=9102 op=file_index.refresh task=FileIndexTask cpu=0 pri=1 start_us=870704844 total_us=52321040 result=returned
+[925014][INFO ][IoProbe] done id=10232 op=storage.append task=loopTask cpu=1 pri=1 start_us=924839494 total_us=65903 result=returned
+[925264][INFO ][IoProbe] done id=10234 op=web.files task=async_tcp cpu=1 pri=10 start_us=925027933 total_us=49868 result=returned
+[927264][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1945351 loop_age_us=735 lost_active=0 lost_done=1 heap_low=29520 stack_free=1188
+[929265][INFO ][IoProbe] done id=10236 op=web.status task=async_tcp cpu=1 pri=10 start_us=929043217 total_us=2837 result=returned
+[929265][INFO ][IoProbe] done id=10240 op=web.location task=async_tcp cpu=1 pri=10 start_us=929049351 total_us=3035 result=returned
+[929266][INFO ][IoProbe] done id=10241 op=web.weather task=async_tcp cpu=1 pri=10 start_us=929055168 total_us=2916 result=returned
+[929266][INFO ][IoProbe] done id=10242 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=929062528 total_us=3383 result=returned
+[929516][INFO ][IoProbe] done id=10244 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=929069330 total_us=2628 result=returned
+[930016][INFO ][IoProbe] done id=10245 op=storage.append task=loopTask cpu=1 pri=1 start_us=929839300 total_us=65867 result=returned
+[932266][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1945351 loop_age_us=1911 lost_active=0 lost_done=1 heap_low=29520 stack_free=1188
+[935017][INFO ][IoProbe] done id=10247 op=storage.append task=loopTask cpu=1 pri=1 start_us=934842323 total_us=65842 result=returned
+[937267][INFO ][IoProbe] health hold_max_us=1654831 loop_gap_max_us=1945351 loop_age_us=299 lost_active=0 lost_done=1 heap_low=29520 stack_free=1188
+[939268][INFO ][IoProbe] done id=10249 op=web.status task=async_tcp cpu=1 pri=10 start_us=939045614 total_us=3250 result=returned
+[939269][INFO ][IoProbe] done id=10253 op=web.location task=async_tcp cpu=1 pri=10 start_us=939051845 total_us=2608 result=returned
+[939269][INFO ][IoProbe] done id=10254 op=web.weather task=async_tcp cpu=1 pri=10 start_us=939057ime_us id=10254 enter=3487
+[939269][INFO ][IoProbe] done id=10255 op=web.altitude task=async_tcp cpu=1 pri=10 start_us=939065879 total_us=3265 result=returned
+[939519][INFO ][IoProbe] done id=10257 op=web.ppg task=async_tcp cpu=1 pri=10 start_us=939072672 total_us=2866 result=returned
+[940019][INFO ][IoProbe] done id=10258 op=storage.append task=loopTask cpu=1 pri=1 start_us=939845554 total_us=67479 result=returned

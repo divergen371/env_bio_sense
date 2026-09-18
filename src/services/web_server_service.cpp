@@ -586,7 +586,7 @@ void WebServerService::setupRoutes() {
             if (!ready) {
                 JsonDocument pending;
                 pending["status"] = failed ? "failed" : "building";
-                pending["retry_after_ms"] = 750;
+                pending["retry_after_ms"] = 1500;
                 pending["generation"] = generation;
                 String body;
                 serializeJson(pending, body);
@@ -779,6 +779,36 @@ void WebServerService::setupRoutes() {
                         static_cast<unsigned long>(counters.lockTimeouts),
                         static_cast<unsigned long>(counters.communicationErrors));
                 }
+            }
+            response->print("]}");
+            addSecurityHeaders(response);
+            request->send(response);
+        });
+
+    server_->on("/api/tasks", HTTP_GET,
+        [this](AsyncWebServerRequest* request) {
+            if (!authorize(request)) return;
+            static const char* const taskNames[] = {
+                "loopTask", "async_tcp", "StorageTask", "FileIndexTask",
+                "WeatherTask", "DisplayTask", "IoProbeTask"
+            };
+            AsyncResponseStream* response =
+                request->beginResponseStream("application/json", 1024);
+            response->printf(
+                "{\"uptime_ms\":%lu,\"free_heap_bytes\":%u,\"minimum_free_heap_bytes\":%u,\"tasks\":[",
+                static_cast<unsigned long>(millis()),
+                ESP.getFreeHeap(), ESP.getMinFreeHeap());
+            bool first = true;
+            for (const char* name : taskNames) {
+                const TaskHandle_t handle = xTaskGetHandle(name);
+                if (handle == nullptr) continue;
+                if (!first) response->print(',');
+                first = false;
+                response->printf(
+                    "{\"name\":\"%s\",\"minimum_free_stack_bytes\":%u,\"priority\":%u}",
+                    name,
+                    static_cast<unsigned>(uxTaskGetStackHighWaterMark(handle)),
+                    static_cast<unsigned>(uxTaskPriorityGet(handle)));
             }
             response->print("]}");
             addSecurityHeaders(response);

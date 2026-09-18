@@ -15,6 +15,32 @@ core::io_probe::State<> state;
 portMUX_TYPE probeMux = portMUX_INITIALIZER_UNLOCKED;
 TaskHandle_t reporterHandle = nullptr;
 
+struct WatchedTask {
+    const char* name;
+    UBaseType_t minimumFree;
+
+    WatchedTask(const char* taskName)
+        : name(taskName), minimumFree(static_cast<UBaseType_t>(-1)) {}
+};
+
+WatchedTask watchedTasks[] = {
+    {"loopTask"}, {"async_tcp"}, {"StorageTask"}, {"FileIndexTask"},
+    {"WeatherTask"}, {"DisplayTask"}, {"IoProbeTask"}
+};
+
+void reportTaskStackChanges() {
+    for (WatchedTask& watched : watchedTasks) {
+        const TaskHandle_t handle = xTaskGetHandle(watched.name);
+        if (handle == nullptr) continue;
+        const UBaseType_t freeMinimum = uxTaskGetStackHighWaterMark(handle);
+        if (freeMinimum >= watched.minimumFree) continue;
+        watched.minimumFree = freeMinimum;
+        Logger::info("TaskStack", "task=%s free_min_bytes=%u priority=%u",
+            watched.name, static_cast<unsigned>(freeMinimum),
+            static_cast<unsigned>(uxTaskPriorityGet(handle)));
+    }
+}
+
 const char* stageName(IoProbe::Stage stage) {
     static const char* const names[] = {
         "enter", "wait", "open", "scan", "close", "snapshot", "filter", "sort", "json", "send",
@@ -93,6 +119,7 @@ void reporter(void*) {
             Logger::info("IoProbe", "health hold_max_us=%llu loop_gap_max_us=%llu loop_age_us=%llu lost_active=%lu lost_done=%lu heap_low=%u stack_free=%u",
                 hold, loopGap, loopAge, static_cast<unsigned long>(lostActive), static_cast<unsigned long>(lostCompleted),
                 ESP.getMinFreeHeap(), static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)));
+            reportTaskStackChanges();
         }
         vTaskDelay(pdMS_TO_TICKS(250));
     }

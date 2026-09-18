@@ -43,7 +43,8 @@ void storageTask(void* pvParameters) {
         // One verified record costs roughly 0.5-0.6 s on the measured SD.
         // Retry frequently enough to drain a backlog, but release the Storage
         // mutex after every record so loopTask and PPG servicing can run.
-        if (nowMs - lastEnvironmentFlushAttemptMs >= 100u) {
+        if (!storageManager.isWifiActive() &&
+            nowMs - lastEnvironmentFlushAttemptMs >= 100u) {
             lastEnvironmentFlushAttemptMs = nowMs;
             storageManager.flushPendingToSd(1);
             if (lastStackReportMs == 0 ||

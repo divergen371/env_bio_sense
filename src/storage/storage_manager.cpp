@@ -1237,6 +1237,10 @@ bool StorageManager::quarantineCorruptTail(uint16_t slotIndex, uint32_t uptimeMs
 
 void StorageManager::flushPendingToSd(uint16_t maxRecords) {
     IoProbe probe("storage.flush");
+    // The AP/file UI owns SD access while Wi-Fi is active. Avoid entering the
+    // mutex merely to discover that flushing is disabled; frequent no-op
+    // attempts otherwise contend with a long-running file-index refresh.
+    if (wifiActive_.load()) return;
     probe.stage(IoProbe::Stage::Wait);
     lock();
     probe.stage(IoProbe::Stage::Prepare);
