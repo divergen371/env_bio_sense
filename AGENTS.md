@@ -3,6 +3,8 @@
 `env_bio_sense` — Seeed XIAO ESP32S3 を使った環境センサ＋生体光センサ（PPG）統合プラットフォーム。
 このファイルは**他エージェント向けの引き継ぎ文書**。機能の説明は `README.md`、設計の正は `docs/` の憲章と仕様書にある。README と重複する内容はここに書かない。
 
+ここに書くのは**このプロジェクト固有の事実と契約**だけ。事実と推論の分離・公式仕様の優先・検証段階の区別といった一般則は、グローバル指示（`~/.gemini/GEMINI.md` の10則、`~/.config/opencode/AGENTS.md` の作業規律）に従う。ただしそれらを読まないエージェント（Cursor 等）のために、**判断を誤ると事故になる規律だけは本書にも残す**。
+
 ## 最初に読む順
 
 1. `docs/Project_Charter_XIAO_ESP32S3.md` — 基本理念・設計原則・コーディングポリシー・品質基準・完成形
@@ -36,13 +38,13 @@ python3 scripts/generate_web_assets.py
 - **センサ同士は直接依存しない**。共通処理は `SensorManager` に集約する
 - ドライバはアプリケーションを知らない。ライブラリ固有 API は Driver 層に閉じ込める
 - ISR ではフラグ設定以外を行わない。`delay()` に依存しない。グローバル変数は最小限
-- エラーでも全体停止しない。変更は既存コードへの影響を最小化する
+- エラーでも全体停止しない。ただし**エラー値・古い値を正常値として扱わない**（鮮度判定は各センサで実施）。変更は既存コードへの影響を最小化する
 
 ```
 src/
 ├── drivers/sensors/   sht45 / bmp5(base,581) / bme690 / scd41 / sgp41 / max30102 / lc76g
 ├── hal/               I2C・SPI・GPIO 等の境界
-├── services/          sensor_manager / data_logger / storage / time / weather / wifi / web_server / ppg_session / archive / io_probe
+├── services/          sensor_manager / data_logger / time_manager / gnss_time_sync / weather / location / wifi / web_server / ppg_session / archive / io_probe / display / logger
 ├── storage/           FRAM・SD の管理
 ├── config/ utils/
 include/               drivers, services, storage, hal, core, config, utils, generated
@@ -109,6 +111,13 @@ scripts/               generate_web_assets.py / monitor_web_diag.py / test_web_i
 - `include/generated/web_assets.h` は**生成物**。手で編集せず `scripts/generate_web_assets.py` で再生成する
 - `.agents/` は `.gitignore` 対象（ローカル専用）。リポジトリに残る指示はこの `AGENTS.md` のみ
 - `compile_commands.json`・`.cache/`・`.pio/` はローカル生成物
+
+## この文書の更新ルール
+
+- 実装を変えたら**同じ変更の中で**このファイルを直す。特にパス・コマンド・環境名は実際と照合する
+- 件数（未コミット件数、テスト数など）は書かない。増減してすぐ古くなるため `git status` / `find` で確認させる
+- 一般則はグローバルへ、**このプロジェクト固有の契約だけ**をここに残す
+- 記述とコードが食い違ったらコードを正とし、このファイルを直す（過去の記述を現在の実装とみなさない）
 
 ## 未確認・要整備
 
